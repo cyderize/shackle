@@ -673,7 +673,14 @@ impl ExpressionCollector<'_> {
 	fn collect_prefix_operator(&mut self, o: minizinc::PrefixOperator) -> ArenaIndex<Expression> {
 		let arguments = Box::new([self.collect_expression(o.operand())]);
 		let operator = o.operator();
-		let function = self.ident_exp(Origin::new(&operator), operator.name());
+		let function = self.ident_exp(
+			Origin::new(&operator),
+			if matches!(operator.name(), ".." | "<.." | "..<" | "<..<") {
+				format!("o{}", operator.name())
+			} else {
+				operator.name().to_owned()
+			},
+		);
 		self.alloc_expression(
 			Origin::new(&o),
 			Call {

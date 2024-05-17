@@ -17,8 +17,8 @@ Note that only function calls and the items in let expressions change the enviro
 <div>
 \[
 \begin{prooftree}
-\AxiomC{$ \mathsf{function}~T\mathsf{:}~F\mathsf{(} p*1, \dots, p_k \mathsf{)} = E; \in{} \Prog{},~\text{where the}~p_i~\text{are fresh} $}
-	\AxiomC{$ \Sem{E*{[p_i \mapsto a_i, \forall{} 1 \leq{} i \leq{} k]}}{\Prog, \Env} \Rightarrow{} \tuple{v, \Env'} $}
+\AxiomC{$ \mathsf{function}~T\mathsf{:}~F\mathsf{(} p_1, \dots, p_k \mathsf{)} = E; \in{} \Prog{},~\text{where the}~p_i~\text{are fresh} $}
+	\AxiomC{$ \Sem{E_{[p_i \mapsto a_i, \forall{} 1 \leq{} i \leq{} k]}}{\Prog, \Env} \Rightarrow{} \tuple{v, \Env'} $}
 	\RightLabel{(E-Call)}
 	\BinaryInfC{$ \Sem{F\mathsf{(}a_1, \ldots, a_k\mathsf{)}}{\Prog, \Env, C} \Rightarrow{} \tuple{v, \Env'} $}
 \end{prooftree}

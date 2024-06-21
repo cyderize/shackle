@@ -80,9 +80,9 @@ function var opt bool: 'not'(var opt bool: x) =
 	if absent(x) then <> else not deopt(x) endif;
 
 /** @group stdlib.builtins.logic Return truth value of \(\bigwedge_i \a x[i]\) */
-function bool: forall(array [$T] of bool: x);
+function bool: forall(array [$T] of bool: x) = forall(array1d(x));
 /** @group stdlib.builtins.logic Return truth value of \(\bigwedge_i \a x[i]\) */
-function var bool: forall(array [$T] of var bool: x);
+function var bool: forall(array [$T] of var bool: x) = forall(array1d(x));
 /** @group stdlib.builtins.logic True iff for any \p i, \a x[i] is absent or true */
 predicate forall(array [$T] of var opt bool: x) =
 	forall([absent(x_i) \/ deopt(x_i) | x_i in array1d(x)]);
@@ -91,9 +91,9 @@ test forall(array [$T] of opt bool: x) =
 	forall([absent(x_i) \/ deopt(x_i) | x_i in array1d(x)]);
 
 /** @group stdlib.builtins.logic Return truth value of \(\bigvee_i \a x[i]\) */
-function bool: exists(array [$T] of bool: x);
+function bool: exists(array [$T] of bool: x) = exists(array1d(x));
 /** @group stdlib.builtins.logic Return truth value of \(\bigvee_i \a x[i]\) */
-function var bool: exists(array [$T] of var bool: x);
+function var bool: exists(array [$T] of var bool: x) = exists(array1d(x));
 /** @group stdlib.builtins.logic True iff for at least one \p i, \a x[i] occurs and is true */
 predicate exists(array [$T] of var opt bool: x) =
 	exists([occurs(x_i) /\ deopt(x_i) | x_i in array1d(x)]);

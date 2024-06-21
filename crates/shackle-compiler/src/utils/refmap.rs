@@ -52,6 +52,19 @@ impl<'a, K, V> RefMap<'a, K, V> {
 		self.map.get(&KeyRef(key))
 	}
 
+	/// Update or insert a value
+	pub fn update_or_insert(
+		&mut self,
+		key: &'a K,
+		update: impl FnOnce(&mut V),
+		insert: impl FnOnce() -> V,
+	) -> &mut V {
+		self.map
+			.entry(KeyRef(key))
+			.and_modify(update)
+			.or_insert_with(insert)
+	}
+
 	/// Get an iterator over key-value pairs
 	pub fn iter(&self) -> impl Iterator<Item = (&'a K, &V)> {
 		self.map.iter().map(|(k, v)| (k.0, v))

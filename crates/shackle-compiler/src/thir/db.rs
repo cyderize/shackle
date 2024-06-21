@@ -70,5 +70,7 @@ impl<T: Eq> Eq for Intermediate<T> {}
 
 fn final_thir(db: &dyn Thir) -> Result<Arc<Model>> {
 	let model = db.model_thir();
-	thir_transforms()(db, model.take()).map(Arc::new)
+	let cloned = model.get().as_ref().clone();
+
+	thir_transforms()(db, cloned).map(Arc::new)
 }

@@ -417,6 +417,17 @@ impl FunctionName {
 		}
 	}
 
+	/// Get this name but with `_root` appended
+	pub fn root(&self, db: &dyn Thir) -> Self {
+		match *self {
+			FunctionName::Named(i) => FunctionName::Named(Identifier::new(
+				format!("{}_root", i.lookup(db.upcast())),
+				db.upcast(),
+			)),
+			_ => Self::anonymous(),
+		}
+	}
+
 	/// Get as an identifier
 	pub fn as_identifier(&self, db: &dyn Thir) -> Identifier {
 		match self {
@@ -510,6 +521,14 @@ impl<T: Marker> Function<T> {
 	/// Set the name of this function
 	pub fn set_name(&mut self, name: Identifier) {
 		self.name = FunctionName::new(name);
+	}
+
+	/// Get the mangled name of this function
+	pub fn mangled_name(&self, db: &dyn Thir) -> Identifier {
+		self.mangled_param_tys().map_or_else(
+			|| self.name().as_identifier(db),
+			|params| self.name().mangled(db, params.iter().copied()),
+		)
 	}
 
 	/// Get a value uniquely representing the function this was specialised from
@@ -628,10 +647,11 @@ impl<T: Marker> Function<T> {
 			let ty = body.ty();
 			assert!(
 				ty.is_subtype_of(db.upcast(), self.return_type()),
-				"Function body type {} does not match return type {} for {}",
+				"Function body type {} does not match return type {} for {} ({})",
 				ty.pretty_print(db.upcast()),
 				self.return_type().pretty_print(db.upcast()),
-				self.name().pretty_print(db)
+				self.name().pretty_print(db),
+				body.origin().debug_print(db)
 			);
 		}
 	}

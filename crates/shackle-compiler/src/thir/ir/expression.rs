@@ -6,6 +6,8 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
+use rustc_hash::FxHashMap;
+
 use super::{
 	domain::{OptType, VarType},
 	AnnotationId, Annotations, ConstraintId, Declaration, DeclarationId, Domain, EnumerationId,
@@ -13,7 +15,7 @@ use super::{
 };
 pub use crate::hir::{BooleanLiteral, FloatLiteral, IntegerLiteral, StringLiteral};
 use crate::{
-	thir::{db::Thir, source::Origin},
+	thir::{db::Thir, source::Origin, DomainData},
 	ty::{FunctionType, Ty, TyData, TyParamInstantiations, TyVar},
 	utils::{impl_enum_from, maybe_grow_stack, DebugPrint},
 };
@@ -384,6 +386,13 @@ impl<T: Marker> DerefMut for TupleLiteral<T> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RecordLiteral<T: Marker = ()>(pub Vec<(Identifier, Expression<T>)>);
 
+impl<T: Marker> RecordLiteral<T> {
+	/// Convert to hash map
+	pub fn as_hash_map(&self) -> FxHashMap<Identifier, &Expression<T>> {
+		self.0.iter().map(|(k, v)| (*k, v)).collect()
+	}
+}
+
 impl<T: Marker> ExpressionBuilder<T> for RecordLiteral<T> {
 	fn build(self, db: &dyn Thir, _model: &Model<T>, origin: Origin) -> Expression<T> {
 		let RecordLiteral(items) = &self;
@@ -445,7 +454,14 @@ impl<T: Marker> ArrayComprehension<T> {
 }
 
 impl<T: Marker> ExpressionBuilder<T> for ArrayComprehension<T> {
-	fn build(self, db: &dyn Thir, _model: &Model<T>, origin: Origin) -> Expression<T> {
+	fn build(self, db: &dyn Thir, model: &Model<T>, origin: Origin) -> Expression<T> {
+		assert!(
+			!self.generators.is_empty(),
+			"Comprehensions must have at least one generator"
+		);
+		for g in self.generators.iter() {
+			g.validate(db, model);
+		}
 		let lift_to_opt = self
 			.generators
 			.iter()
@@ -481,7 +497,14 @@ pub struct SetComprehension<T: Marker = ()> {
 }
 
 impl<T: Marker> ExpressionBuilder<T> for SetComprehension<T> {
-	fn build(self, db: &dyn Thir, _model: &Model<T>, origin: Origin) -> Expression<T> {
+	fn build(self, db: &dyn Thir, model: &Model<T>, origin: Origin) -> Expression<T> {
+		assert!(
+			!self.generators.is_empty(),
+			"Comprehensions must have at least one generator"
+		);
+		for g in self.generators.iter() {
+			g.validate(db, model);
+		}
 		let is_var = self
 			.generators
 			.iter()
@@ -1248,11 +1271,82 @@ impl<T: Marker> Generator<T> {
 		}
 	}
 
+	/// Update where clause for this generator
+	pub fn update_where(&mut self, f: impl FnOnce(Option<Expression<T>>) -> Option<Expression<T>>) {
+		match self {
+			Generator::Iterator { where_clause, .. }
+			| Generator::Assignment { where_clause, .. } => *where_clause = f(where_clause.take()),
+		}
+	}
+
 	/// Get the declarations/assignment for this generator
 	pub fn declarations(&self) -> impl '_ + Iterator<Item = DeclarationId<T>> {
 		match self {
 			Generator::Iterator { declarations, .. } => declarations.clone().into_iter(),
 			Generator::Assignment { assignment, .. } => vec![*assignment].into_iter(),
+		}
+	}
+
+	/// Validate that this generator is type correct
+	pub fn validate(&self, db: &dyn Thir, model: &Model<T>) {
+		match self {
+			Generator::Iterator {
+				declarations,
+				collection,
+				where_clause,
+			} => {
+				let elem_ty = collection.ty().elem_ty(db.upcast()).unwrap();
+				for d in declarations {
+					assert!(
+						model[*d]
+							.domain()
+							.walk()
+							.all(|d| !matches!(&**d, DomainData::Bounded(_))),
+						"Iterator should not have a bounded domain"
+					);
+					assert!(
+						model[*d].definition().is_none(),
+						"Iterator should not have a right-hand side"
+					);
+					assert_eq!(
+						model[*d].ty(),
+						elem_ty,
+						"Iterator is of type {} but collection is {}",
+						model[*d].ty().pretty_print(db.upcast()),
+						collection.ty().pretty_print(db.upcast())
+					);
+					if let Some(w) = where_clause {
+						assert!(
+							w.ty().is_bool(db.upcast()),
+							"Where clause is {}",
+							w.ty().pretty_print(db.upcast())
+						);
+					}
+				}
+			}
+			Generator::Assignment {
+				assignment,
+				where_clause,
+			} => {
+				assert!(
+					model[*assignment]
+						.domain()
+						.walk()
+						.all(|d| !matches!(&**d, DomainData::Bounded(_))),
+					"Iterator should not have a bounded domain"
+				);
+				assert!(
+					model[*assignment].definition().is_some(),
+					"Assignment generator must have a right-hand side"
+				);
+				if let Some(w) = where_clause {
+					assert!(
+						w.ty().is_bool(db.upcast()),
+						"Where clause is {}",
+						w.ty().pretty_print(db.upcast())
+					);
+				}
+			}
 		}
 	}
 }

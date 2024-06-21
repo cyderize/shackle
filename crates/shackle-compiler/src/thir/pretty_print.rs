@@ -19,8 +19,8 @@ pub struct PrettyPrinter<'a, T: Marker = ()> {
 	ids: Arc<IdentifierRegistry>,
 	/// Whether to output a model compatible with old MiniZinc (default `true`)
 	pub old_compat: bool,
-	/// Whether to output `shackle_type("...")` annotations for sanity checking
-	pub debug_types: bool,
+	/// Add an extra annotation on each expression using the given function
+	pub expression_annotator: Option<Box<dyn Fn(&Expression<T>) -> Option<String> + 'a>>,
 }
 
 impl<'a, T: Marker> PrettyPrinter<'a, T> {
@@ -32,7 +32,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 			model,
 			ids,
 			old_compat: false,
-			debug_types: false,
+			expression_annotator: None,
 		}
 	}
 
@@ -752,13 +752,10 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 		for ann in expression.annotations().iter() {
 			write!(&mut out, " :: ({})", self.pretty_print_expression(ann)).unwrap();
 		}
-		if self.debug_types {
-			write!(
-				&mut out,
-				":: shackle_type({:?})",
-				expression.ty().pretty_print(self.db.upcast())
-			)
-			.unwrap();
+		if let Some(f) = &self.expression_annotator {
+			if let Some(v) = f(expression) {
+				write!(&mut out, ":: {}", v).unwrap();
+			}
 		}
 		out
 	}

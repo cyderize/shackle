@@ -1,0 +1,34 @@
+# MiniZinc 3.0 Roadmap
+
+- [x] Parsing to CST/AST
+- [x] Lowering to HIR
+- [x] Typechecking
+  - [ ] Including inst of partiality tuple
+- [x] Topological sorting
+- [x] Lowering to THIR
+- [x] Type specialisation
+- [x] Rewriting domains into constraints (other than basic var domains)
+- [x] Erasing enums
+- [x] Erase records
+- [x] Erase option types
+- [x] Optimize par where clauses in generators
+- [x] Rewrite var where clauses
+- [x] Rewrite output items into output only string variables
+- [ ] Detecting total array access
+  - [x] Detect when array access uses variable bounded by `index_set` call
+  - [ ] Detect common expression used for array access variable bound and array index set
+- [ ] Rewriting capturing lambda functions
+- [x] Run the existing interpreter with the THIR
+- [ ] Lowering to MIR (totalisation)
+  - [x] Basic expressions
+  - [ ] Case expressions
+  - [ ] Lambda functions
+  - [ ] Short circuiting lets/comprehensions
+- [ ] Half-reification specialisation (look at usages of variables to choose positive/negative context)
+- [ ] Mode analysis (analysing the functions and annotating the arguments as monotone/antitone)
+- [x] Pretty printing of MIR
+- [ ] Run MIR with old interpreter
+- [ ] Interpretation
+  - [x] Data structures
+- [ ] Solver connection
+- [ ] Solution processing

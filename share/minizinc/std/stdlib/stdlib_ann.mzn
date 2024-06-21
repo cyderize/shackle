@@ -734,3 +734,5 @@ annotation mzn_evaluate_once;
 annotation flatzinc_builtin;
 
 annotation shackle_type(string: ty);
+
+annotation mzn_var_where_clause;

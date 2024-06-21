@@ -14,10 +14,10 @@ use crate::{
 	hir::OptType,
 	thir::{
 		db::Thir,
-		traverse::{fold_call, fold_expression, visit_expression, Folder, ReplacementMap, Visitor},
-		Absent, ArrayComprehension, ArrayLiteral, Branch, Call, Callable, DeclarationId,
-		Expression, ExpressionData, Generator, IfThenElse, IntegerLiteral, LookupCall, Marker,
-		Model, ResolvedIdentifier, SetComprehension, VarType,
+		traverse::{fold_call, fold_expression, Folder, ReplacementMap, Visitor},
+		Absent, ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Declaration,
+		DeclarationId, Expression, ExpressionData, Generator, IfThenElse, IntegerLiteral, Item,
+		LookupCall, LookupIdentifier, Marker, Model, ResolvedIdentifier, SetComprehension, VarType,
 	},
 	utils::maybe_grow_stack,
 	Result,
@@ -174,48 +174,66 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 	fn desugar_comprehension(
 		&mut self,
 		db: &dyn Thir,
-		generators: &mut [Generator<Dst>],
+		generators: &mut Vec<Generator<Dst>>,
 		template: Expression<Dst>,
 		surrounding: SurroundingCall,
 	) -> Expression<Dst> {
+		let mut gen_idx = FxHashMap::default();
+		for (i, g) in generators.iter().enumerate() {
+			for d in g.declarations() {
+				gen_idx.insert(d, i + 1);
+			}
+		}
 		let mut todo = Vec::new();
 		let mut par_where = Vec::new();
 		let mut var_where = Vec::new();
-		for g in generators.iter_mut() {
+		for (i, g) in generators.iter_mut().enumerate() {
 			match g {
 				Generator::Iterator {
 					declarations,
 					collection,
 					where_clause,
 				} => {
+					// Turn var set comprehension into fixed comprehension with where clause
 					if collection.ty().is_var_set(db.upcast()) {
 						let c = collection.clone();
+						let has_set2iter = self
+							.result
+							.lookup_function(db, self.ids.set2iter.into(), &[c.ty()])
+							.map_or(false, |f| f.fn_entry.has_body);
 						*collection = Expression::new(
 							db,
 							&self.result,
 							c.origin(),
 							LookupCall {
-								function: self.ids.ub.into(),
+								function: if has_set2iter {
+									self.ids.set2iter.into()
+								} else {
+									self.ids.ub.into()
+								},
 								arguments: vec![c.clone()],
 							},
 						);
 						for d in declarations.iter() {
-							var_where.push(Expression::new(
-								db,
-								&self.result,
-								c.origin(),
-								LookupCall {
-									function: self.ids.in_.into(),
-									arguments: vec![
-										Expression::new(
-											db,
-											&self.result,
-											self.result[*d].origin(),
-											*d,
-										),
-										c.clone(),
-									],
-								},
+							var_where.push((
+								Expression::new(
+									db,
+									&self.result,
+									c.origin(),
+									LookupCall {
+										function: self.ids.in_.into(),
+										arguments: vec![
+											Expression::new(
+												db,
+												&self.result,
+												self.result[*d].origin(),
+												*d,
+											),
+											c.clone(),
+										],
+									},
+								),
+								i + 1,
 							));
 						}
 					}
@@ -232,6 +250,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 			}
 		}
 
+		// Break apart where clauses and sort them into var and par
 		while let Some(w) = todo.pop() {
 			if let ExpressionData::Call(c) = &*w {
 				if let Callable::Function(f) = &c.function {
@@ -246,64 +265,94 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 					}
 				}
 			}
+			let idx = ScopeTester::run(&self.result, &gen_idx, &w);
 			if w.ty().inst(db.upcast()).unwrap() == VarType::Var {
-				var_where.push(w);
+				var_where.push((w, idx));
 			} else {
-				par_where.push(Some(w));
+				par_where.push((w, idx));
 			}
 		}
+
+		let mut has_dummy = false;
 
 		// Place par where clauses as early as possible into generators
-		let mut decls = FxHashMap::default();
-		for g in generators.iter() {
-			for d in g.declarations() {
-				decls.insert(d, false);
+		for (w, idx) in par_where {
+			if idx == 0 && !has_dummy {
+				has_dummy = true;
+				let decl = Declaration::from_expression(
+					db,
+					false,
+					Expression::new(db, &self.result, w.origin(), IntegerLiteral(0)),
+				);
+				let decl_idx = self.result.add_declaration(Item::new(decl, w.origin()));
+				generators.insert(
+					0,
+					Generator::Assignment {
+						assignment: decl_idx,
+						where_clause: Some(w),
+					},
+				);
+			} else {
+				let index = if has_dummy { idx } else { idx - 1 };
+				generators[index].update_where(|where_clause| {
+					if let Some(old_where) = where_clause {
+						Some(Expression::new(
+							db,
+							&self.result,
+							w.origin(),
+							LookupCall {
+								function: self.ids.conj.into(),
+								arguments: vec![old_where, w],
+							},
+						))
+					} else {
+						Some(w)
+					}
+				})
 			}
-		}
-		for g in generators.iter_mut() {
-			let mut clauses = Vec::new();
-			for d in g.declarations() {
-				*decls.get_mut(&d).unwrap() = true;
-			}
-			for item in par_where.iter_mut() {
-				let valid = if let Some(w) = item {
-					ScopeTester::run(&self.result, &decls, w)
-				} else {
-					false
-				};
-				if valid {
-					clauses.push(item.take().unwrap());
-				}
-			}
-			if !clauses.is_empty() {
-				let origin = clauses[0].origin();
-				if clauses.len() > 1 {
-					g.set_where(Expression::new(
-						db,
-						&self.result,
-						origin,
-						LookupCall {
-							function: self.ids.forall.into(),
-							arguments: vec![Expression::new(
-								db,
-								&self.result,
-								origin,
-								ArrayLiteral(clauses),
-							)],
-						},
-					));
-				} else {
-					g.set_where(clauses.pop().unwrap());
-				}
-			}
-		}
-		for w in par_where {
-			assert!(w.is_none());
 		}
 
+		// Var where clauses need special treatment for undefinedness
+		//
+		// Since these should be able to guard against undefinedness in subsequent
+		// generators, we can't just move them inside the body and remove the
+		// where clause.
+		//
+		// Here we rewrite [x | i in foo where bar] (where bar is var bool)
+		// into [if w then x else <> endif | i in foo, w = bar where w]
+		//
+		// This way the where clause stays around and can be handled during
+		// totalisation but the option type part has already been introduced
+		// and can be erased accordingly.
 		if !var_where.is_empty() {
-			let origin = var_where[0].origin();
-			let condition = if var_where.len() > 1 {
+			// Add new assignment generators for each var where clause as early
+			// as possible.
+			let mut clauses = Vec::with_capacity(var_where.len());
+			var_where.sort_by_key(|(_, i)| *i);
+			for (w, idx) in var_where.into_iter().rev() {
+				let origin = w.origin();
+				let mut decl = Declaration::from_expression(db, false, w);
+				decl.annotations_mut().push(Expression::new(
+					db,
+					&self.result,
+					origin,
+					LookupIdentifier(self.ids.mzn_var_where_clause),
+				));
+				let decl_idx = self.result.add_declaration(Item::new(decl, origin));
+				let e = Expression::new(db, &self.result, origin, decl_idx);
+				generators.insert(
+					idx,
+					Generator::Assignment {
+						assignment: decl_idx,
+						where_clause: None,
+					},
+				);
+				clauses.push(e);
+			}
+
+			// Transform var where into optionality in the template
+			let origin = clauses[0].origin();
+			let condition = if clauses.len() > 1 {
 				Expression::new(
 					db,
 					&self.result,
@@ -314,13 +363,14 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 							db,
 							&self.result,
 							origin,
-							ArrayLiteral(var_where),
+							ArrayLiteral(clauses),
 						)],
 					},
 				)
 			} else {
-				var_where.pop().unwrap()
+				clauses.pop().unwrap()
 			};
+
 			return match surrounding {
 				SurroundingCall::Forall => {
 					// Rewrite var where clauses into implications
@@ -403,36 +453,30 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 }
 
 struct ScopeTester<'a, T: Marker> {
-	scope: &'a FxHashMap<DeclarationId<T>, bool>,
-	ok: bool,
+	gen_idx: &'a FxHashMap<DeclarationId<T>, usize>,
+	idx: usize,
 }
 
 impl<'a, T: Marker> Visitor<'_, T> for ScopeTester<'a, T> {
-	fn visit_expression(&mut self, model: &Model<T>, expression: &Expression<T>) {
-		if !self.ok {
-			return;
-		}
-		maybe_grow_stack(|| visit_expression(self, model, expression))
-	}
-
 	fn visit_identifier(&mut self, _model: &Model<T>, identifier: &ResolvedIdentifier<T>) {
 		if let ResolvedIdentifier::Declaration(idx) = identifier {
-			if let Some(false) = self.scope.get(idx) {
-				self.ok = false;
+			if let Some(idx) = self.gen_idx.get(idx) {
+				self.idx = self.idx.max(*idx);
 			}
 		}
 	}
 }
 
 impl<'a, T: Marker> ScopeTester<'a, T> {
+	/// Get the index plus one of the earliest comprehension to attach this to
 	fn run(
 		model: &Model<T>,
-		scope: &'a FxHashMap<DeclarationId<T>, bool>,
+		gen_idx: &'a FxHashMap<DeclarationId<T>, usize>,
 		expression: &Expression<T>,
-	) -> bool {
-		let mut st = Self { scope, ok: true };
+	) -> usize {
+		let mut st = Self { gen_idx, idx: 0 };
 		st.visit_expression(model, expression);
-		st.ok
+		st.idx
 	}
 }
 
@@ -467,11 +511,11 @@ mod test {
 			expect!([r#"
     function var bool: foo(var int: x);
     array [int] of var int: x;
-    array [int] of var opt int: y = [if foo(x_i) then let {
-      var opt int: _DECL_1 = x_i;
-    } in _DECL_1 else let {
-      var opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | x_i in x];
+    array [int] of var opt int: y = [if _DECL_1 then let {
+      var opt int: _DECL_2 = x_i;
+    } in _DECL_2 else let {
+      var opt int: _DECL_3 = <>;
+    } in _DECL_3 endif | x_i in x, _DECL_1 = foo(x_i)];
 "#]),
 		)
 	}
@@ -486,11 +530,11 @@ mod test {
 			"#,
 			expect!([r#"
     var set of int: x;
-    array [int] of var opt int: y = [if 'in'(x_i, x) then let {
-      opt int: _DECL_1 = x_i;
-    } in _DECL_1 else let {
-      opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | x_i in ub(x)];
+    array [int] of var opt int: y = [if _DECL_1 then let {
+      opt int: _DECL_2 = x_i;
+    } in _DECL_2 else let {
+      opt int: _DECL_3 = <>;
+    } in _DECL_3 endif | x_i in ub(x), _DECL_1 = 'in'(x_i, x)];
 "#]),
 		)
 	}
@@ -509,11 +553,11 @@ mod test {
     var set of int: x;
     function var bool: foo(var int: x);
     function bool: bar(int: x);
-    array [int] of var opt int: y = [if forall(['in'(x_i, x), 'in'(x_j, x), foo(x_i)]) then let {
-      opt int: _DECL_1 = x_i;
-    } in _DECL_1 else let {
-      opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | x_i in ub(x) where bar(x_i), x_j in ub(x) where bar(x_j)];
+    array [int] of var opt int: y = [if forall([_DECL_3, _DECL_2, _DECL_1]) then let {
+      opt int: _DECL_4 = x_i;
+    } in _DECL_4 else let {
+      opt int: _DECL_5 = <>;
+    } in _DECL_5 endif | x_i in ub(x) where bar(x_i), _DECL_1 = 'in'(x_i, x), _DECL_2 = foo(x_i), x_j in ub(x) where bar(x_j), _DECL_3 = 'in'(x_j, x)];
 "#]),
 		)
 	}
@@ -530,7 +574,7 @@ mod test {
 			expect!([r#"
     function var bool: foo(var int: x);
     var set of int: S;
-    constraint forall(['->'('in'(i, S), foo(i)) | i in ub(S)]);
+    constraint forall(['->'(_DECL_1, foo(i)) | i in ub(S), _DECL_1 = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -544,11 +588,11 @@ mod test {
 				var set of int: S;
 				constraint exists (i in S) (foo(i));
 			"#,
-			expect!([r"
+			expect!([r#"
     function var bool: foo(var int: x);
     var set of int: S;
-    constraint exists(['/\'('in'(i, S), foo(i)) | i in ub(S)]);
-"]),
+    constraint exists(['/\'(_DECL_1, foo(i)) | i in ub(S), _DECL_1 = 'in'(i, S)]);
+"#]),
 		)
 	}
 
@@ -562,7 +606,7 @@ mod test {
 			"#,
 			expect!([r#"
     var set of int: S;
-    var int: x = sum(['*'('in'(i, S), i) | i in ub(S)]);
+    var int: x = sum(['*'(_DECL_1, i) | i in ub(S), _DECL_1 = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -579,7 +623,7 @@ mod test {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var int: x = sum([if 'in'(i, S) then foo(i) else 0 endif | i in ub(S)]);
+    var int: x = sum([if _DECL_1 then foo(i) else 0 endif | i in ub(S), _DECL_1 = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -613,11 +657,11 @@ mod test {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var set of int: x = array2set([if 'in'(i, S) then let {
-      var opt int: _DECL_1 = foo(i);
-    } in _DECL_1 else let {
-      var opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | i in ub(S)]);
+    var set of int: x = array2set([if _DECL_1 then let {
+      var opt int: _DECL_2 = foo(i);
+    } in _DECL_2 else let {
+      var opt int: _DECL_3 = <>;
+    } in _DECL_3 endif | i in ub(S), _DECL_1 = 'in'(i, S)]);
 "#]),
 		)
 	}

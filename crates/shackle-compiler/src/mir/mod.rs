@@ -1,5 +1,7 @@
 //! Mid-level IR
 
+pub mod lower;
+pub mod pretty_print;
 pub mod ty;
 
 use ty::Ty;
@@ -7,30 +9,44 @@ use ty::Ty;
 use crate::{
 	hir::{BooleanLiteral, FloatLiteral, Identifier, IntegerLiteral, StringLiteral},
 	thir::source::Origin,
-	utils::arena::{Arena, ArenaIndex},
+	utils::{
+		arena::{Arena, ArenaIndex},
+		impl_enum_from,
+	},
 };
 
 #[allow(dead_code)]
 /// A mid-level IR program (MicroZinc)
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Model {
-	_entrypoint: Expression,
-	_annotations: Arena<Annotation>,
-	_functions: Arena<Function>,
+	/// Main entry point
+	pub entrypoint: Expression,
+	/// Annotation items
+	pub annotations: Arena<Annotation>,
+	/// Function items
+	pub functions: Arena<Function>,
 }
 
 /// An annotation item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Annotation {
-	_name: Identifier,
-	_parameter_count: u16,
+	/// Name of the annotation item
+	pub name: Identifier,
+	/// Number of parameters in the annotation item
+	pub parameter_count: u16,
 }
 
 /// A constraint item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Constraint {
-	_expression: Expression,
-	_annotations: Vec<AnnotationRef>,
+	/// The expression which must hold
+	pub expression: Expression,
+	/// The annotations
+	pub annotations: Vec<AnnotationRef>,
 }
 
 /// An annotation
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum AnnotationRef {
 	/// Identifier for declaration with a RHS expression
 	Identifier(Identifier),
@@ -42,16 +58,24 @@ pub enum AnnotationRef {
 pub type AnnotationId = ArenaIndex<Annotation>;
 
 /// A declaration item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Declaration {
-	_ty: Ty,
-	_domain: Option<Domain>,
-	_name: Identifier,
-	_definition: Option<Expression>,
+	/// The type of the variable
+	pub ty: Ty,
+	/// The domain of the variable
+	pub domain: Option<Domain>,
+	/// The name of the declaration
+	pub name: Identifier,
+	/// The RHS definition
+	pub definition: Option<Expression>,
+	/// The annotations
+	pub annotations: Vec<AnnotationRef>,
 }
 
 /// A domain
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Domain {
-	/// Identifier for declaration with a RHS expression
+	/// Identifier for domain
 	Identifier(Identifier),
 	/// Fully evaluated set domain
 	Set(Set),
@@ -59,25 +83,69 @@ pub enum Domain {
 
 #[allow(dead_code)]
 /// A function item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Function {
-	_name: Identifier,
-	_parameters: Vec<Identifier>,
-	_body: Option<Expression>,
+	/// The function name
+	pub name: Identifier,
+	/// The function parameters
+	pub parameters: Vec<Identifier>,
+	/// The function body
+	pub body: Option<Expression>,
 }
 
 /// An expression
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Expression {
-	_data: ExpressionData,
-	_ty: Ty,
-	_origin: Origin,
+	/// The expression data
+	pub data: ExpressionData,
+	/// The type of the expression
+	pub ty: Ty,
+	/// The origin of the expression
+	pub origin: Origin,
+}
+
+impl Expression {
+	/// Create a new expression
+	pub fn new(data: impl Into<ExpressionData>, ty: Ty, origin: Origin) -> Self {
+		Self {
+			data: data.into(),
+			ty,
+			origin,
+		}
+	}
+
+	/// Get whether this is a value
+	pub fn is_value(&self) -> bool {
+		matches!(self.data, ExpressionData::Value(_))
+	}
+
+	/// Convert into a value (panics if this isn't a value)
+	pub fn into_value(self) -> Value {
+		match self.data {
+			ExpressionData::Value(v) => Value::new(v, self.ty, self.origin),
+			_ => panic!("Not a value"),
+		}
+	}
+
+	/// Get this identifier if it is one
+	pub fn to_identifier(&self) -> Option<Identifier> {
+		if let ExpressionData::Value(ValueData::Literal(LiteralData::Identifier(i))) = &self.data {
+			Some(*i)
+		} else {
+			None
+		}
+	}
 }
 
 /// The expression data
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ExpressionData {
 	/// A let expression
 	Let(Let),
 	/// A call
 	Call(Call),
+	/// An interpreter intrinsic builtin
+	Builtin(Builtin),
 	/// An if-then-else expression
 	IfThenElse(IfThenElse),
 	/// A comprehension
@@ -85,47 +153,82 @@ pub enum ExpressionData {
 	/// A value
 	Value(ValueData),
 	/// A root-level forall
-	Forall(Comprehension),
+	ForAllRoot(Comprehension),
+}
+
+impl_enum_from!(ExpressionData::Let(Let));
+impl_enum_from!(ExpressionData::Call(Call));
+impl_enum_from!(ExpressionData::Builtin(Builtin));
+impl_enum_from!(ExpressionData::IfThenElse(IfThenElse));
+impl_enum_from!(ExpressionData::Comprehension(Comprehension));
+impl_enum_from!(ExpressionData::Value(ValueData));
+
+impl From<Value> for Expression {
+	fn from(value: Value) -> Self {
+		Self {
+			data: value.data.into(),
+			ty: value.ty,
+			origin: value.origin,
+		}
+	}
+}
+
+impl From<Literal> for Expression {
+	fn from(literal: Literal) -> Self {
+		Value::into(literal.into())
+	}
 }
 
 /// A let expression
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Let {
-	_items: Vec<LetItem>,
-	_result: Option<Identifier>,
+	/// Items in the let expression
+	pub items: Vec<LetItem>,
+	/// The result of the let expression
+	pub result: LetResult,
+}
+
+/// The result of a let expression
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum LetResult {
+	/// Root let which must hold
+	Root,
+	/// Returns result
+	Identifier(Identifier),
 }
 
 /// An item in a let expression
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum LetItem {
-	/// A constraint
+	/// A constraint which will hold
 	Constraint(Constraint),
 	/// A declaration
 	Declaration(Declaration),
 }
 
 /// A tuple literal
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Tuple {
 	/// Tuple members
 	pub members: Vec<Value>,
 }
+
 /// An array literal
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Array {
 	/// Array literal members
 	pub members: Vec<Value>,
 }
+
 /// A set literal
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Set {
 	/// Set literal members
 	pub members: Vec<Value>,
 }
-/// An array access
-pub struct ArrayAccess {
-	/// The array being indexed
-	pub array: Identifier,
-	/// The indices being used to index the array
-	pub indices: Vec<Literal>,
-}
 
 /// A tuple field access
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TupleAccess {
 	/// The tuple being accessed
 	pub tuple: Identifier,
@@ -134,6 +237,7 @@ pub struct TupleAccess {
 }
 
 /// A call
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Call {
 	/// The function being called
 	pub function: Identifier,
@@ -141,9 +245,32 @@ pub struct Call {
 	pub arguments: Vec<Value>,
 }
 
+/// An interpreter builtin
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum Builtin {
+	/// Get the value of the top-level input parameter of the given name
+	GetParameter(Identifier),
+	/// Index set coercion
+	ArrayNd(Box<ArrayNd>),
+	/// Show an expression
+	Show(Identifier),
+	/// Abort interpretation
+	Abort(Identifier),
+}
+
+/// The `arrayNd` builtin for index coercion
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct ArrayNd {
+	/// Each member is a list of indices
+	index_sets: Vec<Identifier>,
+	/// The array
+	array: Identifier,
+}
+
 /// An if-then-else expression
 ///
 /// This only has an if-then and else branch, so may need to be nested
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct IfThenElse {
 	/// The (par) condition
 	pub condition: Value,
@@ -154,9 +281,8 @@ pub struct IfThenElse {
 }
 
 /// A comprehension
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Comprehension {
-	/// The indices of the generated expression
-	pub indices: Option<Box<Expression>>,
 	/// The generated expression
 	pub expression: Box<Expression>,
 	/// The generators
@@ -164,6 +290,7 @@ pub struct Comprehension {
 }
 
 /// A generator in a comprehension
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Generator {
 	/// An iterator such as `i, j in foo where bar`
 	Iterator {
@@ -186,16 +313,30 @@ pub enum Generator {
 }
 
 /// A literal
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Literal {
-	_data: LiteralData,
-	_ty: Ty,
-	_origin: Origin,
+	/// The literal data
+	pub data: LiteralData,
+	/// The type of the literal
+	pub ty: Ty,
+	/// The origin of the literal
+	pub origin: Origin,
+}
+
+impl Literal {
+	/// Create a new literal
+	pub fn new(data: impl Into<LiteralData>, ty: Ty, origin: Origin) -> Self {
+		Self {
+			data: data.into(),
+			ty,
+			origin,
+		}
+	}
 }
 
 /// The literal data
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum LiteralData {
-	/// Bottom (cannot be evaluated)
-	Bottom,
 	/// A boolean
 	Boolean(BooleanLiteral),
 	/// An integer
@@ -210,14 +351,55 @@ pub enum LiteralData {
 	Identifier(Identifier),
 }
 
+impl_enum_from!(LiteralData::Boolean(BooleanLiteral));
+impl_enum_from!(LiteralData::Integer(IntegerLiteral));
+impl_enum_from!(LiteralData::Float(FloatLiteral));
+impl_enum_from!(LiteralData::String(StringLiteral));
+impl_enum_from!(LiteralData::Identifier(Identifier));
+
 /// A value
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Value {
-	_data: ValueData,
-	_ty: Ty,
-	_origin: Origin,
+	/// The value
+	pub data: ValueData,
+	/// The type of the value
+	pub ty: Ty,
+	/// The origin of the value
+	pub origin: Origin,
+}
+
+impl Value {
+	/// Create a new value
+	pub fn new(data: impl Into<ValueData>, ty: Ty, origin: Origin) -> Self {
+		Self {
+			data: data.into(),
+			ty,
+			origin,
+		}
+	}
+
+	/// Get this identifier if it is one
+	pub fn to_identifier(&self) -> Option<Identifier> {
+		if let ValueData::Literal(LiteralData::Identifier(i)) = &self.data {
+			Some(*i)
+		} else {
+			None
+		}
+	}
+}
+
+impl From<Literal> for Value {
+	fn from(lit: Literal) -> Self {
+		Self {
+			data: lit.data.into(),
+			ty: lit.ty,
+			origin: lit.origin,
+		}
+	}
 }
 
 /// The value data
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ValueData {
 	/// A literal
 	Literal(LiteralData),
@@ -227,8 +409,12 @@ pub enum ValueData {
 	Set(Set),
 	/// An array
 	Array(Array),
-	/// An array access
-	ArrayAccess(ArrayAccess),
 	/// A tuple access
 	TupleAccess(TupleAccess),
 }
+
+impl_enum_from!(ValueData::Literal(LiteralData));
+impl_enum_from!(ValueData::Tuple(Tuple));
+impl_enum_from!(ValueData::Set(Set));
+impl_enum_from!(ValueData::Array(Array));
+impl_enum_from!(ValueData::TupleAccess(TupleAccess));

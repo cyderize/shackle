@@ -8,6 +8,7 @@
 //!
 //! This representation is used to generate the MIR.
 
+pub mod analyse;
 pub mod db;
 pub mod lower;
 pub mod pretty_print;

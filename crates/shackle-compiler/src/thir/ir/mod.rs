@@ -14,11 +14,12 @@ use crate::{
 mod annotations;
 mod domain;
 mod expression;
+pub mod follow;
 mod item;
 pub mod traverse;
 
 pub use self::{annotations::*, domain::*, expression::*, item::*};
-use super::db::Thir;
+use super::{db::Thir, source::Origin};
 
 /// Entity counts
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -117,6 +118,19 @@ impl<T: Marker> Model<T> {
 	/// Get all items (including local items)
 	pub fn all_items(&self) -> impl '_ + Iterator<Item = ItemId<T>> {
 		self.items.iter().copied()
+	}
+
+	/// Get the origin for an item
+	pub fn item_origin(&self, item: ItemId<T>) -> Origin {
+		match item {
+			ItemId::Annotation(idx) => self[idx].origin(),
+			ItemId::Constraint(idx) => self[idx].origin(),
+			ItemId::Declaration(idx) => self[idx].origin(),
+			ItemId::Enumeration(idx) => self[idx].origin(),
+			ItemId::Function(idx) => self[idx].origin(),
+			ItemId::Output(idx) => self[idx].origin(),
+			ItemId::Solve => self.solve().unwrap().origin(),
+		}
 	}
 
 	/// Get the top-level annotation items

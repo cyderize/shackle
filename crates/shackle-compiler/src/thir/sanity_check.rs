@@ -23,7 +23,12 @@ pub fn sanity_check_thir(db: &dyn Thir) -> Arc<Diagnostics<Error>> {
 	// Pretty print with extra info for sanity checking types
 	let mut printer = PrettyPrinter::new(db, model.as_ref());
 	printer.old_compat = false;
-	printer.debug_types = true;
+	printer.expression_annotator = Some(Box::new(|e| {
+		Some(format!(
+			"shackle_type({:?})",
+			e.ty().pretty_print(db.upcast())
+		))
+	}));
 	let code = printer.pretty_print();
 
 	let mut new_db = CompilerDatabase::default();

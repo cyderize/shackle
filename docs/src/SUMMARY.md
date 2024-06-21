@@ -2,6 +2,7 @@
 
 [The Shackle Almanac](./foreword.md)
 
+- [Roadmap](./roadmap.md)
 - [The compilation process](./process.md)
   - [Parsing](./compilation/parsing.md)
   - [Abstract syntax tree](./compilation/ast/ast.md)

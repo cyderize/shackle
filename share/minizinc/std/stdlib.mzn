@@ -4,6 +4,11 @@
 % This file contains declarations of all functions, predicates and annotations
 % available in the base MiniZinc language.
 
+function bool: forall(array [int] of bool: x);
+function var bool: forall(array [int] of var bool: x);
+function bool: exists(array [int] of bool: x);
+function var bool: exists(array [int] of var bool: x);
+
 /***
  @groupdef MAIN The MiniZinc library
 */

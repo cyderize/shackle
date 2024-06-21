@@ -45,18 +45,40 @@ in (forall([b1,...,bk]), {e1, e2, tmp1, ..., tmpk ...})`
    `[ (true, e1), ..., pde1, ... pdek, ... (true,en) ]`~~
    Change type `array[...] of T` into `tuple(bool, array [...] of T` and change `[ e1, ..., (b1, pde1), ... (bk, pdek), ... en]` into `(b1 /\ ... /\ bk, [e1, pde1, ... pdek, ... en])`
 5. Array comprehensions
+
    - Partially defined generators are not permitted (static type error).
    - Partially defined generated expressions are fine. The resulting type changes from `array[...] of T` into `tuple(bool, array[...] of T)` (like array literals). May need to create `array [...] of tuple(bool, T)` first, then extract the definedness from that.\*\*\*\*
    - Partially defined where clauses are fine (they are their own Boolean context)
-   - These examples show why it would be a bad idea to allow partial generators. - par comprehensions
-     `[ pde | i in 0..10, j in x[i] ]`
-     `[ pde | i in 0..10, (b,e)=x[i] where b, j in e ]` - var generator comprehensions:
-     `var 0..10: x`
-     `[ pde | i in 0..10, j in i div x..100]`
-     `[ let { any: (b,t) = i div x..100;
-        any: (eb, et) = pde } in
-  if eb /\ b /\ j in t..100 then (true,et) else (b,<>) endif) |
-i in 0..10, j in ub(i div x..100) ]`
+   - These examples show why it would be a bad idea to allow partial generators.
+
+     - par comprehensions:
+
+       ```mzn
+       [ pde | i in 0..10, j in x[i] ]
+       ```
+
+       ```mzn
+       [ pde | i in 0..10, (b, e) = x[i] where b, j in e ]
+       ```
+
+     - var generator comprehensions:
+
+       ```mzn
+       var 0..10: x;
+       [ pde | i in 0..10, j in i div x..100 ];
+       ```
+
+       ```mzn
+       [
+         let {
+           any: (b,t) = i div x..100;
+           any: (eb, et) = pde;
+         } in if eb /\ b /\ j in t..100 then (true, et) else (b, <>) endif
+       |
+         i in 0..10, j in ub(i div x..100)
+       ]
+       ```
+
 6. Set comprehensions
    These are transformed into array comprehensions and `array2set` in a previous compiler phase.
 7. Array access  

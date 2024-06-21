@@ -4,6 +4,8 @@
 //! The `crate::thir::Visitor` and `crate::thir::Folder` traits are useful for implementing these.
 //! It is the responsibility of implementors to know what constructs are expected to be present at the stage they run.
 
+use totalise::totalise;
+
 use self::{
 	capturing_fn::decapture_model, comprehension::desugar_comprehension,
 	domain_constraint::rewrite_domains, erase_enum::erase_enum, erase_opt::erase_opt,
@@ -25,6 +27,7 @@ pub mod inlining;
 pub mod name_mangle;
 pub mod output;
 pub mod top_down_type;
+pub mod totalise;
 pub mod type_specialise;
 
 /// A THIR transform function
@@ -54,6 +57,7 @@ pub fn thir_transforms() -> impl FnMut(&dyn Thir, Model) -> Result<Model> {
 		erase_opt,
 		inline_functions,
 		decapture_model,
+		totalise,
 	])
 }
 
@@ -164,26 +168,15 @@ pub mod test {
 
 	impl NameMapper {
 		fn run(&mut self, db: &dyn Thir, model_ref: ModelRef, model: &mut Model) -> Vec<ItemId> {
-			let to_print: Vec<ItemId> = model
+			let to_print = model
 				.top_level_items()
-				.filter(|it| {
-					let origin = match it {
-						ItemId::Annotation(idx) => model[*idx].origin(),
-						ItemId::Constraint(idx) => model[*idx].origin(),
-						ItemId::Declaration(idx) => model[*idx].origin(),
-						ItemId::Enumeration(idx) => model[*idx].origin(),
-						ItemId::Function(idx) => model[*idx].origin(),
-						ItemId::Output(idx) => model[*idx].origin(),
-						ItemId::Solve => model.solve().unwrap().origin(),
-					};
-					match origin.node() {
-						Some(NodeRef::Item(item)) => item.model_ref(db.upcast()) == model_ref,
-						Some(NodeRef::Entity(entity)) => {
-							entity.item(db.upcast()).model_ref(db.upcast()) == model_ref
-						}
-						Some(NodeRef::Model(m)) => m == model_ref,
-						None => true,
+				.filter(|it| match model.item_origin(*it).node() {
+					Some(NodeRef::Item(item)) => item.model_ref(db.upcast()) == model_ref,
+					Some(NodeRef::Entity(entity)) => {
+						entity.item(db.upcast()).model_ref(db.upcast()) == model_ref
 					}
+					Some(NodeRef::Model(m)) => m == model_ref,
+					None => true,
 				})
 				.collect::<Vec<_>>();
 			for item in to_print.iter() {

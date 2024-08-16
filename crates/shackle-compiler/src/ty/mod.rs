@@ -928,18 +928,28 @@ impl Ty {
 					(TyData::Record(o1, f1), TyData::Record(o2, f2)) => {
 						// Union and subtype fields
 						// e.g. subtype of `record(int: a, bool: b)` and `record(bool: a)` is `record(bool: a, bool b)`
-						let mut fields = FxHashMap::default();
-						for (i, t) in f1.iter().chain(f2.iter()) {
-							match fields.entry(*i) {
+						let mut fields: FxHashMap<InternedString, (usize, Ty)> =
+							FxHashMap::default();
+						for (idx, (name, t)) in f1.iter().chain(f2.iter()).enumerate() {
+							match fields.entry(*name) {
 								Entry::Occupied(mut e) => {
-									*e.get_mut() = Ty::most_general_subtype(db, [*e.get(), *t])?
+									let (_, current_ty) = e.get_mut();
+									*current_ty = Ty::most_general_subtype(db, [*current_ty, *t])?
 								}
 								Entry::Vacant(e) => {
-									e.insert(*t);
+									e.insert((idx, *t));
 								}
 							}
 						}
-						TyData::Record(o1.max(o2), fields.into_iter().collect())
+						let mut result = fields.into_iter().collect::<Vec<_>>();
+						result.sort_by_key(|(_, (i, _))| *i);
+						TyData::Record(
+							o1.max(o2),
+							result
+								.into_iter()
+								.map(|(name, (_, ty))| (name, ty))
+								.collect(),
+						)
 					}
 					(TyData::Function(o1, f1), TyData::Function(o2, f2)) => TyData::Function(
 						o1.max(o2),

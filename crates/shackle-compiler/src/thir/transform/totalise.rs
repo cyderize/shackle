@@ -15,8 +15,8 @@ use crate::{
 		pretty_print::PrettyPrinter,
 		source::Origin,
 		traverse::{
-			add_model, fold_declaration_id, fold_expression, fold_function_id, Folder,
-			ReplacementMap,
+			add_model, fold_declaration_id, fold_expression, fold_function_body, fold_function_id,
+			Folder, ReplacementMap,
 		},
 		ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Constraint, Declaration,
 		DeclarationId, Domain, DomainData, Expression, ExpressionBuilder, ExpressionData, Function,
@@ -54,6 +54,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 	fn add_model(&mut self, db: &dyn Thir, model: &Model) {
 		add_model(self, db, model);
 		// Add bodies for root versions of functions
+		log::debug!("Adding bodies for root versions of functions");
 		self.in_root_fns = true;
 		for (f, i) in model.all_functions() {
 			if i.body().is_some() && self.root_fn_map.contains_key(&f) {
@@ -65,25 +66,27 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 	fn add_function(&mut self, db: &dyn Thir, model: &Model, f: FunctionId) {
 		let totality = self.totality[f];
 
-		let return_type = match totality {
-			Totality::Total => model[f].return_type(),
-			Totality::ParPartial => {
-				Ty::tuple(db.upcast(), [self.tys.par_bool, model[f].return_type()])
-			}
-			Totality::VarPartial => {
-				Ty::tuple(db.upcast(), [self.tys.var_bool, model[f].return_type()])
+		log::debug!(
+			"{} is {:?}",
+			PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
+			totality
+		);
+
+		let orig_return = model[f].return_type();
+		let return_type = if orig_return == self.tys.par_bool || orig_return == self.tys.var_bool {
+			// Booleans remain boolean
+			orig_return
+		} else {
+			match totality {
+				Totality::Total => orig_return,
+				Totality::ParPartial => Ty::tuple(db.upcast(), [self.tys.par_bool, orig_return]),
+				Totality::VarPartial => Ty::tuple(db.upcast(), [self.tys.var_bool, orig_return]),
 			}
 		};
 
 		if !matches!(totality, Totality::Total) {
 			// Add root version
-			let root_idx = self.add_fn_decl(
-				db,
-				model,
-				f,
-				model[f].name().root(db),
-				model[f].return_type(),
-			);
+			let root_idx = self.add_fn_decl(db, model, f, model[f].name().root(db), orig_return);
 			self.root_fn_map.insert(f, root_idx);
 			for (idx, root) in model[f]
 				.parameters()
@@ -104,6 +107,14 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 		} else {
 			fold_function_id(self, db, model, f)
 		}
+	}
+
+	fn fold_function_body(&mut self, db: &dyn Thir, model: &Model, f: FunctionId) {
+		log::debug!("Adding body for {}", {
+			let idx = self.fold_function_id(db, model, f);
+			PrettyPrinter::new(db, &self.totalised_model).pretty_print_signature(idx.into())
+		});
+		fold_function_body(self, db, model, f);
 	}
 
 	fn fold_declaration_id(
@@ -310,14 +321,28 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 				},
 			);
 		}
-		Let {
-			items,
-			in_expression: Box::new(if definedness.is_empty() {
-				in_expression
-			} else if in_expression.ty().is_bool(db.upcast()) {
-				// Capture partiality here
-				definedness.push(in_expression);
-				Expression::new(
+
+		if in_expression.ty() == self.tys.par_bool || in_expression.ty() == self.tys.var_bool {
+			// Capture partiality here
+			definedness.push(in_expression);
+			let parts = std::mem::take(&mut definedness);
+			if self.get_mode(&l.in_expression).is_root() {
+				for def in parts {
+					let o = def.origin();
+					let constraint = Constraint::new(false, def);
+					let constraint_idx = self
+						.totalised_model
+						.add_constraint(Item::new(constraint, o));
+					items.push(LetItem::Constraint(constraint_idx));
+				}
+				in_expression = Expression::new(
+					db,
+					&self.totalised_model,
+					l.in_expression.origin(),
+					BooleanLiteral(true),
+				);
+			} else {
+				in_expression = Expression::new(
 					db,
 					&self.totalised_model,
 					l.in_expression.origin(),
@@ -327,10 +352,17 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 							db,
 							&self.totalised_model,
 							l.in_expression.origin(),
-							ArrayLiteral(definedness),
+							ArrayLiteral(parts),
 						)],
 					},
-				)
+				);
+			}
+		}
+
+		Let {
+			items,
+			in_expression: Box::new(if definedness.is_empty() {
+				in_expression
 			} else {
 				let def = Expression::new(
 					db,
@@ -394,6 +426,12 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 			.totalised_model
 			.add_function(Item::new(function, ff.origin()));
 		self.replacement_map().insert_function(f, idx);
+
+		log::debug!(
+			"Added {}",
+			PrettyPrinter::new(db, &self.totalised_model).pretty_print_signature(idx.into()),
+		);
+
 		idx
 	}
 
@@ -1694,7 +1732,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 
 /// Totalise a model
 pub fn totalise(db: &dyn Thir, model: Model) -> Result<Model> {
-	log::info!("Performing totalisation0");
+	log::info!("Performing totalisation");
 	let mut totaliser = Totaliser {
 		ids: db.identifier_registry(),
 		tys: db.type_registry(),
@@ -1708,6 +1746,7 @@ pub fn totalise(db: &dyn Thir, model: Model) -> Result<Model> {
 		in_root_fns: false,
 	};
 	totaliser.add_model(db, &model);
+	log::info!("Finished totalisation");
 	Ok(totaliser.totalised_model)
 }
 
@@ -1932,6 +1971,46 @@ mod test {
     } in (if_then_else(_DECL_16, [(_DECL_12).1, (_DECL_14).1]), if_then_else(_DECL_16, [(_DECL_12).2, (_DECL_14).2])) | j in (_DECL_11).2]);
     } in (exists([_DECL_9, (_DECL_10).1]), (_DECL_10).2) | i in {1, 2}, _DECL_9 = bar(i)];
     } in (forall([forall([(_DECL_17).1 | _DECL_17 in _DECL_8])]), [_DECL_20 | _DECL_18 in _DECL_8, _DECL_19 = (_DECL_18).2, _DECL_20 in _DECL_19]);
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_totalise_bool_fns() {
+		check(
+			transformer(vec![
+				rewrite_domains,
+				top_down_type,
+				type_specialise,
+				desugar_comprehension,
+				erase_opt,
+				totalise,
+			]),
+			r#"
+				function int: foo(int: x) = let {
+					constraint false;
+				} in 1;
+                test bar(int: x) = let {
+					int: f = foo(x);
+				} in false;
+				constraint bar(1);
+			"#,
+			expect!([r#"
+    function int: foo_root(int: x) = let {
+      constraint false;
+    } in 1;
+    function tuple(bool, int): foo(int: x) = let {
+      bool: _DECL_1 = false;
+    } in (forall([_DECL_1]), 1);
+    function bool: bar_root(int: x) = let {
+      int: f = foo_root(x);
+      constraint false;
+    } in true;
+    function bool: bar(int: x) = let {
+      tuple(bool, int): f = foo(x);
+      int: _DECL_2 = (f).2;
+    } in forall([(f).1, false]);
+    constraint bar_root(1);
 "#]),
 		)
 	}

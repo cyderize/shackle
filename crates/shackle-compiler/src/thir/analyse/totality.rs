@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
+use super::{Mode, ModeAnalyser};
 use crate::{
 	constants::{IdentifierRegistry, TypeRegistry},
 	thir::{
@@ -16,7 +17,7 @@ use crate::{
 		ArrayComprehension, Callable, ConstraintId, Expression, FunctionId, FunctionItem,
 		IfThenElse, Model,
 	},
-	utils::{arena::ArenaMap, maybe_grow_stack},
+	utils::{arena::ArenaMap, maybe_grow_stack, refmap::RefMap},
 };
 
 /// Totality of a function
@@ -32,6 +33,7 @@ pub enum Totality {
 
 /// Get the totality of the functions in this model
 pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, Totality> {
+	let modes = ModeAnalyser::root_functions(db, model).run(db);
 	let ids = db.identifier_registry();
 	let mut todo = Vec::new();
 	let mut result = ArenaMap::with_capacity(model.functions_len());
@@ -39,13 +41,12 @@ pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, 
 		FxHashMap::default();
 	for (idx, f) in model.all_functions() {
 		result.insert(idx, Totality::Total);
-		let already_total = f.annotations().has(model, ids.promise_total)
-			|| f.domain().ty().is_bool(db.upcast())
-			|| f.body().is_none();
+		let already_total = f.annotations().has(model, ids.promise_total) || f.body().is_none();
 		if !already_total {
 			if let Some(body) = f.body() {
 				let mut v = TotalityVisitor {
 					db,
+					mode: &modes,
 					ids: db.identifier_registry(),
 					tys: db.type_registry(),
 					dependencies: FxHashMap::default(),
@@ -89,6 +90,7 @@ pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, 
 
 struct TotalityVisitor<'a> {
 	db: &'a dyn Thir,
+	mode: &'a RefMap<'a, Expression, Mode>,
 	ids: Arc<IdentifierRegistry>,
 	tys: Arc<TypeRegistry>,
 	dependencies: FxHashMap<FunctionId, bool>,
@@ -140,16 +142,23 @@ impl<'a> Visitor<'a> for TotalityVisitor<'a> {
 
 	fn visit_callable(&mut self, model: &'a Model, callable: &'a Callable) {
 		if let Callable::Function(f) = callable {
-			self.dependencies.insert(*f, self.in_var_ite);
+			let ty = model[*f].return_type();
+			if ty != self.tys.var_bool && ty != self.tys.par_bool {
+				// This function is partial if the called function is partial
+				self.dependencies.insert(*f, self.in_var_ite);
+			}
 		}
 		visit_callable(self, model, callable);
 	}
 
 	fn visit_expression(&mut self, model: &'a Model, expression: &'a Expression) {
 		if self.totality < Totality::VarPartial
-			&& expression.ty() != self.tys.par_bool
-			&& expression.ty() != self.tys.var_bool
+			&& (expression.ty() != self.tys.par_bool && expression.ty() != self.tys.var_bool
+				|| self.mode[expression].is_root())
 		{
+			// If an expression is boolean, we still allow it to affect the totality result if
+			// it's in root context because in that case we should still produce a root version
+			// during totalisation
 			maybe_grow_stack(|| {
 				visit_expression(self, model, expression);
 			});

@@ -81,6 +81,16 @@ pub mod test {
 		Result,
 	};
 
+	#[test]
+	fn test_thir_transforms() {
+		let mut db = CompilerDatabase::default();
+		db.set_input_files(Arc::new(vec![InputFile::String(
+			"".to_owned(),
+			InputLang::MiniZinc,
+		)]));
+		assert!(db.final_thir().is_ok());
+	}
+
 	/// Perform a transform on the THIR, and verify the result matches an expected value.
 	///
 	/// The expected value only includes items which are from the `source` (i.e. not from stdlib).

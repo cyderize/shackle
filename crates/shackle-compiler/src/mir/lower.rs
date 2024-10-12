@@ -3,7 +3,10 @@
 use std::sync::atomic::AtomicU32;
 
 use super::*;
-use crate::{thir, utils::arena::Arena};
+use crate::{
+	thir::{self, pretty_print::PrettyPrinter},
+	utils::arena::Arena,
+};
 
 fn declaration_identifier(
 	db: &dyn thir::db::Thir,
@@ -123,6 +126,10 @@ impl LoweredExpression {
 	fn into_value(self, db: &dyn thir::db::Thir, c: &mut Collector) -> Value {
 		match self {
 			LoweredExpression::Expression(e) => {
+				assert!(!matches!(
+					&e.data,
+					ExpressionData::Value(ValueData::Literal(LiteralData::Identifier(_)))
+				));
 				let name = fresh_identifier(db);
 				let ty = e.ty.clone();
 				let origin = e.origin;
@@ -207,9 +214,14 @@ impl Collector {
 		d: thir::DeclarationId,
 	) {
 		let ty = Collector::lower_ty(db, model[d].ty());
-		let definition = model[d]
-			.definition()
-			.map(|e| self.lower_expression(db, model, e).into_expression());
+		let definition = model[d].definition().map(|e| {
+			if e.ty().contains_bottom(db.upcast()) {
+				self.lower_expression_with_ty(db, model, e, ty.clone())
+			} else {
+				self.lower_expression(db, model, e)
+			}
+			.into_expression()
+		});
 		let domain = self.lower_domain(db, model, model[d].domain());
 		self.items.push(LetItem::Declaration(Declaration {
 			name: declaration_identifier(db, model, d),
@@ -227,8 +239,18 @@ impl Collector {
 		model: &thir::Model,
 		expression: &thir::Expression,
 	) -> LoweredExpression {
-		let origin = expression.origin();
 		let ty = Collector::lower_ty(db, expression.ty());
+		self.lower_expression_with_ty(db, model, expression, ty)
+	}
+
+	fn lower_expression_with_ty(
+		&mut self,
+		db: &dyn thir::db::Thir,
+		model: &thir::Model,
+		expression: &thir::Expression,
+		ty: Ty,
+	) -> LoweredExpression {
+		let origin = expression.origin();
 		match &**expression {
 			thir::ExpressionData::BooleanLiteral(b) => Literal::new(b.clone(), ty, origin).into(),
 			thir::ExpressionData::IntegerLiteral(i) => Literal::new(i.clone(), ty, origin).into(),
@@ -419,15 +441,31 @@ impl Collector {
 		domain: &thir::Domain,
 	) -> Option<Domain> {
 		match &**domain {
-			thir::DomainData::Unbounded => None,
 			thir::DomainData::Bounded(b) => {
 				let ident = self
 					.lower_expression(db, model, &b)
 					.into_identifier(db, self);
-				Some(Domain::Identifier(ident))
+				return Some(Domain::Identifier(ident));
 			}
-			_ => unreachable!(),
+			thir::DomainData::Set(s) => match &***s {
+				thir::DomainData::Bounded(b) => {
+					let ident = self
+						.lower_expression(db, model, &b)
+						.into_identifier(db, self);
+					return Some(Domain::Identifier(ident));
+				}
+				_ => (),
+			},
+			_ => (),
 		}
+		assert!(
+			domain
+				.walk()
+				.all(|d| !matches!(&**d, thir::DomainData::Bounded(_))),
+			"Unexpected domain {}",
+			PrettyPrinter::new(db, model).pretty_print_domain(domain)
+		);
+		None
 	}
 
 	/// Lower HIR/THIR type to MIR
@@ -456,7 +494,7 @@ impl Collector {
 			},
 			crate::ty::TyData::Array { dim, element, .. } => {
 				let mut e = Collector::lower_ty(db, element);
-				e.set_dim(dim.field_len(db.upcast()).unwrap() as u8);
+				e.set_dim(dim.field_len(db.upcast()).unwrap_or(1) as u8);
 				e
 			}
 			crate::ty::TyData::Set(inst, _, element) => {
@@ -491,6 +529,7 @@ mod test {
 		db.set_ignore_stdlib(true);
 		db.set_input_files(Arc::new(vec![InputFile::String(
 			r#"
+			predicate forall(array [int] of var bool);
 			var bool: p = true;
 			var bool: q = let {
 				constraint p;
@@ -504,10 +543,63 @@ mod test {
 		let expected = expect![[r#"
     let {
       var bool: p = true;
-      var bool: q = let {
-      bool: MZN_0 = true;
-      var bool: MZN_1 = forall([p, MZN_0]);
-    } in MZN_1;
+      var bool: _DECL_3 = p;
+      var bool: q = forall([_DECL_3, true]);
+    } in true"#]];
+		expected.assert_eq(&PrettyPrinter::print_expression(&db, &mir.entrypoint));
+	}
+
+	#[test]
+	fn test_mir_complex() {
+		let mut db = CompilerDatabase::default();
+		db.set_input_files(Arc::new(vec![InputFile::String(
+			r#"
+			var bool: p = true;
+			var bool: q = let {
+				constraint p;
+			} in true;
+			var 1..3: x;
+			function var int: foo(var int: v) = v div 2 + 1;
+			constraint x = foo(x);
+			"#
+			.to_owned(),
+			InputLang::MiniZinc,
+		)]));
+		let model = db.final_thir().unwrap();
+		let mir = lower_from_thir(&db, &model);
+		let expected = expect![[r#"
+    let {
+      ann: domain_propagation = domain;
+      bool: debug_mode = mzn_internal_check_debug_mode();
+      tuple(bool, int): mzn_min_version_required;
+      bool: _INTRODUCED_1721 = 'absent<opt int>'(mzn_min_version_required);
+      tuple(bool, int): _DECL_536 = 'deopt<opt int>'(mzn_min_version_required);
+      int: _INTRODUCED_1722 = mzn_compiler_version();
+      bool: _INTRODUCED_1723 = '<=<$T, $T>'(_DECL_536.2, _INTRODUCED_1722);
+      bool: _INTRODUCED_1724 = 'forall<array [int] of bool>'([_DECL_536.1, _INTRODUCED_1723]);
+      bool: _INTRODUCED_1725 = '\/<bool, bool>'(_INTRODUCED_1721, _INTRODUCED_1724);
+      int: _INTRODUCED_1726 = 'deopt_root<opt int>'(mzn_min_version_required);
+      string: _INTRODUCED_1727 = mzn_version_to_string(_INTRODUCED_1726);
+      string: _INTRODUCED_1728 = '++<string, string>'("This model requires MiniZinc version ", _INTRODUCED_1727);
+      string: _INTRODUCED_1729 = '++<string, string>'(_INTRODUCED_1728, " but you are running version ");
+      int: _INTRODUCED_1730 = mzn_compiler_version();
+      string: _INTRODUCED_1731 = mzn_version_to_string(_INTRODUCED_1730);
+      string: _INTRODUCED_1732 = '++<string, string>'(_INTRODUCED_1729, _INTRODUCED_1731);
+      constraint 'assert<bool, string>'(_INTRODUCED_1725, _INTRODUCED_1732);
+      tuple(bool, bool): mzn_opt_only_range_domains;
+      tuple(bool, bool): mzn_opt_annotate_defines_var;
+      tuple(bool, bool): mzn_ignore_symmetry_breaking_constraints;
+      tuple(bool, bool): mzn_ignore_redundant_constraints;
+      tuple(bool, bool): mzn_half_reify_clause;
+      ann: bounds_propagation = bounds;
+      set of int: _DECL_813 = '..<int, int>'(1, 2);
+      var bool: p = true;
+      var bool: _DECL_2200 = p;
+      var bool: q = 'forall<array [int] of var bool>'([_DECL_2200, true]);
+      set of int: _INTRODUCED_10683 = '..<int, int>'(1, 3);
+      var _INTRODUCED_10683: x;
+      var int: _INTRODUCED_10689 = foo_root(x);
+      constraint '=<any $T, any $T>'(x, _INTRODUCED_10689);
     } in true"#]];
 		expected.assert_eq(&PrettyPrinter::print_expression(&db, &mir.entrypoint));
 	}

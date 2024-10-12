@@ -132,17 +132,7 @@ impl PrettyPrinter {
 							"  {}: {}{}{};",
 							d.domain
 								.as_ref()
-								.map(|dom| match dom {
-									Domain::Identifier(ident) => ident.pretty_print(db.upcast()),
-									Domain::Set(s) => format!(
-										"{{{}}}",
-										s.members
-											.iter()
-											.map(|v| PrettyPrinter::print_value(db, v))
-											.collect::<Vec<_>>()
-											.join(", ")
-									),
-								})
+								.map(|dom| PrettyPrinter::print_domain(db, &d.ty, dom))
 								.unwrap_or_else(|| PrettyPrinter::print_type(&d.ty)),
 							d.name.pretty_print(db.upcast()),
 							d.annotations
@@ -221,6 +211,28 @@ impl PrettyPrinter {
 			LiteralData::Integer(i) => format!("{}", i.0),
 			LiteralData::String(s) => format!("{:?}", s.value(db.upcast())),
 		}
+	}
+
+	fn print_domain(db: &dyn crate::thir::db::Thir, ty: &Ty, dom: &Domain) -> String {
+		let mut parts = Vec::new();
+		if ty.is_var() {
+			parts.push("var".to_owned());
+		}
+		if ty.is_set() {
+			parts.push("set of".to_owned());
+		}
+		parts.push(match dom {
+			Domain::Identifier(ident) => ident.pretty_print(db.upcast()),
+			Domain::Set(s) => format!(
+				"{{{}}}",
+				s.members
+					.iter()
+					.map(|v| PrettyPrinter::print_value(db, v))
+					.collect::<Vec<_>>()
+					.join(", ")
+			),
+		});
+		parts.join(" ")
 	}
 
 	fn print_type(ty: &ty::Ty) -> String {

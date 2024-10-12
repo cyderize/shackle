@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
 	constants::IdentifierRegistry,
-	hir::{Identifier, IntegerLiteral, OptType, StringLiteral, VarType},
+	hir::{Identifier, IntegerLiteral, StringLiteral},
 	thir::{
 		db::Thir,
 		source::Origin,
@@ -69,18 +69,12 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DomainRewriter<Dst, Src>
 		d: DeclarationId<Src>,
 	) {
 		if model[d].definition().is_none() && !model[d].ty().known_par(db.upcast()) {
-			let array_of_opt = if let DomainData::Array(_, elem) = &**model[d].domain() {
-				elem.ty().inst(db.upcast()) == Some(VarType::Var)
-					&& elem.ty().opt(db.upcast()) == Some(OptType::Opt)
-			} else {
-				false
-			};
-			if array_of_opt
-				|| model[d]
-					.domain()
-					.walk()
-					.any(|d| matches!(&**d, DomainData::Tuple(_) | DomainData::Record(_)))
-			{
+			if model[d].domain().walk().any(|d| {
+				matches!(
+					&**d,
+					DomainData::Array { .. } | DomainData::Tuple(_) | DomainData::Record(_)
+				)
+			}) {
 				// Struct has no RHS, so unpack
 				let definition = self.unpack_struct(db, model, model[d].domain());
 				let idx = add_declaration(self, db, model, d);
@@ -235,7 +229,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DomainRewriter<Dst, Src>
 		folded.items.reserve(folded_items.len());
 		for (folded_item, item) in folded_items.into_iter().zip(l.items.iter()) {
 			if let (LetItem::Declaration(f), LetItem::Declaration(d)) = (folded_item, item) {
-				let domain_constraint = if model[*d].definition().is_some() {
+				let domain_constraint = model[*d].definition().and_then(|_| {
 					self.collect_domain_constraints(
 						db,
 						model,
@@ -243,9 +237,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DomainRewriter<Dst, Src>
 						&mut folded.items,
 						false,
 					)
-				} else {
-					None
-				};
+				});
 				if let Some(dom) = domain_constraint {
 					let name = Expression::new(
 						db,
@@ -730,9 +722,19 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 		model: &Model<Src>,
 		domain: &Domain<Src>,
 	) -> Expression<Dst> {
-		let mut let_items = Vec::new();
-		let in_expression = self.unpack_struct_inner(db, model, domain, &mut let_items);
-		if let_items.is_empty() {
+		// Stores the declarations for evaluating the domain expressions
+		let mut outer_let_items = Vec::new();
+		// Stores the variable declarations (can't escape comprehensions)
+		let mut inner_let_items = Vec::new();
+		let in_expression = self.unpack_struct_inner(
+			db,
+			model,
+			domain,
+			&mut outer_let_items,
+			&mut inner_let_items,
+		);
+		outer_let_items.extend(inner_let_items);
+		if outer_let_items.is_empty() {
 			in_expression
 		} else {
 			Expression::new(
@@ -740,7 +742,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 				&self.model,
 				in_expression.origin(),
 				Let {
-					items: let_items,
+					items: outer_let_items,
 					in_expression: Box::new(in_expression),
 				},
 			)
@@ -752,23 +754,26 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 		db: &dyn Thir,
 		model: &Model<Src>,
 		domain: &Domain<Src>,
-		let_items: &mut Vec<LetItem<Dst>>,
+		outer_let_items: &mut Vec<LetItem<Dst>>,
+		inner_let_items: &mut Vec<LetItem<Dst>>,
 	) -> Expression<Dst> {
 		match &**domain {
-			DomainData::Array(dim, elem)
-				if matches!(
-					&***elem,
-					DomainData::Tuple(_) | DomainData::Record(_) | DomainData::Array(_, _)
-				) || elem.ty().inst(db.upcast()) == Some(VarType::Var)
-					&& elem.ty().opt(db.upcast()) == Some(OptType::Opt) =>
-			{
-				self.unpack_array(db, model, domain.origin(), dim, elem)
+			DomainData::Array(dim, elem) => {
+				self.unpack_array(db, model, domain.origin(), dim, elem, outer_let_items)
 			}
 			DomainData::Tuple(fields) => {
 				let tuple = TupleLiteral(
 					fields
 						.iter()
-						.map(|field| self.unpack_struct_inner(db, model, field, let_items))
+						.map(|field| {
+							self.unpack_struct_inner(
+								db,
+								model,
+								field,
+								outer_let_items,
+								inner_let_items,
+							)
+						})
 						.collect(),
 				);
 				Expression::new(db, &self.model, domain.origin(), tuple)
@@ -780,7 +785,13 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						.map(|(ident, field)| {
 							(
 								*ident,
-								self.unpack_struct_inner(db, model, field, let_items),
+								self.unpack_struct_inner(
+									db,
+									model,
+									field,
+									outer_let_items,
+									inner_let_items,
+								),
 							)
 						})
 						.collect(),
@@ -788,14 +799,52 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 				Expression::new(db, &self.model, domain.origin(), record)
 			}
 			_ => {
-				let dom_decl = Declaration::new(false, self.fold_domain(db, model, domain));
+				let decl = Declaration::new(
+					false,
+					self.collect_domain(db, model, domain, outer_let_items),
+				);
+				let idx = self.model.add_declaration(Item::new(decl, domain.origin()));
+				let dom_expr = Expression::new(db, &self.model, domain.origin(), idx);
+				inner_let_items.push(LetItem::Declaration(idx));
+				dom_expr
+			}
+		}
+	}
+
+	fn collect_domain(
+		&mut self,
+		db: &dyn Thir,
+		model: &Model<Src>,
+		domain: &Domain<Src>,
+		let_items: &mut Vec<LetItem<Dst>>,
+	) -> Domain<Dst> {
+		let origin = domain.origin();
+		let ty = domain.ty();
+		match &**domain {
+			DomainData::Bounded(e) => {
+				let inst = ty.inst(db.upcast()).unwrap();
+				let opt = ty.opt(db.upcast()).unwrap();
+				let dom_decl =
+					Declaration::from_expression(db, false, self.fold_expression(db, model, e));
 				let dom_idx = self
 					.model
 					.add_declaration(Item::new(dom_decl, domain.origin()));
-				let dom_expr = Expression::new(db, &self.model, domain.origin(), dom_idx);
 				let_items.push(LetItem::Declaration(dom_idx));
-				dom_expr
+				Domain::bounded(
+					db,
+					origin,
+					inst,
+					opt,
+					Expression::new(db, &self.model, origin, dom_idx),
+				)
 			}
+			DomainData::Set(d) => {
+				let inst = ty.inst(db.upcast()).unwrap();
+				let opt = ty.opt(db.upcast()).unwrap();
+				let element = self.collect_domain(db, model, d, let_items);
+				Domain::set(db, origin, inst, opt, element)
+			}
+			_ => self.fold_domain(db, model, domain),
 		}
 	}
 
@@ -806,6 +855,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 		origin: Origin,
 		dims: &Domain<Src>,
 		elem: &Domain<Src>,
+		outer_let_items: &mut Vec<LetItem<Dst>>,
 	) -> Expression<Dst> {
 		let dims = match &**dims {
 			DomainData::Bounded(e) => {
@@ -828,6 +878,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 			.model
 			.add_declaration(Item::new(index_sets_decl, origin));
 		let index_sets_expr = Expression::new(db, &self.model, origin, index_sets_idx);
+		outer_let_items.push(LetItem::Declaration(index_sets_idx));
 
 		let mut generators = Vec::with_capacity(count);
 		for i in 1..=count {
@@ -852,7 +903,22 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 			});
 		}
 
-		let template = self.unpack_struct(db, model, elem);
+		let mut inner_let_items = Vec::new();
+		let in_expression =
+			self.unpack_struct_inner(db, model, elem, outer_let_items, &mut inner_let_items);
+		let template = if inner_let_items.is_empty() {
+			in_expression
+		} else {
+			Expression::new(
+				db,
+				&self.model,
+				origin,
+				Let {
+					items: inner_let_items,
+					in_expression: Box::new(in_expression),
+				},
+			)
+		};
 		let comprehension = Expression::new(
 			db,
 			&self.model,
@@ -867,17 +933,9 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 			db,
 			&self.model,
 			origin,
-			Let {
-				items: vec![LetItem::Declaration(index_sets_idx)],
-				in_expression: Box::new(Expression::new(
-					db,
-					&self.model,
-					origin,
-					LookupCall {
-						function: self.ids.mzn_array_kd.into(),
-						arguments: vec![index_sets_expr, comprehension],
-					},
-				)),
+			LookupCall {
+				function: self.ids.mzn_array_kd.into(),
+				arguments: vec![index_sets_expr, comprehension],
 			},
 		)
 	}
@@ -921,38 +979,49 @@ mod test {
 			"#,
 			expect!([r#"
     tuple(var int, var int): x = let {
-      var '..'(1, 3): _DECL_1;
-      var '..'(2, 4): _DECL_2;
-    } in (_DECL_1, _DECL_2);
+      set of int: _DECL_1 = '..'(1, 3);
+      set of int: _DECL_2 = '..'(2, 4);
+      var _DECL_1: _DECL_3;
+      var _DECL_2: _DECL_4;
+    } in (_DECL_3, _DECL_4);
     record(var int: a, var int: b): y = let {
-      var '..'(1, 3): _DECL_3;
-      var '..'(2, 4): _DECL_4;
-    } in (a: _DECL_3, b: _DECL_4);
+      set of int: _DECL_5 = '..'(1, 3);
+      set of int: _DECL_6 = '..'(2, 4);
+      var _DECL_5: _DECL_7;
+      var _DECL_6: _DECL_8;
+    } in (a: _DECL_7, b: _DECL_8);
     array [int] of tuple(var int, record(var int: a)): z = let {
-      tuple(set of int): _DECL_5 = ('..'(1, 2),);
-    } in mzn_array_kd(_DECL_5, [let {
-      var '..'(1, 3): _DECL_7;
-      var '..'(2, 4): _DECL_8;
-    } in (_DECL_7, (a: _DECL_8)) | _DECL_6 in (_DECL_5).1]);
-    array [int, int] of tuple(var int, var int): w = let {
-      tuple(set of int, set of int): _DECL_9 = ('..'(1, 2), '..'(2, 3));
+      tuple(set of int): _DECL_9 = ('..'(1, 2),);
+      set of int: _DECL_10 = '..'(1, 3);
+      set of int: _DECL_11 = '..'(2, 4);
     } in mzn_array_kd(_DECL_9, [let {
-      var '..'(1, 3): _DECL_12;
-      var '..'(2, 4): _DECL_13;
-    } in (_DECL_12, _DECL_13) | _DECL_10 in (_DECL_9).1, _DECL_11 in (_DECL_9).2]);
+      var _DECL_10: _DECL_13;
+      var _DECL_11: _DECL_14;
+    } in (_DECL_13, (a: _DECL_14)) | _DECL_12 in (_DECL_9).1]);
+    array [int, int] of tuple(var int, var int): w = let {
+      tuple(set of int, set of int): _DECL_15 = ('..'(1, 2), '..'(2, 3));
+      set of int: _DECL_16 = '..'(1, 3);
+      set of int: _DECL_17 = '..'(2, 4);
+    } in mzn_array_kd(_DECL_15, [let {
+      var _DECL_16: _DECL_20;
+      var _DECL_17: _DECL_21;
+    } in (_DECL_20, _DECL_21) | _DECL_18 in (_DECL_15).1, _DECL_19 in (_DECL_15).2]);
     var int: v = let {
       tuple(var int): m = let {
-      var '..'(1, 2): _DECL_14;
-    } in (_DECL_14,);
+      set of int: _DECL_22 = '..'(1, 2);
+      var _DECL_22: _DECL_23;
+    } in (_DECL_23,);
       record(var int: n): o = let {
-      var '..'(1, 3): _DECL_15;
-    } in (n: _DECL_15);
+      set of int: _DECL_24 = '..'(1, 3);
+      var _DECL_24: _DECL_25;
+    } in (n: _DECL_25);
     } in (m).1;
     array [int] of var opt int: p = let {
-      tuple(set of int): _DECL_16 = ('..'(1, 2),);
-    } in mzn_array_kd(_DECL_16, [let {
-      var opt '..'(1, 2): _DECL_18;
-    } in _DECL_18 | _DECL_17 in (_DECL_16).1]);
+      tuple(set of int): _DECL_26 = ('..'(1, 2),);
+      set of int: _DECL_27 = '..'(1, 2);
+    } in mzn_array_kd(_DECL_26, [let {
+      var opt _DECL_27: _DECL_29;
+    } in _DECL_29 | _DECL_28 in (_DECL_26).1]);
 "#]),
 		)
 	}
@@ -1064,8 +1133,18 @@ mod test {
 			expect!([r#"
     var '..'(1, 3): a;
     var set of '..'(1, 3): b;
-    array ['..'(1, 2)] of var '..'(1, 3): c;
-    array ['..'(1, 2)] of var set of '..'(1, 3): d;
+    array [int] of var int: c = let {
+      tuple(set of int): _DECL_1 = ('..'(1, 2),);
+      set of int: _DECL_2 = '..'(1, 3);
+    } in mzn_array_kd(_DECL_1, [let {
+      var _DECL_2: _DECL_4;
+    } in _DECL_4 | _DECL_3 in (_DECL_1).1]);
+    array [int] of var set of int: d = let {
+      tuple(set of int): _DECL_5 = ('..'(1, 2),);
+      set of int: _DECL_6 = '..'(1, 3);
+    } in mzn_array_kd(_DECL_5, [let {
+      var set of _DECL_6: _DECL_8;
+    } in _DECL_8 | _DECL_7 in (_DECL_5).1]);
     var int: e = let {
       var '..'(1, 3): x;
     } in x;
@@ -1096,6 +1175,39 @@ mod test {
       var int: _DECL_6 = x;
       constraint mzn_domain_constraint("<return value>", _DECL_6, _DECL_5);
     } in _DECL_6;
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_array_domain() {
+		check(
+			rewrite_domains,
+			r#"
+				array [1..3] of var int: x;
+				array [1..3] of var 1..3: y;
+				array [1..3] of tuple(var 1..2, var 3..4): z;
+			"#,
+			expect!([r#"
+    array [int] of var int: x = let {
+      tuple(set of int): _DECL_1 = ('..'(1, 3),);
+    } in mzn_array_kd(_DECL_1, [let {
+      var int: _DECL_3;
+    } in _DECL_3 | _DECL_2 in (_DECL_1).1]);
+    array [int] of var int: y = let {
+      tuple(set of int): _DECL_4 = ('..'(1, 3),);
+      set of int: _DECL_5 = '..'(1, 3);
+    } in mzn_array_kd(_DECL_4, [let {
+      var _DECL_5: _DECL_7;
+    } in _DECL_7 | _DECL_6 in (_DECL_4).1]);
+    array [int] of tuple(var int, var int): z = let {
+      tuple(set of int): _DECL_8 = ('..'(1, 3),);
+      set of int: _DECL_9 = '..'(1, 2);
+      set of int: _DECL_10 = '..'(3, 4);
+    } in mzn_array_kd(_DECL_8, [let {
+      var _DECL_9: _DECL_12;
+      var _DECL_10: _DECL_13;
+    } in (_DECL_12, _DECL_13) | _DECL_11 in (_DECL_8).1]);
 "#]),
 		)
 	}

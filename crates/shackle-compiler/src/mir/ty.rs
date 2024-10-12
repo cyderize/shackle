@@ -185,7 +185,13 @@ impl Ty {
 	/// Set whether this is a set type (panics if not possible)
 	pub fn set_set(&mut self, set: bool) {
 		match self {
-			Ty::Bool { is_set, .. } | Ty::Int { is_set, .. } => *is_set = set,
+			Ty::Bool { is_set, .. }
+			| Ty::Int { is_set, .. }
+			| Ty::Float {
+				is_var: false,
+				is_set,
+				..
+			} => *is_set = set,
 			_ => assert!(!set, "Type {:?} cannot be made a set", self),
 		}
 	}

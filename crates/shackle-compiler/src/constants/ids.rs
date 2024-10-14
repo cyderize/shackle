@@ -121,6 +121,8 @@ id_registry!(
 	product,
 	erase_enum,
 	mzn_erase_index_sets,
+	enum_of,
+	mzn_infinite_range,
 	forall,
 	exists,
 	set2array,

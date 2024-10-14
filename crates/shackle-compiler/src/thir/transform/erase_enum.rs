@@ -37,6 +37,7 @@ struct EnumEraser<Dst: Marker, Src: Marker = ()> {
 	identifier_replacement: FxHashMap<ResolvedIdentifier<Src>, DeclarationId<Dst>>,
 	mzn_enum_for_item: ArenaMap<EnumerationItem<Src>, DeclarationId<Dst>>,
 	enum_id_for_ty: FxHashMap<EnumRef, i64>,
+	defining_set_for_ty: FxHashMap<EnumRef, DeclarationId<Dst>>,
 }
 
 impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
@@ -61,6 +62,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		if model[f].name() == self.ids.erase_enum
 			|| model[f].name() == self.ids.mzn_to_enum
 			|| model[f].name() == self.ids.mzn_erase_index_sets
+			|| model[f].name() == self.ids.enum_of
 		{
 			// Remove unnecessary functions
 			return;
@@ -72,6 +74,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		if model[f].name() == self.ids.erase_enum
 			|| model[f].name() == self.ids.mzn_to_enum
 			|| model[f].name() == self.ids.mzn_erase_index_sets
+			|| model[f].name() == self.ids.enum_of
 		{
 			// Remove unnecessary functions
 			return;
@@ -194,6 +197,24 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 						return self.fold_expression(db, model, &c.arguments[0]);
 					} else if model[*f].name() == self.ids.mzn_to_enum {
 						return self.fold_expression(db, model, &c.arguments[1]);
+					} else if model[*f].name() == self.ids.enum_of {
+						if let Some(e) = c.arguments[0].ty().enum_ty(db.upcast()) {
+							return Expression::new(
+								db,
+								&self.model,
+								expression.origin(),
+								self.defining_set_for_ty[&e],
+							);
+						}
+						return Expression::new(
+							db,
+							&self.model,
+							expression.origin(),
+							LookupCall {
+								function: self.ids.mzn_infinite_range.into(),
+								arguments: vec![],
+							},
+						);
 					}
 				}
 			}
@@ -359,6 +380,8 @@ impl<Src: Marker, Dst: Marker> EnumEraser<Dst, Src> {
 			.add_declaration(Item::new(defining_set_declaration, origin));
 		self.identifier_replacement
 			.insert(ResolvedIdentifier::Enumeration(idx), defining_set);
+		self.defining_set_for_ty
+			.insert(enumeration.enum_type(), defining_set);
 
 		// Create declarations for atoms
 		//   set of int: A = mzn_construct_enum(mzn_enum, i);
@@ -405,6 +428,7 @@ pub fn erase_enum(db: &dyn Thir, model: Model) -> Result<Model> {
 		mzn_enum_for_item: ArenaMap::with_capacity(model.enumerations_len()),
 		enum_id_for_ty: FxHashMap::default(),
 		identifier_replacement: FxHashMap::default(),
+		defining_set_for_ty: FxHashMap::default(),
 	};
 	c.add_model(db, &model);
 	Ok(c.model)
@@ -506,6 +530,25 @@ mod test {
     int: A = mzn_construct_enum(_DECL_1, 1);
     Foo: x = to_enum(Foo, 1);
     int: y = A;
+"#]),
+		);
+	}
+
+	#[test]
+	fn test_erase_enum_of() {
+		check(
+			transformer(vec![type_specialise, erase_enum]),
+			r#"
+                enum Foo = {A};
+				any: x = enum_of(A);
+            "#,
+			expect!([r#"
+    tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_1 = mzn_get_enum([("A", let {
+      array [int] of tuple(int, set of int): _DECL_2 = [];
+    } in _DECL_2)]);
+    set of int: Foo = mzn_defining_set(_DECL_1);
+    int: A = mzn_construct_enum(_DECL_1, 1);
+    set of int: x = Foo;
 "#]),
 		);
 	}

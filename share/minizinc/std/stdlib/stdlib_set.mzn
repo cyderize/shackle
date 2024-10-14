@@ -208,3 +208,5 @@ function array [int] of $$E: set_to_sparse_inverse(set of $$E: S);
 when it has a definition. */
 function array [int] of var opt $$E: set2iter(var set of $$E: s)
 	:: mzn_internal_representation;
+
+function set of int: mzn_infinite_range() :: mzn_inline = -infinity..infinity;

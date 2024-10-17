@@ -59,3 +59,13 @@ impl Request for ViewPrettyPrint {
 
 	const METHOD: &'static str = "shackle-ls/viewPrettyPrint";
 }
+
+/// Request to view pretty printed MIR for a file
+pub enum ViewMir {}
+
+impl Request for ViewMir {
+	type Params = TextDocumentPositionParams;
+	type Result = String;
+
+	const METHOD: &'static str = "shackle-ls/viewMir";
+}

@@ -428,6 +428,14 @@ impl FunctionName {
 		}
 	}
 
+	/// Whether or not this function name ends with `_root`
+	pub fn is_root(&self, db: &dyn Thir) -> bool {
+		match *self {
+			FunctionName::Named(i) => i.lookup(db.upcast()).ends_with("_root"),
+			_ => false,
+		}
+	}
+
 	/// Get as an identifier
 	pub fn as_identifier(&self, db: &dyn Thir) -> Identifier {
 		match self {

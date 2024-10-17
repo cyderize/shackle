@@ -744,7 +744,7 @@ function var float: log10(var float: x) :: promise_total =
 	} in r;
 
 /** @group stdlib.builtins.explog Return \(\log_{2} \a x\) */
-function float: log2(float: x);
+function float: log2(float: x) = ln(x) / ln(2);
 /** @group stdlib.builtins.explog Return \(\log_{2} \a x\) */
 function var float: log2(var float: x) :: promise_total =
 	let {
@@ -753,7 +753,7 @@ function var float: log2(var float: x) :: promise_total =
 	} in r;
 
 /** @group stdlib.builtins.explog Return \(\log_{\a x} \a y\) */
-function float: log(float: x, float: y);
+function float: log(float: x, float: y) = ln(y) / ln(x);
 
 /***
   @groupdef stdlib.builtins.trigonometric Trigonometric functions

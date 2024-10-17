@@ -10,13 +10,14 @@ mod view_ast;
 mod view_cst;
 mod view_format_ir;
 mod view_hir;
+mod view_mir;
 mod view_pretty_print;
 mod view_scope;
 
 pub use self::{
 	completions::*, format::*, goto_definition::*, hover::*, references::*, rename_symbol::*,
 	semantic_tokens::*, vfs::*, view_ast::*, view_cst::*, view_format_ir::*, view_hir::*,
-	view_pretty_print::*, view_scope::*,
+	view_mir::*, view_pretty_print::*, view_scope::*,
 };
 
 #[cfg(test)]

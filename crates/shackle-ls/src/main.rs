@@ -88,6 +88,7 @@ fn main_loop(
 					.on::<ViewHirHandler, _, _>()
 					.on::<ViewScopeHandler, _, _>()
 					.on::<ViewPrettyPrintHandler, _, _>()
+					.on::<ViewMirHandler, _, _>()
 					.on::<GotoDefinitionHandler, _, _>()
 					.on::<ReferencesHandler, _, _>()
 					.on::<RenameHandler, _, _>()

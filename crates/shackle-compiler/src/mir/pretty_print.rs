@@ -1,5 +1,10 @@
 //! Pretty printing for MIR
 //!
+
+use std::fmt::Write;
+
+use db::Mir;
+
 use super::*;
 
 /// Pretty printing for MIR
@@ -7,41 +12,100 @@ pub struct PrettyPrinter;
 
 impl PrettyPrinter {
 	/// Print a model
-	pub fn print_model(_db: &dyn crate::thir::db::Thir, _model: &Model) -> String {
-		todo!()
+	pub fn print_model(db: &dyn Mir, model: &Model) -> String {
+		let mut w = String::new();
+		for (_, a) in model.annotations.iter() {
+			writeln!(&mut w, "{};", PrettyPrinter::print_annotation(db, a)).unwrap();
+		}
+		for (_, f) in model.functions.iter() {
+			writeln!(&mut w, "{};", PrettyPrinter::print_function(db, f)).unwrap();
+		}
+		writeln!(
+			&mut w,
+			"function var bool: mzn_entrypoint() = {};",
+			PrettyPrinter::print_expression(db, &model.entrypoint)
+		)
+		.unwrap();
+		w
+	}
+
+	/// Print a function item
+	pub fn print_function(db: &dyn Mir, function: &Function) -> String {
+		let mut w = String::new();
+		write!(
+			&mut w,
+			"function {}: {}{}",
+			PrettyPrinter::print_type(&function.ty),
+			function.name.pretty_print(db.upcast()),
+			if function.parameters.is_empty() {
+				"".to_owned()
+			} else {
+				format!(
+					"({})",
+					function
+						.parameters
+						.iter()
+						.map(|p| format!(
+							"{}: {}",
+							PrettyPrinter::print_type(&p.ty),
+							p.name.pretty_print(db.upcast())
+						))
+						.collect::<Vec<_>>()
+						.join(", ")
+				)
+			}
+		)
+		.unwrap();
+		if let Some(body) = &function.body {
+			write!(&mut w, " = {}", PrettyPrinter::print_expression(db, body)).unwrap();
+		}
+		w
+	}
+
+	/// Print an annotation item
+	pub fn print_annotation(db: &dyn Mir, annotation: &Annotation) -> String {
+		format!(
+			"annotation {}({})",
+			annotation.name.pretty_print(db.upcast()),
+			annotation
+				.parameters
+				.iter()
+				.map(|p| format!(
+					"{}: {}",
+					PrettyPrinter::print_type(&p.ty),
+					p.name.pretty_print(db.upcast())
+				))
+				.collect::<Vec<_>>()
+				.join(", ")
+		)
 	}
 
 	/// Print an expression
-	pub fn print_expression(db: &dyn crate::thir::db::Thir, expression: &Expression) -> String {
+	pub fn print_expression(db: &dyn Mir, expression: &Expression) -> String {
 		PrettyPrinter::print_expression_data(db, &expression.data)
 	}
 
 	/// Print a value
-	pub fn print_value(db: &dyn crate::thir::db::Thir, value: &Value) -> String {
+	pub fn print_value(db: &dyn Mir, value: &Value) -> String {
 		PrettyPrinter::print_value_data(db, &value.data)
 	}
 
 	/// Print a literal
-	pub fn print_literal(db: &dyn crate::thir::db::Thir, literal: &Literal) -> String {
+	pub fn print_literal(db: &dyn Mir, literal: &Literal) -> String {
 		PrettyPrinter::print_literal_data(db, &literal.data)
 	}
 
-	fn print_expression_data(db: &dyn crate::thir::db::Thir, data: &ExpressionData) -> String {
+	fn print_expression_data(db: &dyn Mir, data: &ExpressionData) -> String {
 		match data {
-			ExpressionData::Builtin(b) => match b {
-				Builtin::GetParameter(p) => p.pretty_print(db.upcast()),
-				Builtin::ArrayNd(c) => format!(
-					"arrayNd({},{})",
-					c.index_sets
-						.iter()
-						.map(|i| i.pretty_print(db.upcast()))
-						.collect::<Vec<_>>()
-						.join(", "),
-					c.array.pretty_print(db.upcast())
-				),
-				Builtin::Abort(i) => format!("abort({})", i.pretty_print(db.upcast())),
-				Builtin::Show(i) => format!("show({})", i.pretty_print(db.upcast())),
-			},
+			ExpressionData::Builtin(b) => format!(
+				"{}({})",
+				b.name(),
+				b.arguments()
+					.into_iter()
+					.map(|arg| PrettyPrinter::print_value(db, arg))
+					.collect::<Vec<_>>()
+					.join(", ")
+			),
 			ExpressionData::Call(c) => {
 				let f = c.function.pretty_print(db.upcast());
 				let args = c
@@ -166,7 +230,7 @@ impl PrettyPrinter {
 		}
 	}
 
-	fn print_value_data(db: &dyn crate::thir::db::Thir, data: &ValueData) -> String {
+	fn print_value_data(db: &dyn Mir, data: &ValueData) -> String {
 		match data {
 			ValueData::Array(a) => format!(
 				"[{}]",
@@ -202,7 +266,7 @@ impl PrettyPrinter {
 		}
 	}
 
-	fn print_literal_data(db: &dyn crate::thir::db::Thir, data: &LiteralData) -> String {
+	fn print_literal_data(db: &dyn Mir, data: &LiteralData) -> String {
 		match data {
 			LiteralData::Boolean(b) => if b.0 { "true" } else { "false" }.to_owned(),
 			LiteralData::Float(f) => format!("{}", f.value()),
@@ -213,7 +277,7 @@ impl PrettyPrinter {
 		}
 	}
 
-	fn print_domain(db: &dyn crate::thir::db::Thir, ty: &Ty, dom: &Domain) -> String {
+	fn print_domain(db: &dyn Mir, ty: &Ty, dom: &Domain) -> String {
 		let mut parts = Vec::new();
 		if ty.is_var() {
 			parts.push("var".to_owned());

@@ -15,6 +15,7 @@ use crate::{
 	diagnostics::FileError,
 	file::{DefaultFileHandler, FileHandler, FileRef, FileRefData, InputFile, ModelRef},
 	hir::db::{Hir, HirStorage},
+	mir::db::{Mir, MirStorage},
 	syntax::db::{SourceParser, SourceParserStorage},
 	thir::db::{Thir, ThirStorage},
 	ty::{NewType, NewTypeData, Ty, TyData},
@@ -180,7 +181,8 @@ impl From<InternedStringData> for String {
 	SourceParserStorage,
 	HirStorage,
 	InternerStorage,
-	ThirStorage
+	ThirStorage,
+	MirStorage
 )]
 pub struct CompilerDatabase {
 	storage: salsa::Storage<CompilerDatabase>,
@@ -288,3 +290,4 @@ impl_upcast!(CompilerDatabase, SourceParser);
 impl_upcast!(CompilerDatabase, Interner);
 impl_upcast!(CompilerDatabase, Hir);
 impl_upcast!(CompilerDatabase, Thir);
+impl_upcast!(CompilerDatabase, Mir);

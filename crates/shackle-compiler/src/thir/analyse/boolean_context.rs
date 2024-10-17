@@ -159,10 +159,11 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 						}
 					}
 					if let Some(b) = model[f].body() {
-						let promise_total = model[f]
-							.annotations()
-							.has(model, analyser.ids.promise_total);
-						analyser.update(b, if promise_total { root } else { non_root }, false);
+						let is_root = model[f].name().is_root(db)
+							|| model[f]
+								.annotations()
+								.has(model, analyser.ids.promise_total);
+						analyser.update(b, if is_root { root } else { non_root }, false);
 					}
 				}
 				ItemId::Solve => {

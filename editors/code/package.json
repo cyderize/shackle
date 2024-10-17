@@ -58,6 +58,10 @@
 			{
 				"command": "shackleLanguageServer.viewPrettyPrint",
 				"title": "MiniZinc: View Pretty Printed MiniZinc"
+			},
+			{
+				"command": "shackleLanguageServer.viewMir",
+				"title": "MiniZinc: View MIR"
 			}
 		],
 		"grammars": [

@@ -57,7 +57,10 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 		log::debug!("Adding bodies for root versions of functions");
 		self.in_root_fns = true;
 		for (f, i) in model.all_functions() {
-			if i.body().is_some() && self.root_fn_map.contains_key(&f) {
+			if i.body().is_some()
+				&& self.root_fn_map.contains_key(&f)
+				&& !self.already_has_root_version(f)
+			{
 				self.fold_function_body(db, model, f);
 			}
 		}
@@ -85,15 +88,31 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 		};
 
 		if !matches!(totality, Totality::Total) {
-			// Add root version
-			let root_idx = self.add_fn_decl(db, model, f, model[f].name().root(db), orig_return);
-			self.root_fn_map.insert(f, root_idx);
-			for (idx, root) in model[f]
-				.parameters()
-				.iter()
-				.zip(self.totalised_model[root_idx].parameters())
-			{
-				self.root_fn_decl_map.insert(*idx, *root);
+			let root_name = model[f].name().root(db);
+
+			if let Ok(existing) = model.lookup_function(
+				db,
+				root_name,
+				&model[f]
+					.parameters()
+					.iter()
+					.map(|p| model[*p].ty())
+					.collect::<Vec<_>>(),
+			) {
+				// Root version already exists
+				let folded = self.fold_function_id(db, model, existing.function);
+				self.root_fn_map.insert(f, folded);
+			} else {
+				// Add root version
+				let root_idx = self.add_fn_decl(db, model, f, root_name, orig_return);
+				self.root_fn_map.insert(f, root_idx);
+				for (idx, root) in model[f]
+					.parameters()
+					.iter()
+					.zip(self.totalised_model[root_idx].parameters())
+				{
+					self.root_fn_decl_map.insert(*idx, *root);
+				}
 			}
 		}
 
@@ -103,6 +122,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 
 	fn fold_function_id(&mut self, db: &dyn Thir, model: &Model, f: FunctionId) -> FunctionId<Dst> {
 		if self.in_root_fns {
+			// Note that when totalising a call, we check for the root version there instead.
 			self.root_fn_map[&f]
 		} else {
 			fold_function_id(self, db, model, f)
@@ -1728,6 +1748,14 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 		);
 		false
 	}
+
+	/// Whether there is a user-defined root version already
+	fn already_has_root_version(&self, f: FunctionId) -> bool {
+		if let Some(r) = self.root_fn_map.get(&f) {
+			return self.totalised_model[*r].body().is_some();
+		}
+		false
+	}
 }
 
 /// Totalise a model
@@ -2011,6 +2039,54 @@ mod test {
       int: _DECL_2 = (f).2;
     } in forall([(f).1, false]);
     constraint bar_root(1);
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_totalise_existing_root() {
+		check_no_stdlib(
+			totalise,
+			r#"
+                predicate forall(array [int] of var bool);
+                test forall(array [int] of bool);
+				function var int: if_then_else(array [int] of var bool, array [int] of var int);
+				function var bool: if_then_else(array [int] of var bool, array [int] of var bool);
+				predicate p(var int: x, var int: y);
+				predicate q(var int: x);
+				function var int: foo_root(var int: x) = 
+					let {
+						var int: y;
+						constraint q(x);
+						constraint p(x, y);
+					} in y;
+				function var int: foo(var int: x) =
+					let {
+						var int: xx = if q(x) then x else 1 endif;
+						constraint q(x);
+					} in foo_root(xx);
+			"#,
+			expect!([r#"
+    function var bool: forall(array [int] of var bool: _DECL_1);
+    function bool: forall(array [int] of bool: _DECL_2);
+    function var int: if_then_else(array [int] of var bool: _DECL_3, array [int] of var int: _DECL_4);
+    function var bool: if_then_else(array [int] of var bool: _DECL_5, array [int] of var bool: _DECL_6);
+    function var bool: p(var int: x, var int: y);
+    function var bool: q(var int: x);
+    function var int: foo_root(var int: x) = let {
+      var int: y;
+      constraint q(x);
+      constraint p(x, y);
+    } in y;
+    function tuple(var bool, var int): foo(var int: x) = let {
+      var int: xx = let {
+      var int: _DECL_13 = x;
+      int: _DECL_14 = 1;
+      array [int] of var bool: _DECL_15 = [q(x), true];
+    } in if_then_else(_DECL_15, [_DECL_13, _DECL_14]);
+      var bool: _DECL_17 = q(x);
+    } in (forall([_DECL_17]), foo_root(xx));
+    solve satisfy;
 "#]),
 		)
 	}

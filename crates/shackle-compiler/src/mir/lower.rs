@@ -30,6 +30,8 @@ fn fresh_identifier(db: &dyn thir::db::Thir) -> Identifier {
 
 /// Create MIR from THIR
 pub fn lower_from_thir(db: &dyn thir::db::Thir, m: &thir::Model) -> Model {
+	let tys = db.type_registry();
+
 	let mut annotations = Arena::default();
 	let mut functions = Arena::default();
 
@@ -40,27 +42,41 @@ pub fn lower_from_thir(db: &dyn thir::db::Thir, m: &thir::Model) -> Model {
 			thir::ItemId::Annotation(a) => {
 				annotations.insert(Annotation {
 					name: m[a].name.unwrap(),
-					parameter_count: m[a]
+					parameters: m[a]
 						.parameters
 						.as_ref()
-						.map(|p| p.len())
-						.unwrap_or_default() as u16,
+						.iter()
+						.flat_map(|ps| {
+							ps.iter().map(|p| Parameter {
+								ty: Collector::lower_ty(db, m[*p].ty()),
+								name: declaration_identifier(db, m, *p),
+							})
+						})
+						.collect(),
 				});
 			}
 			thir::ItemId::Function(f) => {
-				functions.insert(Function {
-					name: m[f].mangled_name(db),
-					parameters: m[f]
-						.parameters()
-						.iter()
-						.map(|p| declaration_identifier(db, m, *p))
-						.collect(),
-					body: m[f].body().map(|body| {
-						let mut c = Collector::default();
-						let result = c.lower_expression(db, m, body);
-						c.finish(db, result)
-					}),
-				});
+				if m[f].body().is_some()
+					|| (m[f].return_type() == tys.var_bool && !m[f].is_polymorphic())
+				{
+					functions.insert(Function {
+						name: m[f].mangled_name(db),
+						ty: Collector::lower_ty(db, m[f].return_type()),
+						parameters: m[f]
+							.parameters()
+							.iter()
+							.map(|p| Parameter {
+								ty: Collector::lower_ty(db, m[*p].ty()),
+								name: declaration_identifier(db, m, *p),
+							})
+							.collect(),
+						body: m[f].body().map(|body| {
+							let mut c = Collector::default();
+							let result = c.lower_expression(db, m, body);
+							c.finish(db, result)
+						}),
+					});
+				}
 			}
 			thir::ItemId::Constraint(c) => root_collector.collect_constraint(db, &m, c),
 			thir::ItemId::Declaration(d) => root_collector.collect_declaration(db, &m, d),
@@ -383,7 +399,7 @@ impl Collector {
 						db,
 						Expression::new(
 							IfThenElse {
-								condition,
+								condition: Box::new(condition),
 								then: Box::new({
 									let mut c = Collector::default();
 									let result = c.lower_expression(db, model, &branch.result);
@@ -592,10 +608,10 @@ mod test {
       tuple(bool, bool): mzn_ignore_redundant_constraints;
       tuple(bool, bool): mzn_half_reify_clause;
       ann: bounds_propagation = bounds;
-      set of int: _DECL_813 = '..<int, int>'(1, 2);
+      set of int: _DECL_809 = '..<int, int>'(1, 2);
       var bool: p = true;
-      var bool: _DECL_2200 = p;
-      var bool: q = 'forall<array [int] of var bool>'([_DECL_2200, true]);
+      var bool: _DECL_2196 = p;
+      var bool: q = 'forall<array [int] of var bool>'([_DECL_2196, true]);
       set of int: _INTRODUCED_10683 = '..<int, int>'(1, 3);
       var _INTRODUCED_10683: x;
       var int: _INTRODUCED_10689 = foo_root(x);

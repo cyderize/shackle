@@ -1,5 +1,5 @@
 //! Module containing mid-level IR type representation
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A mid-level IR type
 #[allow(variant_size_differences)]
@@ -47,7 +47,7 @@ pub enum Ty {
 		/// Dimensions (0 if not an array)
 		dim: u8,
 		/// Types of the fields
-		fields: Rc<[Ty]>,
+		fields: Arc<[Ty]>,
 	},
 }
 

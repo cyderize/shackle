@@ -41,7 +41,9 @@ pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, 
 		FxHashMap::default();
 	for (idx, f) in model.all_functions() {
 		result.insert(idx, Totality::Total);
-		let already_total = f.annotations().has(model, ids.promise_total) || f.body().is_none();
+		let already_total = f.annotations().has(model, ids.promise_total)
+			|| f.name().is_root(db)
+			|| f.body().is_none();
 		if !already_total {
 			if let Some(body) = f.body() {
 				let mut v = TotalityVisitor {

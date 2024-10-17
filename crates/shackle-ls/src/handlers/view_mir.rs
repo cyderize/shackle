@@ -4,16 +4,16 @@ use shackle_compiler::{
 	db::CompilerDatabase,
 	file::ModelRef,
 	hir::db::Hir,
-	thir::{db::Thir, pretty_print::PrettyPrinter},
+	mir::{db::Mir, pretty_print::PrettyPrinter},
 };
 use shackle_fmt::{format, MiniZincFormatOptions};
 
-use crate::{db::LanguageServerContext, dispatch::RequestHandler, extensions::ViewPrettyPrint};
+use crate::{db::LanguageServerContext, dispatch::RequestHandler, extensions::ViewMir};
 
 #[derive(Debug)]
-pub struct ViewPrettyPrintHandler;
+pub struct ViewMirHandler;
 
-impl RequestHandler<ViewPrettyPrint, ModelRef> for ViewPrettyPrintHandler {
+impl RequestHandler<ViewMir, ModelRef> for ViewMirHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: TextDocumentPositionParams,
@@ -24,12 +24,11 @@ impl RequestHandler<ViewPrettyPrint, ModelRef> for ViewPrettyPrintHandler {
 	fn execute(db: &CompilerDatabase, _: ModelRef) -> Result<String, ResponseError> {
 		let errors = db.all_errors();
 		if errors.is_empty() {
-			let thir = match db.final_thir() {
+			let mir = match db.model_mir() {
 				Ok(m) => m,
-				Err(e) => return Ok(format!("%: THIR error: {}", e)),
+				Err(e) => return Ok(format!("%: Error: {}", e)),
 			};
-			let printer = PrettyPrinter::new(db, &thir);
-			let text = printer.pretty_print();
+			let text = PrettyPrinter::print_model(db, &mir);
 			if let Some(f) = format(&text, &MiniZincFormatOptions::default()) {
 				return Ok(f);
 			}

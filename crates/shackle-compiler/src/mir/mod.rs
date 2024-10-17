@@ -1,9 +1,13 @@
 //! Mid-level IR
 
+pub mod db;
 pub mod lower;
 pub mod pretty_print;
 pub mod ty;
 
+pub mod builtins;
+
+pub use builtins::Builtin;
 use ty::Ty;
 
 use crate::{
@@ -27,13 +31,22 @@ pub struct Model {
 	pub functions: Arena<Function>,
 }
 
+/// A parameter for a function or annotation
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Parameter {
+	/// The type of the parameter
+	pub ty: Ty,
+	/// The name of the parameter
+	pub name: Identifier,
+}
+
 /// An annotation item
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Annotation {
 	/// Name of the annotation item
 	pub name: Identifier,
-	/// Number of parameters in the annotation item
-	pub parameter_count: u16,
+	/// The parameters for the annotation item
+	pub parameters: Vec<Parameter>,
 }
 
 /// A constraint item
@@ -87,8 +100,10 @@ pub enum Domain {
 pub struct Function {
 	/// The function name
 	pub name: Identifier,
+	/// The return type of the function
+	pub ty: Ty,
 	/// The function parameters
-	pub parameters: Vec<Identifier>,
+	pub parameters: Vec<Parameter>,
 	/// The function body
 	pub body: Option<Expression>,
 }
@@ -245,35 +260,13 @@ pub struct Call {
 	pub arguments: Vec<Value>,
 }
 
-/// An interpreter builtin
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum Builtin {
-	/// Get the value of the top-level input parameter of the given name
-	GetParameter(Identifier),
-	/// Index set coercion
-	ArrayNd(Box<ArrayNd>),
-	/// Show an expression
-	Show(Identifier),
-	/// Abort interpretation
-	Abort(Identifier),
-}
-
-/// The `arrayNd` builtin for index coercion
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct ArrayNd {
-	/// Each member is a list of indices
-	index_sets: Vec<Identifier>,
-	/// The array
-	array: Identifier,
-}
-
 /// An if-then-else expression
 ///
 /// This only has an if-then and else branch, so may need to be nested
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct IfThenElse {
 	/// The (par) condition
-	pub condition: Value,
+	pub condition: Box<Value>,
 	/// The value if the condition holds
 	pub then: Box<Expression>,
 	/// The value if the condition doesn't hold

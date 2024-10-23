@@ -109,7 +109,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DispatchRewriter<Dst, Sr
 							&self.model,
 							model[f].origin(),
 							LookupCall {
-								function: self.ids.forall.into(),
+								function: self.ids.builtins.forall.into(),
 								arguments: vec![Expression::new(
 									db,
 									&self.model,
@@ -212,8 +212,8 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 			(VarType::Var, OptType::Opt, VarType::Var, OptType::Opt)
 			| (VarType::Par, OptType::Opt, VarType::Par, OptType::Opt) => {
 				// var opt T -> var opt U, opt T -> opt U
-				let destruct_ce = self.call(db, self.ids.mzn_destruct_opt, ce);
-				let destruct_ve = self.call(db, self.ids.mzn_destruct_opt, ve);
+				let destruct_ce = self.call(db, self.ids.functions.mzn_destruct_opt, ce);
+				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
 				let deopt_ce = self.deopt(db, destruct_ce);
 				let deopt_ve = self.deopt(db, destruct_ve.clone());
 				let deopt_dispatch = self.dispatch_param(
@@ -226,20 +226,24 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 				);
 				return self.call(
 					db,
-					self.ids.mzn_construct_opt,
+					self.ids.functions.mzn_construct_opt,
 					self.pair(db, self.occurs(db, destruct_ve), deopt_dispatch),
 				);
 			}
 			(VarType::Var, OptType::Opt, VarType::Var, OptType::NonOpt) => {
 				// var opt T -> var U
-				let destruct_ce = self.call(db, self.ids.mzn_destruct_opt, ce);
-				let destruct_ve = self.call(db, self.ids.mzn_destruct_opt, ve);
+				let destruct_ce = self.call(db, self.ids.functions.mzn_destruct_opt, ce);
+				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
 				condition.push(self.call(
 					db,
-					self.ids.is_fixed,
+					self.ids.builtins.is_fixed,
 					self.occurs(db, destruct_ce.clone()),
 				));
-				condition.push(self.call(db, self.ids.fix, self.occurs(db, destruct_ce.clone())));
+				condition.push(self.call(
+					db,
+					self.ids.builtins.fix,
+					self.occurs(db, destruct_ce.clone()),
+				));
 				let deopt_ce = self.deopt(db, destruct_ce);
 				let deopt_ve = self.deopt(db, destruct_ve);
 				return self.dispatch_param(
@@ -253,18 +257,18 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 			}
 			(VarType::Var, OptType::Opt, VarType::Par, _) => {
 				// var opt T -> opt U, var opt T -> U
-				let destruct_ce = self.call(db, self.ids.mzn_destruct_opt, ce);
-				let destruct_ve = self.call(db, self.ids.mzn_destruct_opt, ve);
-				condition.push(self.call(db, self.ids.is_fixed, destruct_ce.clone()));
+				let destruct_ce = self.call(db, self.ids.functions.mzn_destruct_opt, ce);
+				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
+				condition.push(self.call(db, self.ids.builtins.is_fixed, destruct_ce.clone()));
 				let fixed_ce = self.call(
 					db,
-					self.ids.mzn_construct_opt,
-					self.call(db, self.ids.fix, destruct_ce),
+					self.ids.functions.mzn_construct_opt,
+					self.call(db, self.ids.builtins.fix, destruct_ce),
 				);
 				let fixed_ve = self.call(
 					db,
-					self.ids.mzn_construct_opt,
-					self.call(db, self.ids.fix, destruct_ve),
+					self.ids.functions.mzn_construct_opt,
+					self.call(db, self.ids.builtins.fix, destruct_ve),
 				);
 				return self.dispatch_param(
 					db,
@@ -277,9 +281,9 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 			}
 			(VarType::Var, OptType::NonOpt, VarType::Par, OptType::NonOpt) => {
 				// var T -> U
-				condition.push(self.call(db, self.ids.is_fixed, ce.clone()));
-				let fix_ce = self.call(db, self.ids.fix, ce);
-				let fix_ve = self.call(db, self.ids.fix, ve);
+				condition.push(self.call(db, self.ids.builtins.is_fixed, ce.clone()));
+				let fix_ce = self.call(db, self.ids.builtins.fix, ce);
+				let fix_ve = self.call(db, self.ids.builtins.fix, ve);
 				return self.dispatch_param(
 					db,
 					fix_ce,
@@ -291,8 +295,8 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 			}
 			(VarType::Par, OptType::Opt, VarType::Par, OptType::NonOpt) => {
 				// opt T -> U
-				let destruct_ce = self.call(db, self.ids.mzn_destruct_opt, ce);
-				let destruct_ve = self.call(db, self.ids.mzn_destruct_opt, ve);
+				let destruct_ce = self.call(db, self.ids.functions.mzn_destruct_opt, ce);
+				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
 				condition.push(self.occurs(db, destruct_ce.clone()));
 				let deopt_ce = self.deopt(db, destruct_ce);
 				let deopt_ve = self.deopt(db, destruct_ve);
@@ -322,7 +326,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 				let template = Box::new(self.dispatch_param(db, c_exp, v_exp, e1, e2, &mut cs));
 				condition.push(self.call(
 					db,
-					self.ids.forall,
+					self.ids.builtins.forall,
 					Expression::new(
 						db,
 						&self.model,
@@ -339,7 +343,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 							} else {
 								self.call(
 									db,
-									self.ids.forall,
+									self.ids.builtins.forall,
 									Expression::new(db, &self.model, origin, ArrayLiteral(cs)),
 								)
 							}),
@@ -366,7 +370,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.array_xd.into(),
+						function: self.ids.functions.array_xd.into(),
 						arguments: vec![ve, array],
 					},
 				)
@@ -387,7 +391,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.forall.into(),
+						function: self.ids.builtins.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.model,
@@ -407,7 +411,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 										&self.model,
 										origin,
 										LookupCall {
-											function: self.ids.forall.into(),
+											function: self.ids.builtins.forall.into(),
 											arguments: vec![Expression::new(
 												db,
 												&self.model,
@@ -560,8 +564,10 @@ pub fn function_dispatch(db: &dyn Thir, model: Model) -> Result<Model> {
 	overloaded.filter(|function| {
 		!function
 			.annotations()
-			.has(&model, ids.mzn_inline_call_by_name)
-			&& !function.annotations().has(&model, ids.mzn_inline)
+			.has(&model, ids.annotations.mzn_inline_call_by_name)
+			&& !function
+				.annotations()
+				.has(&model, ids.annotations.mzn_inline)
 			&& function.body().is_some()
 	});
 

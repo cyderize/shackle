@@ -567,8 +567,8 @@ impl ModelIoInterface {
 
 		// Find the annotation identifiers
 		let reg = db.identifier_registry();
-		let output_ann = reg.output;
-		let no_output_ann = reg.no_output;
+		let output_ann = reg.annotations.output;
+		let no_output_ann = reg.annotations.no_output;
 
 		// Determine input and output from declarations
 		let mut input = FxHashMap::default();

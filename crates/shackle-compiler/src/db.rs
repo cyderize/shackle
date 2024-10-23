@@ -59,15 +59,24 @@ fn share_directory(db: &dyn CompilerSettings) -> crate::Result<Arc<PathBuf>> {
 	if let Some(p) = db.stdlib_directory() {
 		// If set with MZN_STDLIB_DIR then just use it
 		return Ok(p);
-	} else if let Ok(p) = std::env::current_exe() {
+	}
+	// TODO: For now, force use of MZN_STDLIB_DIR to grab old compiler's library
+	// if let Some(p) = shackle_share_directory() {
+	// 	return Ok(p);
+	// }
+	Err(crate::Error::StandardLibraryNotFound)
+}
+
+fn shackle_share_directory() -> Option<Arc<PathBuf>> {
+	if let Ok(p) = std::env::current_exe() {
 		// Otherwise find /share/minizinc/std from this executable
 		for path in p.ancestors() {
 			if path.join("share/minizinc/std/stdlib.mzn").exists() {
-				return Ok(Arc::new(path.join("share/minizinc")));
+				return Some(Arc::new(path.join("share/minizinc")));
 			}
 		}
 	}
-	Err(crate::Error::StandardLibraryNotFound)
+	None
 }
 
 fn include_search_dirs(db: &dyn CompilerSettings) -> Arc<Vec<PathBuf>> {
@@ -82,7 +91,12 @@ fn include_search_dirs(db: &dyn CompilerSettings) -> Arc<Vec<PathBuf>> {
 			}
 		}
 	}
+	if let Some(shackle_share) = shackle_share_directory() {
+		// For now, add shackle's stdlib dir to override the old compiler's one
+		include_dirs.push(shackle_share.join("std"));
+	}
 	if let Ok(share) = db.share_directory() {
+		// Add the old compiler stdlib dir
 		include_dirs.push(share.join("std"));
 	}
 	Arc::new(include_dirs)

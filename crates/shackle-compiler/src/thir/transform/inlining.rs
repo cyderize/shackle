@@ -40,8 +40,10 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for Inliner<Dst, Src> {
 	fn add_function(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
 		if model[f]
 			.annotations()
-			.has(model, self.ids.mzn_inline_call_by_name)
-			|| model[f].annotations().has(model, self.ids.mzn_inline)
+			.has(model, self.ids.annotations.mzn_inline_call_by_name)
+			|| model[f]
+				.annotations()
+				.has(model, self.ids.annotations.mzn_inline)
 		{
 			// Remove inlined function
 			return;
@@ -52,8 +54,10 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for Inliner<Dst, Src> {
 	fn fold_function_body(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
 		if model[f]
 			.annotations()
-			.has(model, self.ids.mzn_inline_call_by_name)
-			|| model[f].annotations().has(model, self.ids.mzn_inline)
+			.has(model, self.ids.annotations.mzn_inline_call_by_name)
+			|| model[f]
+				.annotations()
+				.has(model, self.ids.annotations.mzn_inline)
 		{
 			// Remove inlined function
 			return;
@@ -91,7 +95,9 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for Inliner<Dst, Src> {
 				ExpressionData::Call(c) => {
 					if let Callable::Function(f) = &c.function {
 						if let Some(body) = model[*f].body() {
-							if model[*f].annotations().has(model, self.ids.mzn_inline)
+							if model[*f]
+								.annotations()
+								.has(model, self.ids.annotations.mzn_inline)
 								|| is_macro_call(body)
 							{
 								log::debug!(
@@ -146,7 +152,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for Inliner<Dst, Src> {
 							}
 							if model[*f]
 								.annotations()
-								.has(model, self.ids.mzn_inline_call_by_name)
+								.has(model, self.ids.annotations.mzn_inline_call_by_name)
 							{
 								log::debug!(
 									"Inlining {} using call by name semantics",

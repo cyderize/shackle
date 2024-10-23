@@ -417,25 +417,29 @@ impl Collector {
 			}
 			thir::ExpressionData::Case(_) => todo!(),
 			thir::ExpressionData::Call(c) => {
-				let function = match &c.function {
-					thir::Callable::Function(f) => model[*f].mangled_name(db),
-					thir::Callable::Annotation(a) => model[*a].name.unwrap(),
-					_ => todo!(),
-				};
-				let arguments = c
-					.arguments
-					.iter()
-					.map(|e| self.lower_expression(db, model, e).into_value(db, self))
-					.collect();
-				Expression::new(
-					Call {
-						function,
-						arguments,
-					},
-					ty,
-					origin,
-				)
-				.into()
+				if let Some(builtin) = self.try_lower_builtin(db, model, c) {
+					Expression::new(builtin, ty, origin).into()
+				} else {
+					let function = match &c.function {
+						thir::Callable::Function(f) => model[*f].mangled_name(db),
+						thir::Callable::Annotation(a) => model[*a].name.unwrap(),
+						_ => todo!(),
+					};
+					let arguments = c
+						.arguments
+						.iter()
+						.map(|e| self.lower_expression(db, model, e).into_value(db, self))
+						.collect();
+					Expression::new(
+						Call {
+							function,
+							arguments,
+						},
+						ty,
+						origin,
+					)
+					.into()
+				}
 			}
 			thir::ExpressionData::Let(l) => {
 				for item in l.items.iter() {
@@ -448,6 +452,21 @@ impl Collector {
 			}
 			_ => unreachable!("Illegal expression"),
 		}
+	}
+
+	fn try_lower_builtin(
+		&mut self,
+		db: &dyn thir::db::Thir,
+		model: &thir::Model,
+		c: &thir::Call,
+	) -> Option<Builtin> {
+		let thir::Callable::Function(f) = &c.function else {
+			return None;
+		};
+		if model[*f].body().is_some() {
+			return None;
+		}
+		return None;
 	}
 
 	fn lower_domain(

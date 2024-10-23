@@ -206,7 +206,7 @@ impl<T: Marker> ExpressionBuilder<T> for DummyValue {
 		let ids = db.identifier_registry();
 		match self.0.lookup(db.upcast()) {
 			TyData::Annotation(_) => model
-				.lookup_identifier(db, ids.empty_annotation)
+				.lookup_identifier(db, ids.annotations.empty_annotation)
 				.unwrap()
 				.build(db, model, origin),
 			TyData::Array { .. } => ArrayLiteral(Vec::new()).build(db, model, origin),
@@ -220,7 +220,9 @@ impl<T: Marker> ExpressionBuilder<T> for DummyValue {
 			)
 			.build(db, model, origin),
 			TyData::Set(_, _, _) => SetLiteral(Vec::new()).build(db, model, origin),
-			TyData::String(_) => StringLiteral::from(ids.empty_string).build(db, model, origin),
+			TyData::String(_) => {
+				StringLiteral::from(ids.literals.empty_string).build(db, model, origin)
+			}
 			TyData::Tuple(_, fs) => TupleLiteral(
 				fs.iter()
 					.map(|ty| DummyValue(*ty).build(db, model, origin))

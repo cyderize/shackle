@@ -448,14 +448,14 @@ impl ItemCollector<'_> {
 			minizinc::Goal::Maximize(objective) => Goal::Maximize {
 				pattern: ctx.alloc_pattern(
 					Origin::new(&objective),
-					Pattern::Identifier(self.identifiers.objective),
+					Pattern::Identifier(self.identifiers.names.objective),
 				),
 				objective: ctx.collect_expression(objective),
 			},
 			minizinc::Goal::Minimize(objective) => Goal::Minimize {
 				pattern: ctx.alloc_pattern(
 					Origin::new(&objective),
-					Pattern::Identifier(self.identifiers.objective),
+					Pattern::Identifier(self.identifiers.names.objective),
 				),
 				objective: ctx.collect_expression(objective),
 			},

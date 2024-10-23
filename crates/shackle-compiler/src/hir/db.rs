@@ -271,9 +271,9 @@ fn resolve_includes(db: &dyn Hir) -> Result<Arc<Vec<ModelRef>>> {
 	let mut todo = (*db.input_models()).clone();
 
 	let search_dirs = db.include_search_dirs();
-	let auto_includes = ["solver_redefinitions.mzn", "stdlib.mzn"];
 
 	if !db.ignore_stdlib() {
+		let auto_includes = ["shackle.mzn"];
 		if let Err(e) = db.share_directory() {
 			// share/minizinc directory does not exist
 			errors.push(e);
@@ -349,7 +349,10 @@ fn resolve_includes(db: &dyn Hir) -> Result<Arc<Vec<ModelRef>>> {
 						.file()
 						.path(db.upcast())
 						.and_then(|p| p.parent().map(|p| p.to_owned()));
-
+					if let Some(f) = &file_dir {
+						// let joined = f.join(included);
+						eprintln!("Tried: {:?} {:?}", f, f.exists());
+					}
 					let resolved = if included.starts_with("./") {
 						file_dir.map(|p| p.join(included)).filter(|p| p.exists())
 					} else {

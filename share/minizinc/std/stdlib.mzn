@@ -4,11 +4,6 @@
 % This file contains declarations of all functions, predicates and annotations
 % available in the base MiniZinc language.
 
-function bool: forall(array [int] of bool: x);
-function var bool: forall(array [int] of var bool: x);
-function bool: exists(array [int] of bool: x);
-function var bool: exists(array [int] of var bool: x);
-
 /***
  @groupdef MAIN The MiniZinc library
 */
@@ -71,3 +66,5 @@ include "output.mzn";
 
 % Undocumented internal implementation used during compilation
 include "stdlib/stdlib_internal.mzn";
+
+include "shackle.mzn";

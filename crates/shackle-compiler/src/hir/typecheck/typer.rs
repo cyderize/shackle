@@ -170,7 +170,7 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 			// If annotation is shackle_type("...") then treat as sanity check for type
 			if let Expression::Call(c) = &self.data[*ann] {
 				if let Expression::Identifier(i) = &self.data[c.function] {
-					if *i == self.identifiers.shackle_type {
+					if *i == self.identifiers.annotations.shackle_type {
 						if let Expression::StringLiteral(sl) = &self.data[c.arguments[0]] {
 							let expected = sl.value(db);
 							let actual = ty.pretty_print(db.upcast());
@@ -267,7 +267,7 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 								.iter()
 								.any(|ann| match &fi.data[*ann] {
 									Expression::Identifier(i) => {
-										*i == self.identifiers.annotated_expression
+										*i == self.identifiers.annotations.annotated_expression
 									}
 									_ => false,
 								});
@@ -1798,7 +1798,7 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 								let has_annotated_expression =
 									param.annotations.iter().any(|ann| match &fi.data[*ann] {
 										Expression::Identifier(i) => {
-											*i == self.identifiers.annotated_expression
+											*i == self.identifiers.annotations.annotated_expression
 										}
 										_ => false,
 									});

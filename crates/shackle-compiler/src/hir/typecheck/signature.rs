@@ -150,6 +150,7 @@ impl SignatureTypeContext {
 				// Set as computing so if there's a call to a function with this name we can break the cycle
 				// (since if the call is actually not referring to this overload, it should work)
 				self.add_declaration(PatternRef::new(item, it.pattern), PatternTy::Computing);
+				let ids = db.identifier_registry();
 				let ty_params = it
 					.type_inst_vars
 					.iter()
@@ -179,7 +180,7 @@ impl SignatureTypeContext {
 							.iter()
 							.find(|ann| match &it.data[**ann] {
 								crate::hir::Expression::Identifier(i) => {
-									*i == db.identifier_registry().annotated_expression
+									*i == ids.annotations.annotated_expression
 								}
 								_ => false,
 							})
@@ -303,7 +304,7 @@ impl SignatureTypeContext {
 					.annotations
 					.iter()
 					.find(|ann| match &it.data[**ann] {
-						crate::hir::Expression::Identifier(i) => *i == ids.output_only,
+						crate::hir::Expression::Identifier(i) => *i == ids.annotations.output_only,
 						_ => false,
 					})
 					.copied();

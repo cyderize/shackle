@@ -5,9 +5,9 @@
 //! - Destructuring declarations are rewritten as separate declarations
 //! - Destructuring in generators is rewritten into a where clause
 //! - Type alias items removed as they have been resolved
-//! - 2D array literals are re-written using `array2d` calls
-//! - Indexed array literals are re-written using `arrayNd` calls
-//! - Array slicing is re-written using calls to `slice_Xd`
+//! - 2D array literals are re-written using `mzn_array_kd` calls
+//! - Indexed array literals are re-written using `mzn_indexed_array` calls
+//! - Array access and slicing is re-written using calls to `[]`
 //! - Tuple/record access into arrays of structs are rewritten using a
 //!   comprehension accessing the inner value
 
@@ -197,7 +197,7 @@ impl<'a> ItemCollector<'a> {
 			// Turn subsequent assignment items into equality constraints
 			let mut collector = ExpressionCollector::new(self, &a.data, item, &types);
 			let call = LookupCall {
-				function: collector.parent.ids.eq.into(),
+				function: collector.parent.ids.builtins.eq.into(),
 				arguments: vec![
 					collector.collect_expression(a.assignee),
 					collector.collect_expression(a.definition),
@@ -744,11 +744,11 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					),
 					hir::MaybeIndexSet::NonIndexed(c) => alloc_expression(
 						LookupCall {
-							function: self.parent.ids.set2array.into(),
+							function: self.parent.ids.builtins.set2array.into(),
 							arguments: vec![if *c > 0 {
 								alloc_expression(
 									LookupCall {
-										function: self.parent.ids.dot_dot.into(),
+										function: self.parent.ids.builtins.dot_dot.into(),
 										arguments: vec![
 											alloc_expression(IntegerLiteral(1), self, origin),
 											alloc_expression(
@@ -773,10 +773,9 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 				let columns = idx_array(&al.columns);
 				alloc_expression(
 					LookupCall {
-						function: self.parent.ids.array2d.into(),
+						function: self.parent.ids.builtins.mzn_array_kd.into(),
 						arguments: vec![
-							rows,
-							columns,
+							alloc_expression(TupleLiteral(vec![rows, columns]), self, origin),
 							alloc_expression(
 								ArrayLiteral(
 									al.members
@@ -794,39 +793,58 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 				)
 			}
 			// Desugar indexed array literal into arrayNd call
-			hir::Expression::IndexedArrayLiteral(al) => alloc_expression(
-				LookupCall {
-					function: self.parent.ids.array_nd.into(),
-					arguments: vec![
-						if al.indices.len() == 1 {
-							self.collect_expression(al.indices[0])
-						} else {
-							alloc_expression(
+			hir::Expression::IndexedArrayLiteral(al) => {
+				if al.indices.len() == 1 {
+					alloc_expression(
+						LookupCall {
+							function: self.parent.ids.functions.mzn_start_indexed_array.into(),
+							arguments: vec![
+								self.collect_expression(al.indices[0]),
+								alloc_expression(
+									ArrayLiteral(
+										al.members
+											.iter()
+											.map(|e| self.collect_expression(*e))
+											.collect(),
+									),
+									self,
+									origin,
+								),
+							],
+						},
+						self,
+						origin,
+					)
+				} else {
+					alloc_expression(
+						LookupCall {
+							function: self.parent.ids.builtins.mzn_indexed_array.into(),
+							arguments: vec![alloc_expression(
 								ArrayLiteral(
 									al.indices
 										.iter()
-										.map(|e| self.collect_expression(*e))
+										.zip(al.members.iter())
+										.map(|(i, e)| {
+											alloc_expression(
+												TupleLiteral(vec![
+													self.collect_expression(*i),
+													self.collect_expression(*e),
+												]),
+												self,
+												origin,
+											)
+										})
 										.collect(),
 								),
 								self,
 								origin,
-							)
+							)],
 						},
-						alloc_expression(
-							ArrayLiteral(
-								al.members
-									.iter()
-									.map(|e| self.collect_expression(*e))
-									.collect(),
-							),
-							self,
-							origin,
-						),
-					],
-				},
-				self,
-				origin,
-			),
+						self,
+						origin,
+					)
+				}
+			}
 			hir::Expression::BooleanLiteral(b) => alloc_expression(*b, self, origin),
 			hir::Expression::Call(c) => {
 				let function = if let hir::Expression::Identifier(_) = self.data[c.function] {
@@ -953,7 +971,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					assert_eq!(expr.ty().make_par(db.upcast()), ty);
 					alloc_expression(
 						LookupCall {
-							function: self.parent.ids.fix.into(),
+							function: self.parent.ids.builtins.fix.into(),
 							arguments: vec![expr],
 						},
 						self,
@@ -1264,7 +1282,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 
 					let annotate = alloc_expression(
 						LookupCall {
-							function: self.parent.ids.annotate.into(),
+							function: self.parent.ids.builtins.annotate.into(),
 							arguments: vec![
 								alloc_expression(
 									ResolvedIdentifier::Declaration(decl),
@@ -1346,7 +1364,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 
 						let annotate = alloc_expression(
 							LookupCall {
-								function: self.parent.ids.annotate.into(),
+								function: self.parent.ids.builtins.annotate.into(),
 								arguments: vec![
 									alloc_expression(
 										ResolvedIdentifier::Declaration(decl),
@@ -1443,7 +1461,12 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 										|collector| {
 											alloc_expression(
 												LookupCall {
-													function: self.parent.ids.index_sets.into(),
+													function: self
+														.parent
+														.ids
+														.builtins
+														.index_sets
+														.into(),
 													arguments: vec![alloc_expression(
 														collection_decl,
 														collector,
@@ -1544,7 +1567,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 								function: (*s).into(),
 								arguments: vec![alloc_expression(
 									LookupCall {
-										function: collector.parent.ids.index_set.into(),
+										function: collector.parent.ids.functions.index_set.into(),
 										arguments: vec![alloc_expression(
 											collection_decl,
 											collector,
@@ -1588,7 +1611,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 			})
 			.chain([alloc_expression(
 				LookupCall {
-					function: self.parent.ids.array_access.into(),
+					function: self.parent.ids.functions.array_access.into(),
 					arguments: vec![collection_ident, slice_tuple],
 				},
 				self,
@@ -1671,7 +1694,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 							);
 							let array = alloc_expression(
 								LookupCall {
-									function: self.parent.ids.array_xd.into(),
+									function: self.parent.ids.functions.array_xd.into(),
 									arguments: vec![c_ident.clone(), comprehension],
 								},
 								self,
@@ -1729,7 +1752,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 						);
 						let array = alloc_expression(
 							LookupCall {
-								function: self.parent.ids.array_xd.into(),
+								function: self.parent.ids.functions.array_xd.into(),
 								arguments: vec![c_ident.clone(), comprehension],
 							},
 							self,
@@ -1753,7 +1776,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 			}
 			alloc_expression(
 				LookupCall {
-					function: self.parent.ids.array_access.into(),
+					function: self.parent.ids.functions.array_access.into(),
 					arguments: vec![collection, indices],
 				},
 				self,
@@ -1841,7 +1864,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					} else {
 						let call = alloc_expression(
 							LookupCall {
-								function: self.parent.ids.forall.into(),
+								function: self.parent.ids.builtins.forall.into(),
 								arguments: vec![alloc_expression(
 									ArrayLiteral(where_clauses),
 									self,
@@ -1940,7 +1963,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 				origin,
 			),
 			TyData::Annotation(_) => {
-				alloc_expression(self.parent.ids.empty_annotation, self, origin)
+				alloc_expression(self.parent.ids.annotations.empty_annotation, self, origin)
 			}
 			TyData::Array { .. } => alloc_expression(ArrayLiteral::default(), self, origin),
 			TyData::Set(_, _, _) => alloc_expression(SetLiteral::default(), self, origin),
@@ -2303,7 +2326,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					if *negated {
 						alloc_expression(
 							LookupCall {
-								function: self.parent.ids.minus.into(),
+								function: self.parent.ids.builtins.minus.into(),
 								arguments: vec![v],
 							},
 							self,
@@ -2334,7 +2357,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					if *negated {
 						alloc_expression(
 							LookupCall {
-								function: self.parent.ids.minus.into(),
+								function: self.parent.ids.builtins.minus.into(),
 								arguments: vec![v],
 							},
 							self,
@@ -2352,7 +2375,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 					if *negated {
 						alloc_expression(
 							LookupCall {
-								function: self.parent.ids.minus.into(),
+								function: self.parent.ids.builtins.minus.into(),
 								arguments: vec![v],
 							},
 							self,

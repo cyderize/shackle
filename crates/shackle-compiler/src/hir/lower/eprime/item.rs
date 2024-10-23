@@ -103,14 +103,14 @@ impl ItemCollector<'_> {
 			eprime::Goal::Minimising(e) => Goal::Minimize {
 				pattern: ctx.alloc_pattern(
 					Origin::new(e),
-					Pattern::Identifier(self.identifiers.objective),
+					Pattern::Identifier(self.identifiers.names.objective),
 				),
 				objective: ctx.collect_expression(e.clone()),
 			},
 			eprime::Goal::Maximising(e) => Goal::Maximize {
 				pattern: ctx.alloc_pattern(
 					Origin::new(e),
-					Pattern::Identifier(self.identifiers.objective),
+					Pattern::Identifier(self.identifiers.names.objective),
 				),
 				objective: ctx.collect_expression(e.clone()),
 			},

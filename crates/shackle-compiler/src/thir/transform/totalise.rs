@@ -10,7 +10,7 @@ use crate::{
 	constants::{IdentifierRegistry, TypeRegistry},
 	hir::BooleanLiteral,
 	thir::{
-		analyse::{analyse_totality, Mode, ModeAnalyser, Totality},
+		analyse::{analyse_totality, Mode, ModeAnalysis, Totality},
 		db::Thir,
 		pretty_print::PrettyPrinter,
 		source::Origin,
@@ -25,7 +25,7 @@ use crate::{
 		TupleLiteral,
 	},
 	ty::{OptType, Ty},
-	utils::{arena::ArenaMap, maybe_grow_stack, refmap::RefMap},
+	utils::{arena::ArenaMap, maybe_grow_stack},
 	Result,
 };
 
@@ -35,8 +35,7 @@ struct Totaliser<'a, Dst: Marker> {
 	totalised_model: Model<Dst>,
 	replacement_map: ReplacementMap<Dst>,
 	totality: ArenaMap<FunctionItem, Totality>,
-	modes: RefMap<'a, Expression, Mode>,
-	root_fn_modes: RefMap<'a, Expression, Mode>,
+	modes: &'a ModeAnalysis<'a>,
 	root_fn_map: FxHashMap<FunctionId, FunctionId<Dst>>,
 	root_fn_decl_map: FxHashMap<DeclarationId, DeclarationId<Dst>>,
 	in_root_fns: bool,
@@ -367,7 +366,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 					&self.totalised_model,
 					l.in_expression.origin(),
 					LookupCall {
-						function: self.ids.forall.into(),
+						function: self.ids.builtins.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.totalised_model,
@@ -389,7 +388,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 					&self.totalised_model,
 					l.in_expression.origin(),
 					LookupCall {
-						function: self.ids.forall.into(),
+						function: self.ids.builtins.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.totalised_model,
@@ -412,9 +411,9 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 	fn get_mode(&self, e: &Expression) -> Mode {
 		if self.in_root_fns {
-			self.root_fn_modes[e]
+			self.modes.get_in_root_fn(e)
 		} else {
-			self.modes[e]
+			self.modes.get(e)
 		}
 	}
 
@@ -517,7 +516,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				&self.totalised_model,
 				origin,
 				LookupCall {
-					function: self.ids.forall.into(),
+					function: self.ids.builtins.forall.into(),
 					arguments: vec![Expression::new(
 						db,
 						&self.totalised_model,
@@ -638,7 +637,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 					self.replacement_map.insert_declaration(*assignment, idx);
 					if model[*assignment]
 						.annotations()
-						.has(model, self.ids.mzn_var_where_clause)
+						.has(model, self.ids.annotations.mzn_var_where_clause)
 					{
 						var_where_clauses.push(Expression::new(
 							db,
@@ -793,7 +792,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 									&self.totalised_model,
 									o,
 									LookupCall {
-										function: self.ids.exists.into(),
+										function: self.ids.builtins.exists.into(),
 										arguments: vec![Expression::new(
 											db,
 											&self.totalised_model,
@@ -879,7 +878,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				&self.totalised_model,
 				o,
 				LookupCall {
-					function: self.ids.forall.into(),
+					function: self.ids.builtins.forall.into(),
 					arguments: vec![elements_defined],
 				},
 			));
@@ -986,7 +985,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 								&self.totalised_model,
 								origin,
 								LookupCall {
-									function: self.ids.forall.into(),
+									function: self.ids.builtins.forall.into(),
 									arguments: vec![Expression::new(
 										db,
 										&self.totalised_model,
@@ -1038,7 +1037,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 							&self.totalised_model,
 							origin,
 							LookupCall {
-								function: self.ids.forall.into(),
+								function: self.ids.builtins.forall.into(),
 								arguments: vec![Expression::new(
 									db,
 									&self.totalised_model,
@@ -1112,7 +1111,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 							&self.totalised_model,
 							origin,
 							LookupCall {
-								function: self.ids.conj.into(),
+								function: self.ids.builtins.and.into(),
 								arguments: vec![definedness, value],
 							},
 						)),
@@ -1424,7 +1423,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 			&self.totalised_model,
 			origin,
 			LookupCall {
-				function: self.ids.if_then_else.into(),
+				function: self.ids.functions.if_then_else.into(),
 				arguments: vec![
 					conditions,
 					Expression::new(db, &self.totalised_model, origin, ArrayLiteral(results)),
@@ -1571,7 +1570,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 						&self.totalised_model,
 						origin,
 						LookupCall {
-							function: self.ids.forall.into(),
+							function: self.ids.builtins.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.totalised_model,
@@ -1621,7 +1620,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 			&self.totalised_model,
 			origin,
 			LookupCall {
-				function: self.ids.forall.into(),
+				function: self.ids.builtins.forall.into(),
 				arguments: vec![Expression::new(
 					db,
 					&self.totalised_model,
@@ -1761,14 +1760,14 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 /// Totalise a model
 pub fn totalise(db: &dyn Thir, model: Model) -> Result<Model> {
 	log::info!("Performing totalisation");
+	let modes = ModeAnalysis::analyse(db, &model);
 	let mut totaliser = Totaliser {
 		ids: db.identifier_registry(),
 		tys: db.type_registry(),
 		replacement_map: ReplacementMap::default(),
 		totalised_model: Model::with_capacities(&model.entity_counts()),
-		modes: ModeAnalyser::new(db, &model).run(db),
-		root_fn_modes: ModeAnalyser::root_functions(db, &model).run(db),
-		totality: analyse_totality(db, &model),
+		modes: &modes,
+		totality: analyse_totality(db, &model, &modes),
 		root_fn_map: FxHashMap::default(),
 		root_fn_decl_map: FxHashMap::default(),
 		in_root_fns: false,
@@ -1881,18 +1880,18 @@ mod test {
       tuple(bool, int): _DECL_17 = let {
       bool: _DECL_16 = false;
     } in (forall([_DECL_16]), 1);
-      array [int] of var bool: _DECL_18 = [b];
-      tuple(bool, int): _DECL_19 = (true, 2);
-    } in (if_then_else(_DECL_18, [(_DECL_17).1]), if_then_else(_DECL_18, [(_DECL_17).2]));
+      tuple(bool, int): _DECL_18 = (true, 2);
+      array [int] of var bool: _DECL_19 = [b, true];
+    } in (if_then_else(_DECL_19, [(_DECL_17).1, (_DECL_18).1]), if_then_else(_DECL_19, [(_DECL_17).2, (_DECL_18).2]));
       constraint (_DECL_20).1;
     } in (_DECL_20).2;
     function tuple(var bool, var int): foo(var bool: b) = let {
       tuple(bool, int): _DECL_12 = let {
       bool: _DECL_11 = false;
     } in (forall([_DECL_11]), 1);
-      array [int] of var bool: _DECL_13 = [b];
-      tuple(bool, int): _DECL_14 = (true, 2);
-    } in (if_then_else(_DECL_13, [(_DECL_12).1]), if_then_else(_DECL_13, [(_DECL_12).2]));
+      tuple(bool, int): _DECL_13 = (true, 2);
+      array [int] of var bool: _DECL_14 = [b, true];
+    } in (if_then_else(_DECL_14, [(_DECL_12).1, (_DECL_13).1]), if_then_else(_DECL_14, [(_DECL_12).2, (_DECL_13).2]));
     function int: bar_root(var bool: b) = if true then let {
       constraint false;
     } in 1 else 2 endif;
@@ -2086,6 +2085,30 @@ mod test {
     } in if_then_else(_DECL_15, [_DECL_13, _DECL_14]);
       var bool: _DECL_17 = q(x);
     } in (forall([_DECL_17]), foo_root(xx));
+    solve satisfy;
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_totalise_abort() {
+		check_no_stdlib(
+			totalise,
+			r#"
+                test abort(string: msg);
+				test bar(int: x);
+				function int: foo(int: x) = let {
+					constraint if bar(x) then abort("foo") endif;
+				} in x;
+				int: a = foo(2);
+			"#,
+			expect!([r#"
+    function bool: abort(string: msg);
+    function bool: bar(int: x);
+    function int: foo(int: x) = let {
+      constraint if bar(x) then abort("foo") else true endif;
+    } in x;
+    int: a = foo(2);
     solve satisfy;
 "#]),
 		)

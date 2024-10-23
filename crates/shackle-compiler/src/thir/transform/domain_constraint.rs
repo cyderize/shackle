@@ -190,7 +190,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DomainRewriter<Dst, Src>
 				db,
 				&self.model,
 				origin,
-				StringLiteral::from(self.ids.return_value),
+				StringLiteral::from(self.ids.literals.return_value),
 			);
 			let constraint = Constraint::new(
 				false,
@@ -397,7 +397,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 					&self.model,
 					dom_origin,
 					LookupCall {
-						function: self.ids.mzn_domain_constraint.into(),
+						function: self.ids.functions.mzn_domain_constraint.into(),
 						arguments: vec![name, variable, domain],
 					},
 				)
@@ -412,7 +412,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 							&self.model,
 							origin,
 							LookupCall {
-								function: self.ids.index_set.into(),
+								function: self.ids.functions.index_set.into(),
 								arguments: vec![variable.clone()],
 							},
 						);
@@ -421,7 +421,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 							&self.model,
 							origin,
 							LookupCall {
-								function: self.ids.mzn_check_index_set.into(),
+								function: self.ids.functions.mzn_check_index_set.into(),
 								arguments: vec![
 									name.clone(),
 									actual,
@@ -437,7 +437,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 							&self.model,
 							origin,
 							LookupCall {
-								function: self.ids.index_sets.into(),
+								function: self.ids.builtins.index_sets.into(),
 								arguments: vec![variable.clone()],
 							},
 						);
@@ -462,7 +462,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 								&self.model,
 								origin,
 								LookupCall {
-									function: self.ids.mzn_check_index_set.into(),
+									function: self.ids.functions.mzn_check_index_set.into(),
 									arguments: vec![
 										name.clone(),
 										Expression::new(db, &self.model, origin, field),
@@ -489,7 +489,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 									&self.model,
 									origin,
 									LookupCall {
-										function: self.ids.forall.into(),
+										function: self.ids.builtins.forall.into(),
 										arguments: vec![Expression::new(
 											db,
 											&self.model,
@@ -509,7 +509,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.index_sets.into(),
+							function: self.ids.builtins.index_sets.into(),
 							arguments: vec![variable.clone()],
 						},
 					);
@@ -565,7 +565,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.mzn_show_array_access.into(),
+							function: self.ids.functions.mzn_show_array_access.into(),
 							arguments: vec![name, indices_expr.clone()],
 						},
 					);
@@ -575,7 +575,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.array_access.into(),
+							function: self.ids.functions.array_access.into(),
 							arguments: vec![variable, indices_expr],
 						},
 					);
@@ -596,7 +596,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.forall.into(),
+							function: self.ids.builtins.forall.into(),
 							arguments: vec![comprehension],
 						},
 					));
@@ -609,7 +609,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.forall.into(),
+							function: self.ids.builtins.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,
@@ -638,7 +638,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						name.origin(),
 						LookupCall {
-							function: self.ids.mzn_show_tuple_access.into(),
+							function: self.ids.functions.mzn_show_tuple_access.into(),
 							arguments: vec![name.clone(), field_expr],
 						},
 					);
@@ -653,7 +653,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.forall.into(),
+							function: self.ids.builtins.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,
@@ -687,7 +687,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						name.origin(),
 						LookupCall {
-							function: self.ids.mzn_show_record_access.into(),
+							function: self.ids.functions.mzn_show_record_access.into(),
 							arguments: vec![name.clone(), field_expr],
 						},
 					);
@@ -702,7 +702,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.forall.into(),
+							function: self.ids.builtins.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,
@@ -934,7 +934,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 			&self.model,
 			origin,
 			LookupCall {
-				function: self.ids.mzn_array_kd.into(),
+				function: self.ids.builtins.mzn_array_kd.into(),
 				arguments: vec![index_sets_expr, comprehension],
 			},
 		)

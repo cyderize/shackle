@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 #![warn(unused_crate_dependencies, unused_extern_crates)]
 #![warn(variant_size_differences)]
+#![recursion_limit = "256"]
 
 pub mod constants;
 pub mod db;

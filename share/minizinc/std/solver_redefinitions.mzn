@@ -12,6 +12,7 @@ include "redefinitions-2.1.1.mzn";
 include "redefinitions-2.2.1.mzn";
 include "redefinitions-2.3.3.mzn";
 include "redefinitions-2.5.2.mzn";
+include "redefinitions-2.7.1.mzn";
 
 % Inclusion of count constraints for internal redefinitions of hidden counting constraints
 include "count_eq.mzn";
@@ -42,3 +43,4 @@ include "fzn_array_int_union.mzn";
 include "fzn_array_opt_int_union.mzn";
 include "fzn_array_set_union.mzn";
 include "fzn_array_set_intersect.mzn";
+include "table.mzn";

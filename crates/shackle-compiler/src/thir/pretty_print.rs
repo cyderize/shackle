@@ -50,13 +50,15 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 			if self.old_compat {
 				match item {
 					ItemId::Function(f)
-						if self.model[f].name() == self.ids.default
-							|| self.model[f].name() == self.ids.mzn_element_internal
-							|| self.model[f].name() == self.ids.mzn_slice_internal =>
+						if self.model[f].name() == self.ids.functions.default
+							|| self.model[f].name() == self.ids.builtins.mzn_element_internal
+							|| self.model[f].name() == self.ids.builtins.mzn_slice_internal =>
 					{
 						continue;
 					}
-					ItemId::Annotation(a) if self.model[a].name == Some(self.ids.output) => {
+					ItemId::Annotation(a)
+						if self.model[a].name == Some(self.ids.annotations.output) =>
+					{
 						continue;
 					}
 					_ => (),
@@ -252,7 +254,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 		let ids = self.db.identifier_registry();
 		if self.old_compat {
 			if let Some(body) = function.body() {
-				if function.name() == ids.deopt
+				if function.name() == ids.functions.deopt
 					&& !function.type_inst_vars().is_empty()
 					&& function.parameters().len() == 1
 					&& {
@@ -263,10 +265,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 					match &**body {
 						ExpressionData::Call(c) => match &c.function {
 							Callable::Function(idx) => {
-								assert_eq!(
-									self.model[*idx].name(),
-									self.db.identifier_registry().to_enum
-								);
+								assert_eq!(self.model[*idx].name(), ids.functions.to_enum);
 								assert_eq!(c.arguments.len(), 2);
 								write!(
 									&mut buf,
@@ -280,7 +279,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 						_ => unreachable!(),
 					}
 				}
-			} else if function.name() == ids.erase_enum {
+			} else if function.name() == ids.functions.erase_enum {
 				// For compatibility with old minizinc, we can just directly coerce
 				let d = function.parameter(0);
 				let ident = self.model[d]
@@ -510,7 +509,8 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 					Callable::Function(f) => {
 						let name = self.model[*f].name();
 						if self.old_compat
-							&& (name == self.ids.forall || name == self.ids.exists)
+							&& (name == self.ids.builtins.forall
+								|| name == self.ids.builtins.exists)
 							&& c.arguments.len() == 1
 						{
 							if let ExpressionData::ArrayLiteral(al) = &*c.arguments[0] {
@@ -520,7 +520,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 										.iter()
 										.map(|e| format!("({})", self.pretty_print_expression(e)))
 										.collect::<Vec<_>>()
-										.join(if name == self.ids.forall {
+										.join(if name == self.ids.builtins.forall {
 											" /\\ "
 										} else {
 											" \\/ "
@@ -528,7 +528,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 								}
 							}
 						}
-						if self.old_compat && name == self.ids.mzn_destruct_partial {
+						if self.old_compat && name == self.ids.functions.mzn_destruct_partial {
 							let dummy = Expression::new(
 								self.db,
 								self.model,
@@ -541,7 +541,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 								self.pretty_print_expression(&dummy)
 							);
 						}
-						if self.old_compat && name == self.ids.mzn_slice_internal {
+						if self.old_compat && name == self.ids.builtins.mzn_slice_internal {
 							return format!(
 								"(let {{ any: mzn_x = {}; any: mzn_i = {}; }} in slice_1d(mzn_x, mzn_i, 1..length(mzn_x)))",
 								self.pretty_print_expression(&c.arguments[0]),

@@ -3,7 +3,7 @@
 #![warn(missing_docs)]
 
 use format::Format;
-pub use ir::FormatOptions;
+pub use options::MiniZincFormatOptions;
 use shackle_compiler::syntax::{cst, minizinc::MznModel};
 use tree_sitter::Parser;
 
@@ -14,17 +14,9 @@ pub(crate) mod expression;
 pub(crate) mod format;
 pub(crate) mod ir;
 pub(crate) mod item;
+pub(crate) mod options;
 pub(crate) mod pattern;
 pub(crate) mod types;
-
-/// Formatting options for MiniZinc
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct MiniZincFormatOptions {
-	/// Core formatting options
-	pub core: FormatOptions,
-	/// Keep parentheses (except double parentheses)
-	pub keep_parentheses: bool,
-}
 
 /// Format the given source code
 pub fn format(source: &str, options: &MiniZincFormatOptions) -> Option<String> {

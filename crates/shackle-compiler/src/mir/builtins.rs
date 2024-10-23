@@ -18,8 +18,8 @@ pub enum Builtin {
 	ExistsPar(Box<Value>),
 	/// `exists` with an array of var booleans
 	ExistsVar(Box<Value>),
-
-	// mzn_in_root_context
+	/// Transform list of tuples of index and value into indexed array
+	IndexedArray(Box<Value>),
 	/// Array access with par index
 	ArrayAccess {
 		/// The array to access
@@ -705,15 +705,16 @@ pub enum Builtin {
 }
 
 impl Builtin {
-	/// Get the name of the builtin
+	/// Get the name of the builtin (used for printing as MiniZinc)
 	pub fn name(&self) -> &'static str {
 		match self {
 			Builtin::GetParameter(_) => "mzn_get_parameter",
 			Builtin::ForAllPar(_) | Builtin::ForAllVar(_) => "forall",
 			Builtin::ExistsPar(_) | Builtin::ExistsVar(_) => "exists",
+			Builtin::IndexedArray(_) => "mzn_indexed_array",
 			Builtin::ArrayAccess { .. } => "mzn_element_internal",
 			Builtin::ArraySlice { .. } => "mzn_slice_internal",
-			Builtin::ArrayPlusPlus { .. } => "'++'",
+			Builtin::ArrayPlusPlus { .. } | Builtin::StringPlusPlus { .. } => "'++'",
 			Builtin::ArrayLength(_) => "length",
 			Builtin::IndexSetsAgree { .. } => "index_sets_agree",
 			Builtin::IndexSets(_) => "index_sets",
@@ -762,7 +763,6 @@ impl Builtin {
 			Builtin::Annotate { .. } => "annotate",
 			Builtin::IsSame { .. } => "is_same",
 			Builtin::CompilerVersion => "mzn_compiler_version",
-			Builtin::StringPlusPlus { .. } => "++",
 			Builtin::StringLength(_) => "string_length",
 			Builtin::StringConcat(_) => "concat",
 			Builtin::StringJoin { .. } => "join",
@@ -839,7 +839,7 @@ impl Builtin {
 		}
 	}
 
-	/// Get arguments
+	/// Get arguments (used for printing as MiniZinc)
 	pub fn arguments<'a>(&'a self) -> Vec<&'a Value> {
 		match self {
 			Builtin::FormatWithPrecision {
@@ -1098,6 +1098,7 @@ impl Builtin {
 				right: v2,
 			} => vec![v1, v2],
 			Builtin::GetParameter(value)
+			| Builtin::IndexedArray(value)
 			| Builtin::ForAllPar(value)
 			| Builtin::ForAllVar(value)
 			| Builtin::ExistsPar(value)

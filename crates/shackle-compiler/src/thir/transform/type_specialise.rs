@@ -94,7 +94,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for TypeSpecialiser<'a, Dst> {
 				self.specialised_model[f].set_body(body);
 				continue;
 			}
-			if model[s.original].name() == self.ids.show {
+			if model[s.original].name() == self.ids.builtins.show {
 				// Create specialised show function for types which will be erased, except show on direct enum which will be generated later
 				let p = self.specialised_model[f].parameter(0);
 				let ty = self.specialised_model[p].ty();
@@ -123,7 +123,9 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for TypeSpecialiser<'a, Dst> {
 			}
 		}
 		if model[f].is_polymorphic() && model[f].body().is_some()
-			|| model[f].annotations().has(model, self.ids.mzn_unreachable)
+			|| model[f]
+				.annotations()
+				.has(model, self.ids.annotations.mzn_unreachable)
 		{
 			// Remove non-builtin polymorphic and unreachable functions
 			return;
@@ -269,16 +271,18 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 		args: &[Ty],
 	) -> FunctionId<Dst> {
 		assert!(
-			!model[f].annotations().has(model, self.ids.mzn_unreachable),
+			!model[f]
+				.annotations()
+				.has(model, self.ids.annotations.mzn_unreachable),
 			"Tried to instantiate unreachable internal function {}",
 			PrettyPrinter::new(db, model).pretty_print_signature(f.into())
 		);
 
 		let needs_instantiation = model[f].is_polymorphic()
 			&& (model[f].body().is_some()
-				|| (model[f].name() == self.ids.show
-					|| model[f].name() == self.ids.show_json
-					|| model[f].name() == self.ids.show_dzn)
+				|| (model[f].name() == self.ids.builtins.show
+					|| model[f].name() == self.ids.builtins.show_json
+					|| model[f].name() == self.ids.builtins.show_dzn)
 					&& args[0].contains_erased_type(db.upcast()));
 		if !needs_instantiation {
 			return self.fold_function_id(db, model, f);
@@ -355,9 +359,9 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 			.zip(function.parameters().iter().copied())
 			.collect();
 		let position = || {
-			if function.name() == self.ids.show
-				|| function.name() == self.ids.show_json
-				|| function.name() == self.ids.show_dzn
+			if function.name() == self.ids.builtins.show
+				|| function.name() == self.ids.builtins.show_json
+				|| function.name() == self.ids.builtins.show_dzn
 			{
 				// Show involving enums must appear after the definition of the enum
 				let needs_enums = self.specialised_model[function.parameter(0)]
@@ -426,9 +430,21 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 
 		if let Some(OptType::Opt) = ty.opt(db.upcast()) {
 			// if occurs(x) then show(deopt(x)) else "<>" endif
-			let occurs = call(self, self.ids.occurs, vec![self.expr(db, origin, arg)]);
-			let deopt = call(self, self.ids.deopt, vec![self.expr(db, origin, arg)]);
-			let show = call(self, self.ids.show, vec![self.expr(db, origin, deopt)]);
+			let occurs = call(
+				self,
+				self.ids.functions.occurs,
+				vec![self.expr(db, origin, arg)],
+			);
+			let deopt = call(
+				self,
+				self.ids.functions.deopt,
+				vec![self.expr(db, origin, arg)],
+			);
+			let show = call(
+				self,
+				self.ids.builtins.show,
+				vec![self.expr(db, origin, deopt)],
+			);
 			return self.expr(
 				db,
 				origin,
@@ -453,10 +469,14 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				let x_i = self
 					.specialised_model
 					.add_declaration(Item::new(gen, origin));
-				let show = call(self, self.ids.show, vec![self.expr(db, origin, x_i)]);
+				let show = call(
+					self,
+					self.ids.builtins.show,
+					vec![self.expr(db, origin, x_i)],
+				);
 				let join = call(
 					self,
-					self.ids.join,
+					self.ids.builtins.join,
 					vec![
 						self.expr(db, origin, StringLiteral::new(", ", db.upcast())),
 						self.expr(
@@ -476,7 +496,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				);
 				let concat = call(
 					self,
-					self.ids.concat,
+					self.ids.builtins.concat,
 					vec![self.expr(
 						db,
 						origin,
@@ -495,10 +515,14 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				let x_i = self
 					.specialised_model
 					.add_declaration(Item::new(gen, origin));
-				let show = call(self, self.ids.show, vec![self.expr(db, origin, x_i)]);
+				let show = call(
+					self,
+					self.ids.builtins.show,
+					vec![self.expr(db, origin, x_i)],
+				);
 				let join = call(
 					self,
-					self.ids.join,
+					self.ids.builtins.join,
 					vec![
 						self.expr(db, origin, StringLiteral::new(", ", db.upcast())),
 						self.expr(
@@ -518,7 +542,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				);
 				let concat = call(
 					self,
-					self.ids.concat,
+					self.ids.builtins.concat,
 					vec![self.expr(
 						db,
 						origin,
@@ -541,7 +565,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					}
 					let show = call(
 						self,
-						self.ids.show,
+						self.ids.builtins.show,
 						vec![self.expr(
 							db,
 							origin,
@@ -556,7 +580,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				fields.push(self.expr(db, origin, StringLiteral::new(")", db.upcast())));
 				let concat = call(
 					self,
-					self.ids.concat,
+					self.ids.builtins.concat,
 					vec![self.expr(db, origin, ArrayLiteral(fields))],
 				);
 				self.expr(db, origin, concat)
@@ -576,7 +600,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					fields.push(self.expr(db, origin, StringLiteral::new(": ", db.upcast())));
 					let show = call(
 						self,
-						self.ids.show,
+						self.ids.builtins.show,
 						vec![self.expr(
 							db,
 							origin,
@@ -591,7 +615,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				fields.push(self.expr(db, origin, StringLiteral::new(")", db.upcast())));
 				let concat = call(
 					self,
-					self.ids.concat,
+					self.ids.builtins.concat,
 					vec![self.expr(db, origin, ArrayLiteral(fields))],
 				);
 				self.expr(db, origin, concat)

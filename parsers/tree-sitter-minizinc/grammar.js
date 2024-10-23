@@ -1,30 +1,36 @@
-const PREC = {
-	call: 18,
-	default: 17,
-	annotation: 16,
-	unary: 15,
-	exponent: 14,
-	multiplicative: 13,
-	additive: 12,
-	intersect: 11,
-	range: 10,
-	symdiff: 9,
-	set_diff: 8,
-	union: 7,
-	comparative: 6,
-	conjunction: 5,
-	exclusive_disjunction: 4,
-	disjunction: 3,
-	implication: 2,
-	equivalence: 1,
-}
+/// <reference types="tree-sitter-cli/dsl" />
+// @ts-check
+
+const PREC_ORDER = /** @type {const} */ ([
+	"call",
+	"annotation",
+	"default",
+	"exponent",
+	"unary",
+	"multiplicative",
+	"additive",
+	"range",
+	"intersect",
+	"union_or_diff",
+	"comparative",
+	"conjunction",
+	"disjunction",
+	"implication",
+	"equivalence",
+])
+
+const PREC = /** @type {{ [K in typeof PREC_ORDER[number]]: number }} */ (
+	PREC_ORDER.reduce(
+		(res, name, idx, array) => ({ ...res, [name]: 10 * (array.length - idx) }),
+		{}
+	)
+)
 
 const primitive_types = ["ann", "bool", "float", "int", "string"]
 
 const EQUIVALENCE_OPERATORS = ["<->", "⟷", "⇔"]
 const IMPLICATION_OPERATORS = ["->", "→", "⇒", "<-", "←", "⇐"]
-const DISJUNCTION_OPERATORS = ["\\/", "∨"]
-const EXCLUSIVE_DISJUNCTION_OPERATORS = ["xor", "⊻"]
+const DISJUNCTION_OPERATORS = ["\\/", "∨", "xor", "⊻"]
 const CONJUNCTION_OPERATORS = ["/\\", "∧"]
 // prettier-ignore
 const COMPARISON_OPERATORS = [
@@ -32,8 +38,7 @@ const COMPARISON_OPERATORS = [
 	"≥", "in", "∈", "subset", "⊆", "superset", "⊇",
 	"~=", "~!=",
 ];
-const UNION_OPERATORS = ["union", "∪"]
-const SET_DIFF_OPERATORS = ["diff", "∖"]
+const UNION_DIFF_OPERATORS = ["union", "∪", "diff", "∖", "symdiff"]
 const INTERSECTION_OPERATORS = ["intersect", "∩"]
 const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]
 const ADDITIVE_OPERATORS = ["+", "-", "++", "~+", "~-"]
@@ -43,11 +48,9 @@ const OPERATOR_CHARACTERS = `,;:(){}&|$.∞%`.concat(
 	getOpChars(EQUIVALENCE_OPERATORS),
 	getOpChars(IMPLICATION_OPERATORS),
 	getOpChars(DISJUNCTION_OPERATORS),
-	getOpChars(EXCLUSIVE_DISJUNCTION_OPERATORS),
 	getOpChars(CONJUNCTION_OPERATORS),
 	getOpChars(COMPARISON_OPERATORS),
-	getOpChars(UNION_OPERATORS),
-	getOpChars(SET_DIFF_OPERATORS),
+	getOpChars(UNION_DIFF_OPERATORS),
 	getOpChars(INTERSECTION_OPERATORS),
 	getOpChars(ADDITIVE_OPERATORS),
 	getOpChars(MULTIPLICATIVE_OPERATORS)
@@ -359,29 +362,20 @@ module.exports = grammar({
 
 		infix_operator: ($) => {
 			// WARNING: All non-word operators must be included in the OPERATOR_CHARACTERS string
-			const table = [
+			const table = /** @type {const} */ ([
 				[prec.left, PREC.equivalence, choice(...EQUIVALENCE_OPERATORS)],
 				[prec.left, PREC.implication, choice(...IMPLICATION_OPERATORS)],
 				[prec.left, PREC.disjunction, choice(...DISJUNCTION_OPERATORS)],
-				[
-					prec.left,
-					PREC.exclusive_disjunction,
-					choice(...EXCLUSIVE_DISJUNCTION_OPERATORS),
-				],
 				[prec.left, PREC.conjunction, choice(...CONJUNCTION_OPERATORS)],
-				// TODO: Should really be nonassoc
-				[prec.left, PREC.comparative, choice(...COMPARISON_OPERATORS)],
-				[prec.left, PREC.union, choice(...UNION_OPERATORS)],
-				[prec.left, PREC.set_diff, choice(...SET_DIFF_OPERATORS)],
-				[prec.left, PREC.symdiff, "symdiff"],
+				[nonAssoc, PREC.comparative, choice(...COMPARISON_OPERATORS)],
+				[prec.left, PREC.union_or_diff, choice(...UNION_DIFF_OPERATORS)],
 				[prec.left, PREC.intersect, choice(...INTERSECTION_OPERATORS)],
-				// TODO: Could be nonassoc, will always give type error
-				[prec.left, PREC.range, choice(...RANGE_OPERATORS)],
+				[nonAssoc, PREC.range, choice(...RANGE_OPERATORS)],
 				[prec.left, PREC.additive, choice(...ADDITIVE_OPERATORS)],
 				[prec.left, PREC.multiplicative, choice(...MULTIPLICATIVE_OPERATORS)],
-				[prec.left, PREC.exponent, "^"],
+				[prec.right, PREC.exponent, "^"],
 				[prec.left, PREC.default, "default"],
-			]
+			])
 
 			return choice(
 				...table.map(([assoc, precedence, operator]) =>
@@ -721,4 +715,9 @@ function sepBy1(sep, rule) {
 
 function getOpChars(list) {
 	return list.join("").replace(/[A-Za-z0-9\-\\\/]/g, "")
+}
+
+function nonAssoc(p, rule) {
+	// Bump precedence by 5 to indicate this is non associative
+	return prec.left(p + 5, rule)
 }

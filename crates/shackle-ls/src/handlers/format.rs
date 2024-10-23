@@ -5,7 +5,7 @@ use shackle_compiler::{
 	file::ModelRef,
 	syntax::{ast::ConstraintModel, db::SourceParser},
 };
-use shackle_fmt::{format_model, FormatOptions, MiniZincFormatOptions};
+use shackle_fmt::{format_model, MiniZincFormatOptions};
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler};
 
@@ -20,11 +20,8 @@ impl RequestHandler<Formatting, (ModelRef, MiniZincFormatOptions)> for FormatHan
 		Ok((
 			db.set_active_file_from_document(&params.text_document)?,
 			MiniZincFormatOptions {
-				core: FormatOptions {
-					use_tabs: !params.options.insert_spaces,
-					indent_size: params.options.tab_size as usize,
-					..Default::default()
-				},
+				use_tabs: !params.options.insert_spaces,
+				indent_size: params.options.tab_size as usize,
 				..Default::default()
 			},
 		))

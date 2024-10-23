@@ -33,7 +33,7 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 			sections.entry(section).or_default().push(expression)
 		} else {
 			sections
-				.entry(ids.default.into())
+				.entry(ids.literals.default.into())
 				.or_default()
 				.push(expression)
 		}
@@ -52,7 +52,7 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 					&model,
 					origin,
 					LookupCall {
-						function: ids.plus_plus.into(),
+						function: ids.builtins.plus_plus.into(),
 						arguments: vec![acc, e],
 					},
 				)
@@ -63,22 +63,30 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 					&model,
 					origin,
 					LookupCall {
-						function: ids.concat.into(),
+						function: ids.builtins.concat.into(),
 						arguments: vec![arg],
 					},
 				)
 			})
 			.unwrap_or_else(|| {
-				Expression::new(db, &model, origin, StringLiteral::from(ids.empty_string))
+				Expression::new(
+					db,
+					&model,
+					origin,
+					StringLiteral::from(ids.literals.empty_string),
+				)
 			});
 		let mut declaration = Declaration::new(true, Domain::unbounded(db, origin, tys.string));
 		declaration.set_name(Identifier::new(
 			format!("mzn_output_{}", section),
 			db.upcast(),
 		));
-		declaration
-			.annotations_mut()
-			.push(Expression::new(db, &model, origin, ids.output_only));
+		declaration.annotations_mut().push(Expression::new(
+			db,
+			&model,
+			origin,
+			ids.annotations.output_only,
+		));
 		declaration.set_definition(definition);
 		model.add_declaration(Item::new(declaration, origin));
 	}
@@ -89,8 +97,8 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 		.filter_map(|(idx, decl)| {
 			if decl.definition().is_none()
 				&& !decl.ty().known_par(db.upcast())
-				&& !decl.annotations().has(&model, ids.no_output)
-				&& !decl.annotations().has(&model, ids.output)
+				&& !decl.annotations().has(&model, ids.annotations.no_output)
+				&& !decl.annotations().has(&model, ids.annotations.output)
 			{
 				Some(idx)
 			} else {
@@ -103,7 +111,7 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 			db,
 			&model,
 			model[idx].origin(),
-			LookupIdentifier(ids.output),
+			LookupIdentifier(ids.annotations.output),
 		);
 		model[idx].annotations_mut().push(output_ann);
 	}

@@ -5,19 +5,19 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use super::{Mode, ModeAnalyser};
+use super::ModeAnalysis;
 use crate::{
 	constants::{IdentifierRegistry, TypeRegistry},
 	thir::{
 		db::Thir,
 		traverse::{
-			visit_array_comprehension, visit_callable, visit_expression, visit_if_then_else,
-			Visitor,
+			visit_array_comprehension, visit_callable, visit_constraint, visit_expression,
+			visit_if_then_else, Visitor,
 		},
 		ArrayComprehension, Callable, ConstraintId, Expression, FunctionId, FunctionItem,
 		IfThenElse, Model,
 	},
-	utils::{arena::ArenaMap, maybe_grow_stack, refmap::RefMap},
+	utils::{arena::ArenaMap, maybe_grow_stack},
 };
 
 /// Totality of a function
@@ -32,8 +32,11 @@ pub enum Totality {
 }
 
 /// Get the totality of the functions in this model
-pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, Totality> {
-	let modes = ModeAnalyser::root_functions(db, model).run(db);
+pub fn analyse_totality(
+	db: &dyn Thir,
+	model: &Model,
+	modes: &ModeAnalysis<'_>,
+) -> ArenaMap<FunctionItem, Totality> {
 	let ids = db.identifier_registry();
 	let mut todo = Vec::new();
 	let mut result = ArenaMap::with_capacity(model.functions_len());
@@ -41,14 +44,14 @@ pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, 
 		FxHashMap::default();
 	for (idx, f) in model.all_functions() {
 		result.insert(idx, Totality::Total);
-		let already_total = f.annotations().has(model, ids.promise_total)
+		let already_total = f.annotations().has(model, ids.annotations.promise_total)
 			|| f.name().is_root(db)
 			|| f.body().is_none();
 		if !already_total {
 			if let Some(body) = f.body() {
 				let mut v = TotalityVisitor {
 					db,
-					mode: &modes,
+					modes,
 					ids: db.identifier_registry(),
 					tys: db.type_registry(),
 					dependencies: FxHashMap::default(),
@@ -92,7 +95,7 @@ pub fn analyse_totality(db: &dyn Thir, model: &Model) -> ArenaMap<FunctionItem, 
 
 struct TotalityVisitor<'a> {
 	db: &'a dyn Thir,
-	mode: &'a RefMap<'a, Expression, Mode>,
+	modes: &'a ModeAnalysis<'a>,
 	ids: Arc<IdentifierRegistry>,
 	tys: Arc<TypeRegistry>,
 	dependencies: FxHashMap<FunctionId, bool>,
@@ -102,11 +105,17 @@ struct TotalityVisitor<'a> {
 
 impl<'a> Visitor<'a> for TotalityVisitor<'a> {
 	fn visit_constraint(&mut self, model: &'a Model, c: ConstraintId) {
+		if self.modes.get(model[c].expression()).is_root() {
+			// If the constraint in the non-root version of the function is in root context,
+			// this must actually be a statically true constraint
+			return;
+		}
 		if model[c].expression().ty() == self.tys.var_bool {
 			self.totality = Totality::VarPartial;
 		} else if self.totality == Totality::Total {
 			self.totality = Totality::ParPartial;
 		}
+		visit_constraint(self, model, c);
 	}
 
 	fn visit_array_comprehension(&mut self, model: &'a Model, c: &'a ArrayComprehension) {
@@ -115,7 +124,7 @@ impl<'a> Visitor<'a> for TotalityVisitor<'a> {
 				|| g.declarations().any(|d| {
 					model[d]
 						.annotations()
-						.has(model, self.ids.mzn_var_where_clause)
+						.has(model, self.ids.annotations.mzn_var_where_clause)
 				})
 		});
 		let prev_var_ite = self.in_var_ite;
@@ -156,11 +165,11 @@ impl<'a> Visitor<'a> for TotalityVisitor<'a> {
 	fn visit_expression(&mut self, model: &'a Model, expression: &'a Expression) {
 		if self.totality < Totality::VarPartial
 			&& (expression.ty() != self.tys.par_bool && expression.ty() != self.tys.var_bool
-				|| self.mode[expression].is_root())
+				|| self.modes.get_in_root_fn(expression) != self.modes.get(expression))
 		{
 			// If an expression is boolean, we still allow it to affect the totality result if
-			// it's in root context because in that case we should still produce a root version
-			// during totalisation
+			// its context is different in the root version of the function as this indicates
+			// that it would benefit from having a separate root version generated
 			maybe_grow_stack(|| {
 				visit_expression(self, model, expression);
 			});
@@ -178,7 +187,7 @@ mod test {
 	use crate::{
 		db::Inputs,
 		file::{InputFile, InputLang},
-		thir::{db::Thir, pretty_print::PrettyPrinter},
+		thir::{analyse::ModeAnalysis, db::Thir, pretty_print::PrettyPrinter},
 		CompilerDatabase,
 	};
 
@@ -190,7 +199,8 @@ mod test {
 			InputLang::MiniZinc,
 		)]));
 		let model = db.model_thir().take();
-		let result = analyse_totality(&db, &model);
+		let modes = ModeAnalysis::analyse(&db, &model);
+		let result = analyse_totality(&db, &model, &modes);
 		let printer = PrettyPrinter::new(&db, &model);
 		let mut pretty = String::new();
 		for (f, _) in model.top_level_functions() {
@@ -220,7 +230,7 @@ mod test {
 			expect![[r#"
     function int: foo(int: x) :: total;
     function int: bar(int: x) :: par_partial;
-    function bool: qux(int: x) :: total;
+    function bool: qux(int: x) :: par_partial;
 "#]],
 		);
 	}
@@ -323,6 +333,24 @@ mod test {
 			expect![[r#"
     function int: foo() :: par_partial;
     function var int: bar(var bool: b) :: var_partial;
+"#]],
+		);
+	}
+
+	#[test]
+	fn test_totality_analysis_abort() {
+		check_totality(
+			r#"
+			test abort(string: msg);
+			test bar(int: x);
+			function int: foo(int: x) = let {
+				constraint if bar(x) then true else abort("foo") endif;
+			} in x;
+            "#,
+			expect![[r#"
+    function bool: abort(string: msg) :: total;
+    function bool: bar(int: x) :: total;
+    function int: foo(int: x) :: total;
 "#]],
 		);
 	}

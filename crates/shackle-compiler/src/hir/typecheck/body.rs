@@ -116,7 +116,9 @@ impl BodyTypeContext {
 					if let Some(e) = it.definition {
 						let ids = db.identifier_registry();
 						let output_only = it.annotations.iter().any(|ann| match &it.data[*ann] {
-							crate::hir::Expression::Identifier(i) => *i == ids.output_only,
+							crate::hir::Expression::Identifier(i) => {
+								*i == ids.annotations.output_only
+							}
 							_ => false,
 						});
 						if output_only {

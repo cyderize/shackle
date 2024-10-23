@@ -98,7 +98,11 @@ fn get_precendences(
 	for (k, v) in precedences {
 		let prec = match v {
 			Prec::Left(i) => {
-				format!("Precedence::Left({})", i)
+				if i % 10 == 0 {
+					format!("Precedence::Left({})", i)
+				} else {
+					format!("Precedence::NonAssoc({})", i - 5)
+				}
 			}
 			Prec::Prec(i) => {
 				format!("Precedence::Prec({})", i)
@@ -118,7 +122,11 @@ fn get_precendences(
 		for (op, prec) in v {
 			let prec = match prec {
 				Prec::Left(i) => {
-					format!("Precedence::Left({})", i)
+					if i % 10 == 0 {
+						format!("Precedence::Left({})", i)
+					} else {
+						format!("Precedence::NonAssoc({})", i - 5)
+					}
 				}
 				Prec::Prec(i) => {
 					format!("Precedence::Prec({})", i)

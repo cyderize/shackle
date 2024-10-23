@@ -736,7 +736,8 @@ impl ExpressionCollector<'_> {
 				}
 				minizinc::InterpolationItem::Expression(e) => {
 					let arguments = Box::new([self.collect_expression(e.clone())]);
-					let function = self.alloc_expression(Origin::new(&e), self.identifiers.show);
+					let function =
+						self.alloc_expression(Origin::new(&e), self.identifiers.builtins.show);
 					self.alloc_expression(
 						Origin::new(&e),
 						Call {
@@ -749,7 +750,7 @@ impl ExpressionCollector<'_> {
 			.collect();
 		let arguments =
 			Box::new([self.alloc_expression(origin.clone(), ArrayLiteral { members: strings })]);
-		let function = self.alloc_expression(origin.clone(), self.identifiers.concat);
+		let function = self.alloc_expression(origin.clone(), self.identifiers.builtins.concat);
 
 		self.alloc_expression(
 			origin,

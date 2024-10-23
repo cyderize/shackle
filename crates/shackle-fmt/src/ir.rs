@@ -7,26 +7,7 @@
 
 use std::{collections::VecDeque, fmt::Debug};
 
-/// Formatting options
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FormatOptions {
-	/// Target maximum line length
-	pub line_width: usize,
-	/// Whether to indent using tabs
-	pub use_tabs: bool,
-	/// Size of indent
-	pub indent_size: usize,
-}
-
-impl Default for FormatOptions {
-	fn default() -> Self {
-		Self {
-			line_width: 80,
-			use_tabs: true,
-			indent_size: 4,
-		}
-	}
-}
+use crate::options::FormatOptions;
 
 impl<T: IntoIterator<Item = Element>> From<T> for Element {
 	fn from(value: T) -> Self {
@@ -158,7 +139,7 @@ impl Element {
 	}
 
 	/// Format this element
-	pub fn format(&self, options: &FormatOptions) -> String {
+	pub fn format(&self, options: &impl FormatOptions) -> String {
 		Formatter::default().pretty_print(self, options)
 	}
 }
@@ -263,7 +244,7 @@ impl Default for Formatter {
 }
 
 impl Formatter {
-	fn pretty_print(&mut self, element: &Element, options: &FormatOptions) -> String {
+	fn pretty_print(&mut self, element: &Element, options: &impl FormatOptions) -> String {
 		let mut output = String::new();
 		let mut todo = vec![(false, element)];
 		let mut current_condition = BufferItemCondition::None;
@@ -287,7 +268,8 @@ impl Formatter {
 						}
 					};
 					if immediate_write {
-						while self.column + self.enqueued_chars + text.len() > options.line_width {
+						while self.column + self.enqueued_chars + text.len() > options.line_width()
+						{
 							log::debug!("Not enough space, need line break");
 							if let Some(temp) = self.breaks.pop_back() {
 								log::debug!("Took line break {:?}", temp);
@@ -457,7 +439,7 @@ impl Formatter {
 		output
 	}
 
-	fn print_buffer(&mut self, until: usize, output: &mut String, options: &FormatOptions) {
+	fn print_buffer(&mut self, until: usize, output: &mut String, options: &impl FormatOptions) {
 		while self.total_items_flushed < until {
 			log::debug!(
 				"break level: {}, break group: {}",
@@ -503,15 +485,15 @@ impl Formatter {
 					if literal {
 						self.column = 0;
 					} else {
-						if options.use_tabs {
+						if options.use_tabs() {
 							output.extend(std::iter::repeat('\t').take(self.indent_level));
 						} else {
 							output.extend(
 								std::iter::repeat(' ')
-									.take(options.indent_size * self.indent_level),
+									.take(options.indent_size() * self.indent_level),
 							);
 						}
-						self.column = options.indent_size * self.indent_level;
+						self.column = options.indent_size() * self.indent_level;
 					}
 				}
 				BufferItemData::Indent => {
@@ -539,6 +521,38 @@ mod tests {
 	use expect_test::expect;
 
 	use super::*;
+	use crate::options::FormatOptions;
+
+	#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+	struct Options {
+		line_width: usize,
+		use_tabs: bool,
+		indent_size: usize,
+	}
+
+	impl Default for Options {
+		fn default() -> Self {
+			Self {
+				line_width: 80,
+				use_tabs: true,
+				indent_size: 4,
+			}
+		}
+	}
+
+	impl FormatOptions for Options {
+		fn line_width(&self) -> usize {
+			self.line_width
+		}
+
+		fn use_tabs(&self) -> bool {
+			self.use_tabs
+		}
+
+		fn indent_size(&self) -> usize {
+			self.indent_size
+		}
+	}
 
 	fn js_document() -> Element {
 		Element::sequence(vec![
@@ -629,7 +643,7 @@ mod tests {
 	#[test]
 	fn test_format_js_80() {
 		let document = js_document();
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     function foo(abacus, banana) {
     	if (abacus.beads < banana) {
@@ -644,7 +658,7 @@ mod tests {
 	#[test]
 	fn test_format_js_30() {
 		let document = js_document();
-		let formatted = document.format(&FormatOptions {
+		let formatted = document.format(&Options {
 			line_width: 30,
 			..Default::default()
 		});
@@ -734,7 +748,7 @@ mod tests {
 	#[test]
 	fn test_format_json_120() {
 		let document = json_document();
-		let formatted = document.format(&FormatOptions {
+		let formatted = document.format(&Options {
 			line_width: 120,
 			..Default::default()
 		});
@@ -747,7 +761,7 @@ mod tests {
 	#[test]
 	fn test_format_json_80() {
 		let document = json_document();
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     {
     	"foo": 1,
@@ -761,7 +775,7 @@ mod tests {
 	#[test]
 	fn test_format_json_30() {
 		let document = json_document();
-		let formatted = document.format(&FormatOptions {
+		let formatted = document.format(&Options {
 			line_width: 30,
 			..Default::default()
 		});
@@ -788,7 +802,7 @@ mod tests {
 			Element::line_break_or_space(),
 			Element::text("b"),
 		])]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     a
     b"#]];
@@ -805,7 +819,7 @@ mod tests {
 			Element::line_break(),
 			Element::text("c"),
 		])]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
 
     	a
@@ -827,7 +841,7 @@ mod tests {
 			)),
 			Element::line_break(),
 		]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     AD
 "#]];
@@ -844,7 +858,7 @@ mod tests {
 			]),
 			Element::line_break(),
 		]);
-		let formatted = document.format(&FormatOptions {
+		let formatted = document.format(&Options {
 			line_width: 10,
 			..Default::default()
 		});
@@ -871,7 +885,7 @@ mod tests {
 			]))),
 			Element::line_break(),
 		]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -902,7 +916,7 @@ mod tests {
 			Element::text(";"),
 			Element::line_break(),
 		]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     predicate foo() =
     	if aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa then
@@ -947,7 +961,7 @@ mod tests {
 			Element::text(";"),
 			Element::line_break(),
 		]);
-		let formatted = document.format(&Default::default());
+		let formatted = document.format(&Options::default());
 		let expected = expect![[r#"
     test mzn_can_extend_array_opt(array [$E] of any $T: x, var $F: idx)
     	:: mzn_unreachable;

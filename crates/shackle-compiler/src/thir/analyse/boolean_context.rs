@@ -5,13 +5,17 @@
 
 use std::{ops::Not, sync::Arc};
 
+use rustc_hash::FxHashMap;
+
 use crate::{
 	constants::{IdentifierRegistry, TypeRegistry},
+	hir::BooleanLiteral,
 	thir::{
-		db::Thir, follow::follow_expression, Callable, DomainData, Expression, ExpressionData,
-		Generator, ItemId, LetItem, Marker, Model, ResolvedIdentifier,
+		db::Thir, follow::follow_expression, traverse::Visitor, Call, Callable, Case,
+		DeclarationId, DomainData, Expression, ExpressionData, Generator, IfThenElse, ItemId, Let,
+		LetItem, Marker, Model, ResolvedIdentifier,
 	},
-	utils::refmap::RefMap,
+	utils::{maybe_grow_stack, refmap::RefMap},
 };
 
 /// The boolean context of an expression
@@ -86,6 +90,109 @@ impl Mode {
 			| Mode::NonRoot { conditional_depth } => *conditional_depth = depth,
 		}
 	}
+
+	/// Update this mode
+	pub fn update(self, other: Mode) -> Mode {
+		match (self, other) {
+			(
+				Mode::NonRoot {
+					conditional_depth: d1,
+				},
+				Mode::Root {
+					result,
+					conditional_depth: d2,
+				},
+			) => {
+				assert!(d1 <= d2, "Cannot refer to identifier defined more deeply");
+				if d1 == d2 {
+					return Mode::Root {
+						result,
+						conditional_depth: d1,
+					};
+				}
+			}
+			_ => (),
+		}
+		self
+	}
+
+	/// Get as a string which can be used as an annotation name for debugging
+	pub fn as_str(&self) -> &'static str {
+		if self.is_root() {
+			"ctx_root"
+		} else if self.is_root_neg() {
+			"ctx_root_neg"
+		} else {
+			"ctx_non_root"
+		}
+	}
+}
+
+/// Boolean context analysis
+///
+/// Determines whether expression are in root or non-root context.
+/// Also determines the context of subexpressions of function bodies assuming
+/// that the function is in root context.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModeAnalysis<'a, T: Marker = ()> {
+	map: RefMap<'a, Expression<T>, Mode>,
+	root_map: RefMap<'a, Expression<T>, Mode>,
+}
+
+impl<'a, T: Marker> ModeAnalysis<'a, T> {
+	/// Run context analysis
+	pub fn analyse(db: &dyn Thir, model: &'a Model<T>) -> ModeAnalysis<'a, T> {
+		ModeAnalyser::run(db, model)
+	}
+
+	/// Get the context of the given expression
+	pub fn get(&self, e: &'a Expression<T>) -> Mode {
+		self.map[&e]
+	}
+
+	/// Get the context of the given expression assuming the containing function is root
+	pub fn get_in_root_fn(&self, e: &'a Expression<T>) -> Mode {
+		self.root_map
+			.get(e)
+			.copied()
+			.unwrap_or_else(|| self.map[&e])
+	}
+
+	/// Update the mode for an expression and return the new mode if it was updated
+	fn update(&mut self, e: &'a Expression<T>, mode: Mode) -> Option<Mode> {
+		let mut inserted = false;
+		let mut updated = false;
+		let result = self.map.update_or_insert(
+			e,
+			|m| {
+				let new_mode = m.update(mode);
+				updated = *m != new_mode;
+				*m = new_mode;
+			},
+			|| {
+				inserted = true;
+				mode
+			},
+		);
+		if inserted || updated {
+			Some(*result)
+		} else {
+			None
+		}
+	}
+
+	/// Update the mode for an expression in the root fn map and return the new mode if it was updated
+	fn update_in_root_fn(&mut self, e: &'a Expression<T>, mode: Mode) -> Option<Mode> {
+		let orig_mode = self.get_in_root_fn(e);
+		let new_mode = orig_mode.update(mode);
+		let changed = orig_mode != new_mode;
+		if changed {
+			self.root_map.insert(e, new_mode);
+			Some(new_mode)
+		} else {
+			None
+		}
+	}
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -101,28 +208,32 @@ struct TodoItem<'a, T: Marker> {
 }
 
 /// Boolean context analyser
-pub struct ModeAnalyser<'a, T: Marker> {
+struct ModeAnalyser<'a, T: Marker> {
 	model: &'a Model<T>,
 	todo: Vec<TodoItem<'a, T>>,
-	map: RefMap<'a, Expression<T>, Mode>,
+	result: ModeAnalysis<'a, T>,
 	ids: Arc<IdentifierRegistry>,
 	tys: Arc<TypeRegistry>,
+	booleans: FxHashMap<DeclarationId<T>, bool>,
+	in_root_mode: bool,
 }
 
 impl<'a, T: Marker> ModeAnalyser<'a, T> {
-	/// Create a new analyser for the given model
-	pub fn new(db: &dyn Thir, model: &'a Model<T>) -> Self {
+	fn run(db: &dyn Thir, model: &'a Model<T>) -> ModeAnalysis<'a, T> {
 		let mut analyser = ModeAnalyser {
 			model,
 			todo: Vec::new(),
-			map: RefMap::default(),
+			result: ModeAnalysis::default(),
 			ids: db.identifier_registry(),
 			tys: db.type_registry(),
+			booleans: FxHashMap::default(),
+			in_root_mode: false,
 		};
 		let root = Mode::root();
 		let non_root = Mode::NonRoot {
 			conditional_depth: 0,
 		};
+		// Analyse model items
 		for item in model.top_level_items() {
 			match item {
 				ItemId::Annotation(_) => (),
@@ -162,7 +273,7 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 						let is_root = model[f].name().is_root(db)
 							|| model[f]
 								.annotations()
-								.has(model, analyser.ids.promise_total);
+								.has(model, analyser.ids.annotations.promise_total);
 						analyser.update(b, if is_root { root } else { non_root }, false);
 					}
 				}
@@ -175,393 +286,460 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 				ItemId::Enumeration(_) | ItemId::Output(_) => unreachable!(),
 			}
 		}
-		analyser
-	}
 
-	/// Create a new analyser which considers functions to all be in root context
-	///
-	/// Note that only the function bodies are analysed
-	pub fn root_functions(db: &dyn Thir, model: &'a Model<T>) -> Self {
-		let mut analyser = ModeAnalyser {
-			model,
-			todo: Vec::new(),
-			map: RefMap::default(),
-			ids: db.identifier_registry(),
-			tys: db.type_registry(),
-		};
-		let root = Mode::root();
+		while let Some(it) = analyser.todo.pop() {
+			analyser.run_iteration(db, &it);
+		}
+
+		// Analysis as if all functions are root and store separately
+		analyser.in_root_mode = true;
 		for (_, f) in model.top_level_functions() {
 			if let Some(b) = f.body() {
 				analyser.update(b, root, false);
 			}
 		}
-		analyser
+
+		while let Some(it) = analyser.todo.pop() {
+			analyser.run_iteration(db, &it);
+		}
+
+		analyser.result
 	}
 
-	/// Run the context analysis
-	pub fn run(mut self, db: &dyn Thir) -> RefMap<'a, Expression<T>, Mode> {
-		while let Some(it) = self.todo.pop() {
-			assert!(
-				!it.update_bools
-					|| it
-						.expression
-						.ty()
-						.elem_ty(db.upcast())
-						.unwrap_or(self.tys.error)
-						.is_bool(db.upcast()),
-				"Set update bools for non array of bool expression"
-			);
-			for ann in it.expression.annotations().iter() {
-				self.update(ann, it.mode, false);
-			}
+	fn run_iteration(&mut self, db: &dyn Thir, it: &TodoItem<'a, T>) {
+		assert!(
+			!it.update_bools
+				|| it
+					.expression
+					.ty()
+					.elem_ty(db.upcast())
+					.unwrap_or(self.tys.error)
+					.is_bool(db.upcast()),
+			"Set update bools for non array of bool expression"
+		);
+		for ann in it.expression.annotations().iter() {
+			self.update(ann, it.mode, false);
+		}
 
-			match &**it.expression {
-				ExpressionData::Absent
-				| ExpressionData::BooleanLiteral(_)
-				| ExpressionData::IntegerLiteral(_)
-				| ExpressionData::FloatLiteral(_)
-				| ExpressionData::StringLiteral(_)
-				| ExpressionData::Infinity => (), // No children to update
-				ExpressionData::Identifier(i) => {
-					if let ResolvedIdentifier::Declaration(d) = i {
-						if let Some(def) = self.model[*d].definition() {
-							self.update(def, it.mode, it.update_bools);
-						}
+		match &**it.expression {
+			ExpressionData::Absent
+			| ExpressionData::BooleanLiteral(_)
+			| ExpressionData::IntegerLiteral(_)
+			| ExpressionData::FloatLiteral(_)
+			| ExpressionData::StringLiteral(_)
+			| ExpressionData::Infinity => (), // No children to update
+			ExpressionData::Identifier(i) => {
+				if let ResolvedIdentifier::Declaration(d) = i {
+					if let Some(def) = self.model[*d].definition() {
+						self.update(def, it.mode, it.update_bools);
 					}
 				}
-				ExpressionData::ArrayLiteral(al) => {
-					if it
-						.expression
-						.ty()
-						.elem_ty(db.upcast())
-						.unwrap()
-						.is_bool(db.upcast())
-					{
-						if it.update_bools {
-							// Argument to a logical predicate
-							for e in al.iter() {
-								self.update(e, it.mode, false);
-							}
-						} else {
-							let non_root = Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth(),
-							};
-							for e in al.iter() {
-								self.update(e, non_root, false);
-							}
-						}
-					} else {
+			}
+			ExpressionData::ArrayLiteral(al) => {
+				if it
+					.expression
+					.ty()
+					.elem_ty(db.upcast())
+					.unwrap()
+					.is_bool(db.upcast())
+				{
+					if it.update_bools {
+						// Argument to a logical predicate
 						for e in al.iter() {
 							self.update(e, it.mode, false);
 						}
-					}
-				}
-				ExpressionData::SetLiteral(sl) => {
-					if it
-						.expression
-						.ty()
-						.elem_ty(db.upcast())
-						.unwrap()
-						.is_bool(db.upcast())
-					{
+					} else {
 						let non_root = Mode::NonRoot {
 							conditional_depth: it.mode.conditional_depth(),
 						};
-						for e in sl.iter() {
+						for e in al.iter() {
 							self.update(e, non_root, false);
 						}
-					} else {
-						for e in sl.iter() {
-							self.update(e, it.mode, false);
-						}
 					}
-				}
-				ExpressionData::TupleLiteral(tl) => {
-					for e in tl.iter() {
-						if e.ty().is_bool(db.upcast()) {
-							self.update(
-								e,
-								Mode::NonRoot {
-									conditional_depth: it.mode.conditional_depth(),
-								},
-								false,
-							);
-						} else {
-							self.update(e, it.mode, false);
-						}
-					}
-				}
-				ExpressionData::ArrayComprehension(c) => {
-					for g in c.generators.iter() {
-						match g {
-							Generator::Iterator { collection, .. } => {
-								self.update(collection, it.mode, false);
-							}
-							Generator::Assignment { assignment, .. } => {
-								let mode = if self.model[*assignment].ty().is_bool(db.upcast()) {
-									Mode::NonRoot {
-										conditional_depth: it.mode.conditional_depth(),
-									}
-								} else {
-									it.mode
-								};
-								self.update(
-									self.model[*assignment].definition().unwrap(),
-									mode,
-									false,
-								);
-							}
-						}
-						if let Some(w) = g.where_clause() {
-							self.update(
-								w,
-								Mode::NonRoot {
-									conditional_depth: it.mode.conditional_depth(),
-								},
-								false,
-							);
-						}
-					}
-					if let Some(e) = &c.indices {
+				} else {
+					for e in al.iter() {
 						self.update(e, it.mode, false);
 					}
-					if it
-						.expression
-						.ty()
-						.elem_ty(db.upcast())
-						.unwrap()
-						.is_bool(db.upcast())
-					{
-						if it.update_bools {
-							self.update(
-								&c.template,
-								Mode::NonRoot {
-									conditional_depth: it.mode.conditional_depth(),
-								},
-								false,
-							);
-						} else {
-							self.update(&c.template, it.mode, false);
-						}
-					} else {
-						self.update(&c.template, it.mode, false);
-					}
 				}
-				ExpressionData::TupleAccess(ta) => {
-					for e in follow_expression(self.model, &it.expression) {
+			}
+			ExpressionData::SetLiteral(sl) => {
+				if it
+					.expression
+					.ty()
+					.elem_ty(db.upcast())
+					.unwrap()
+					.is_bool(db.upcast())
+				{
+					let non_root = Mode::NonRoot {
+						conditional_depth: it.mode.conditional_depth(),
+					};
+					for e in sl.iter() {
+						self.update(e, non_root, false);
+					}
+				} else {
+					for e in sl.iter() {
 						self.update(e, it.mode, false);
 					}
-					self.update(&ta.tuple, it.mode, false);
 				}
-				ExpressionData::IfThenElse(ite) => {
-					let mut mode = it.mode;
-					mode.set_conditional_depth(mode.conditional_depth() + 1);
-					for b in ite.branches.iter() {
+			}
+			ExpressionData::TupleLiteral(tl) => {
+				for e in tl.iter() {
+					if e.ty().is_bool(db.upcast()) {
 						self.update(
-							&b.condition,
+							e,
 							Mode::NonRoot {
 								conditional_depth: it.mode.conditional_depth(),
 							},
 							false,
 						);
-						if b.var_condition(db) {
-							mode = Mode::NonRoot {
-								conditional_depth: mode.conditional_depth(),
-							};
-						}
-						self.update(&b.result, mode, it.update_bools);
+					} else {
+						self.update(e, it.mode, false);
 					}
-					self.update(&ite.else_result, mode, it.update_bools);
-				}
-				ExpressionData::Case(_) => todo!(),
-				ExpressionData::Call(c) => (|| {
-					match &c.function {
-						Callable::Function(f) => {
-							if self.model[*f].name() == self.ids.not && c.arguments.len() == 1 {
-								self.update(&c.arguments[0], !it.mode, false);
-								return;
-							} else if (self.model[*f].name() == self.ids.conj && it.mode.is_root()
-								|| self.model[*f].name() == self.ids.disj && it.mode.is_root_neg())
-								&& c.arguments.len() == 2
-								&& c.arguments[0].ty().is_bool(db.upcast())
-								&& c.arguments[1].ty().is_bool(db.upcast())
-							{
-								self.update(&c.arguments[0], it.mode, false);
-								self.update(&c.arguments[1], it.mode, false);
-							} else if (self.model[*f].name() == self.ids.forall
-								&& it.mode.is_root() || self.model[*f].name()
-								== self.ids.exists && it
-								.mode
-								.is_root_neg()) && c.arguments.len() == 1
-								&& c.arguments[0]
-									.ty()
-									.elem_ty(db.upcast())
-									.unwrap_or(self.tys.error)
-									.is_bool(db.upcast())
-							{
-								self.update(&c.arguments[0], it.mode, true);
-								return;
-							} else if self.model[*f].name() == self.ids.clause
-								&& c.arguments.len() == 2
-								&& it.mode.is_root_neg()
-							{
-								self.update(&c.arguments[0], it.mode, true);
-								self.update(&c.arguments[1], !it.mode, true);
-								return;
-							} else if self.model[*f].name() == self.ids.assert
-								&& c.arguments.len() > 1
-							{
-								self.update(
-									&c.arguments[0],
-									Mode::Root {
-										result: true,
-										conditional_depth: it.mode.conditional_depth(),
-									},
-									false,
-								);
-								for e in c.arguments[1..].iter() {
-									if e.ty().is_bool(db.upcast()) {
-										self.update(
-											e,
-											Mode::NonRoot {
-												conditional_depth: it.mode.conditional_depth(),
-											},
-											false,
-										);
-									} else {
-										self.update(e, it.mode, false);
-									}
-								}
-								return;
-							} else if (self.model[*f].name()
-								== self.ids.symmetry_breaking_constraint
-								|| self.model[*f].name() == self.ids.redundant_constraint)
-								&& c.arguments.len() == 1
-							{
-								self.update(&c.arguments[0], it.mode, false);
-								return;
-							}
-						}
-						Callable::Expression(e) => {
-							self.update(&e, it.mode, false);
-						}
-						Callable::Annotation(_) | Callable::AnnotationDestructure(_) => (),
-						Callable::EnumConstructor(_) | Callable::EnumDestructor(_) => {
-							unreachable!()
-						}
-					}
-					for e in c.arguments.iter() {
-						if e.ty().is_bool(db.upcast()) {
-							self.update(
-								e,
-								Mode::NonRoot {
-									conditional_depth: it.mode.conditional_depth(),
-								},
-								false,
-							);
-						} else {
-							self.update(e, it.mode, false);
-						}
-					}
-				})(),
-				ExpressionData::Let(l) => {
-					for item in l.items.iter() {
-						match item {
-							LetItem::Constraint(c) => {
-								for ann in self.model[*c].annotations().iter() {
-									self.update(ann, it.mode, false);
-								}
-								self.update(self.model[*c].expression(), it.mode, false);
-							}
-							LetItem::Declaration(d) => {
-								for ann in self.model[*d].annotations().iter() {
-									self.update(ann, it.mode, false);
-								}
-								for dom in self.model[*d].domain().walk() {
-									if let DomainData::Bounded(b) = &**dom {
-										self.update(&b, it.mode, false);
-									}
-								}
-								if let Some(def) = self.model[*d].definition() {
-									if self.model[*d].ty().is_bool(db.upcast()) {
-										self.update(
-											def,
-											Mode::NonRoot {
-												conditional_depth: it.mode.conditional_depth(),
-											},
-											false,
-										);
-									} else {
-										self.update(def, it.mode, false);
-									}
-								}
-							}
-						}
-					}
-					self.update(&l.in_expression, it.mode, false);
-				}
-				ExpressionData::Lambda(_) => todo!(),
-				ExpressionData::RecordAccess(_)
-				| ExpressionData::SetComprehension(_)
-				| ExpressionData::RecordLiteral(_) => {
-					unreachable!()
 				}
 			}
+			ExpressionData::ArrayComprehension(c) => {
+				for g in c.generators.iter() {
+					match g {
+						Generator::Iterator { collection, .. } => {
+							self.update(collection, it.mode, false);
+						}
+						Generator::Assignment { assignment, .. } => {
+							let mode = if self.model[*assignment].ty().is_bool(db.upcast()) {
+								Mode::NonRoot {
+									conditional_depth: it.mode.conditional_depth(),
+								}
+							} else {
+								it.mode
+							};
+							self.update(self.model[*assignment].definition().unwrap(), mode, false);
+						}
+					}
+					if let Some(w) = g.where_clause() {
+						self.update(
+							w,
+							Mode::NonRoot {
+								conditional_depth: it.mode.conditional_depth(),
+							},
+							false,
+						);
+					}
+				}
+				if let Some(e) = &c.indices {
+					self.update(e, it.mode, false);
+				}
+				if it
+					.expression
+					.ty()
+					.elem_ty(db.upcast())
+					.unwrap()
+					.is_bool(db.upcast())
+				{
+					if it.update_bools {
+						self.update(
+							&c.template,
+							Mode::NonRoot {
+								conditional_depth: it.mode.conditional_depth(),
+							},
+							false,
+						);
+					} else {
+						self.update(&c.template, it.mode, false);
+					}
+				} else {
+					self.update(&c.template, it.mode, false);
+				}
+			}
+			ExpressionData::TupleAccess(ta) => {
+				for e in follow_expression(self.model, &it.expression) {
+					self.update(e, it.mode, false);
+				}
+				self.update(&ta.tuple, it.mode, false);
+			}
+			ExpressionData::IfThenElse(ite) => {
+				let mut mode = it.mode;
+				mode.set_conditional_depth(mode.conditional_depth() + 1);
+				for b in ite.branches.iter() {
+					self.update(
+						&b.condition,
+						Mode::NonRoot {
+							conditional_depth: it.mode.conditional_depth(),
+						},
+						false,
+					);
+					if b.var_condition(db) {
+						mode = Mode::NonRoot {
+							conditional_depth: mode.conditional_depth(),
+						};
+					}
+					self.update(&b.result, mode, it.update_bools);
+				}
+				self.update(&ite.else_result, mode, it.update_bools);
+			}
+			ExpressionData::Case(_) => todo!(),
+			ExpressionData::Call(c) => (|| {
+				match &c.function {
+					Callable::Function(f) => {
+						if self.model[*f].name() == self.ids.builtins.not && c.arguments.len() == 1
+						{
+							self.update(&c.arguments[0], !it.mode, false);
+							return;
+						} else if (self.model[*f].name() == self.ids.builtins.and
+							&& it.mode.is_root() || self.model[*f].name()
+							== self.ids.builtins.or
+							&& it.mode.is_root_neg())
+							&& c.arguments.len() == 2
+							&& c.arguments[0].ty().is_bool(db.upcast())
+							&& c.arguments[1].ty().is_bool(db.upcast())
+						{
+							self.update(&c.arguments[0], it.mode, false);
+							self.update(&c.arguments[1], it.mode, false);
+						} else if (self.model[*f].name() == self.ids.builtins.forall
+							&& it.mode.is_root() || self.model[*f].name()
+							== self.ids.builtins.exists
+							&& it.mode.is_root_neg())
+							&& c.arguments.len() == 1
+							&& c.arguments[0]
+								.ty()
+								.elem_ty(db.upcast())
+								.unwrap_or(self.tys.error)
+								.is_bool(db.upcast())
+						{
+							self.update(&c.arguments[0], it.mode, true);
+							return;
+						} else if self.model[*f].name() == self.ids.builtins.clause
+							&& c.arguments.len() == 2
+							&& it.mode.is_root_neg()
+						{
+							self.update(&c.arguments[0], it.mode, true);
+							self.update(&c.arguments[1], !it.mode, true);
+							return;
+						} else if (self.model[*f].name()
+							== self.ids.functions.symmetry_breaking_constraint
+							|| self.model[*f].name() == self.ids.functions.redundant_constraint)
+							&& c.arguments.len() == 1
+						{
+							self.update(&c.arguments[0], it.mode, false);
+							return;
+						}
+					}
+					Callable::Expression(e) => {
+						self.update(&e, it.mode, false);
+					}
+					Callable::Annotation(_) | Callable::AnnotationDestructure(_) => (),
+					Callable::EnumConstructor(_) | Callable::EnumDestructor(_) => {
+						unreachable!()
+					}
+				}
+				for e in c.arguments.iter() {
+					if e.ty().is_bool(db.upcast()) {
+						self.update(
+							e,
+							Mode::NonRoot {
+								conditional_depth: it.mode.conditional_depth(),
+							},
+							false,
+						);
+					} else {
+						self.update(e, it.mode, false);
+					}
+				}
+			})(),
+			ExpressionData::Let(l) => {
+				for item in l.items.iter() {
+					match item {
+						LetItem::Constraint(c) => {
+							for ann in self.model[*c].annotations().iter() {
+								self.update(ann, it.mode, false);
+							}
+
+							let in_expression = self.model[*c].expression();
+							let mode = if BooleanVisitor::is_true(
+								db,
+								self.model,
+								&mut self.booleans,
+								in_expression,
+							) {
+								Mode::Root {
+									result: true,
+									conditional_depth: it.mode.conditional_depth(),
+								}
+							} else {
+								it.mode
+							};
+
+							self.update(in_expression, mode, false);
+						}
+						LetItem::Declaration(d) => {
+							for ann in self.model[*d].annotations().iter() {
+								self.update(ann, it.mode, false);
+							}
+							for dom in self.model[*d].domain().walk() {
+								if let DomainData::Bounded(b) = &**dom {
+									self.update(&b, it.mode, false);
+								}
+							}
+							if let Some(def) = self.model[*d].definition() {
+								if self.model[*d].ty().is_bool(db.upcast()) {
+									self.update(
+										def,
+										Mode::NonRoot {
+											conditional_depth: it.mode.conditional_depth(),
+										},
+										false,
+									);
+								} else {
+									self.update(def, it.mode, false);
+								}
+							}
+						}
+					}
+				}
+				self.update(&l.in_expression, it.mode, false);
+			}
+			ExpressionData::Lambda(_) => todo!(),
+			ExpressionData::RecordAccess(_)
+			| ExpressionData::SetComprehension(_)
+			| ExpressionData::RecordLiteral(_) => {
+				unreachable!()
+			}
 		}
-		self.map
 	}
 
 	/// Update the context of an expression.
 	///
 	/// Returns false if this context update has caused model failure.
-	fn update(&mut self, expression: &'a Expression<T>, mode: Mode, update_bools: bool) -> bool {
-		let mut ok = true;
-		let mut inserted = false;
-		let mut updated = false;
-		let new_mode = *self.map.update_or_insert(
-			expression,
-			|m| match (*m, mode) {
-				(Mode::Root { result: r1, .. }, Mode::Root { result: r2, .. }) => {
-					// If these are opposite contexts then fail, otherwise keep as is
-					if r1 != r2 {
-						ok = false;
-					}
-				}
-				(Mode::Root { .. }, _) => (), // Root stays root
-				(
-					Mode::NonRoot {
-						conditional_depth: d1,
-					},
-					Mode::Root {
-						result,
-						conditional_depth: d2,
-					},
-				) => {
-					assert!(d1 <= d2, "Cannot refer to identifier defined more deeply");
-					if d1 == d2 {
-						*m = Mode::Root {
-							result,
-							conditional_depth: d1,
-						};
-						updated = true;
-					}
-				}
-				_ => (),
-			},
-			|| {
-				inserted = true;
-				mode
-			},
-		);
+	fn update(&mut self, expression: &'a Expression<T>, mode: Mode, update_bools: bool) {
+		let new_mode = if self.in_root_mode {
+			self.result.update_in_root_fn(expression, mode)
+		} else {
+			self.result.update(expression, mode)
+		};
+
 		// After update, subexpressions may need updating
-		if updated || inserted {
+		if let Some(m) = new_mode {
 			self.todo.push(TodoItem {
 				expression,
-				mode: new_mode,
+				mode: m,
 				update_bools,
 			});
 		}
-		ok
+	}
+}
+
+struct BooleanVisitor<'a, T: Marker> {
+	db: &'a dyn Thir,
+	ids: Arc<IdentifierRegistry>,
+	decls: &'a mut FxHashMap<DeclarationId<T>, bool>,
+	is_true: bool,
+}
+
+impl<'a, T: Marker> BooleanVisitor<'a, T> {
+	/// Whether or not the given expression is statically known to be true
+	fn is_true(
+		db: &'a dyn Thir,
+		model: &'a Model<T>,
+		decls: &'a mut FxHashMap<DeclarationId<T>, bool>,
+		expression: &'a Expression<T>,
+	) -> bool {
+		let mut visitor = Self {
+			db,
+			decls,
+			ids: db.identifier_registry(),
+			is_true: true,
+		};
+		visitor.visit_expression(model, expression);
+		visitor.is_true
+	}
+}
+
+impl<'a, T: Marker> Visitor<'a, T> for BooleanVisitor<'a, T> {
+	fn visit_expression(&mut self, model: &'a Model<T>, expression: &'a Expression<T>) {
+		maybe_grow_stack(|| {
+			match &**expression {
+				ExpressionData::BooleanLiteral(b) => self.visit_boolean(model, b),
+				ExpressionData::Identifier(i) => self.visit_identifier(model, i),
+				ExpressionData::IfThenElse(ite) => self.visit_if_then_else(model, ite),
+				ExpressionData::TupleAccess(_) => {
+					if let Some(e) = follow_expression(model, expression).next() {
+						self.visit_expression(model, e);
+					} else {
+						self.is_true = false
+					}
+				}
+				ExpressionData::Case(c) => self.visit_case(model, c),
+				ExpressionData::Call(c) => self.visit_call(model, c),
+				ExpressionData::Let(l) => self.visit_let(model, l),
+				_ => self.is_true = false,
+			};
+		});
+	}
+
+	fn visit_boolean(&mut self, _model: &'a Model<T>, b: &'a BooleanLiteral) {
+		self.is_true &= b.0;
+	}
+
+	fn visit_identifier(&mut self, model: &'a Model<T>, identifier: &'a ResolvedIdentifier<T>) {
+		if let ResolvedIdentifier::Declaration(d) = identifier {
+			if let Some(t) = self.decls.get(d) {
+				self.is_true &= *t;
+			} else if let Some(def) = model[*d].definition() {
+				// Cache result in case identifier used multiple times
+				let is_true = BooleanVisitor::is_true(self.db, model, self.decls, def);
+				self.decls.insert(*d, is_true);
+				self.is_true &= is_true;
+			} else {
+				// No RHS, so unknown
+				self.decls.insert(*d, false);
+				self.is_true = false;
+			}
+		}
+	}
+
+	fn visit_call(&mut self, model: &'a Model<T>, call: &'a Call<T>) {
+		if let Callable::Function(f) = &call.function {
+			if model[*f].name() == self.ids.builtins.abort {
+				return;
+			}
+		}
+		self.is_true = false;
+	}
+
+	fn visit_let(&mut self, model: &'a Model<T>, l: &'a Let<T>) {
+		for item in l.items.iter() {
+			match item {
+				LetItem::Declaration(_) => {
+					// Do not know if this expression is fixed to true
+					self.is_true = false;
+					return;
+				}
+				LetItem::Constraint(c) => {
+					self.visit_expression(model, model[*c].expression());
+					if !self.is_true {
+						return;
+					}
+				}
+			}
+		}
+		self.visit_expression(model, &l.in_expression);
+	}
+
+	fn visit_if_then_else(&mut self, model: &'a Model<T>, ite: &'a IfThenElse<T>) {
+		for branch in ite.branches.iter() {
+			self.visit_expression(model, &branch.result);
+			if !self.is_true {
+				return;
+			}
+		}
+		self.visit_expression(model, &ite.else_result);
+	}
+
+	fn visit_case(&mut self, model: &'a Model<T>, c: &'a Case<T>) {
+		for branch in c.branches.iter() {
+			self.visit_expression(model, &branch.result);
+			if !self.is_true {
+				return;
+			}
+		}
 	}
 }
 
@@ -571,7 +749,7 @@ mod test {
 
 	use expect_test::{expect, Expect};
 
-	use super::ModeAnalyser;
+	use super::ModeAnalysis;
 	use crate::{
 		db::{FileReader, Inputs},
 		file::{InputFile, InputLang},
@@ -582,30 +760,21 @@ mod test {
 
 	fn check_bool_ctx(program: &str, expected: Expect, fn_root: bool) {
 		let mut db = CompilerDatabase::default();
+		db.set_ignore_stdlib(true);
 		db.set_input_files(Arc::new(vec![InputFile::String(
 			program.to_owned(),
 			InputLang::MiniZinc,
 		)]));
 		let model_ref = db.input_models()[0];
-		let model = db.final_thir().unwrap();
-		let analyser = if fn_root {
-			ModeAnalyser::root_functions(&db, &model)
-		} else {
-			ModeAnalyser::new(&db, &model)
-		};
-		let result = analyser.run(&db);
+		let model = db.model_thir().take();
+		let result = ModeAnalysis::analyse(&db, &model);
 		let mut printer = PrettyPrinter::new(&db, &model);
 		printer.expression_annotator = Some(Box::new(|e| {
-			result.get(e).map(|mode| {
-				if mode.is_root() {
-					"ctx_root"
-				} else if mode.is_root_neg() {
-					"ctx_root_neg"
-				} else {
-					"ctx_non_root"
-				}
-				.to_owned()
-			})
+			if fn_root {
+				Some(result.get_in_root_fn(e).as_str().to_owned())
+			} else {
+				Some(result.get(e).as_str().to_owned())
+			}
 		}));
 		let to_print = model
 			.top_level_items()
@@ -627,6 +796,9 @@ mod test {
 	fn test_bool_ctx() {
 		check_bool_ctx(
 			r#"
+			predicate forall(array [int] of var bool: b);
+			predicate '\/'(var bool: x, var bool: y);
+			predicate 'not'(var bool: x);
 			var bool: a;
 			var bool: b;
 			constraint forall([a, b]);
@@ -645,16 +817,25 @@ mod test {
 			} in h;
 			"#,
 			expect![[r#"
-    var bool: a :: ('output':: ctx_root);
-    var bool: b :: ('output':: ctx_root);
-    constraint 'forall<array [$T] of var bool>'([a:: ctx_root, b:: ctx_root]:: ctx_root):: ctx_root;
-    var bool: c :: ('output':: ctx_root);
-    var int: d :: ('output':: ctx_root);
+    function var bool: forall(array [int] of var bool: b);
+    function var bool: '\/'(var bool: x, var bool: y);
+    function var bool: 'not'(var bool: x);
+    var bool: a;
+    var bool: b;
+    constraint forall([a:: ctx_root, b:: ctx_root]:: ctx_root):: ctx_root;
+    var bool: c;
+    var int: d;
     function var bool: foo(var bool: c, var int: d);
     constraint foo(c:: ctx_non_root, d:: ctx_root):: ctx_root;
-    var bool: e :: ('output':: ctx_root);
-    var bool: f :: ('output':: ctx_root);
-    constraint 'not<var bool>'('\/<var bool, var bool>'(e:: ctx_root_neg, f:: ctx_root_neg):: ctx_root_neg):: ctx_root;
+    var bool: e;
+    var bool: f;
+    constraint 'not'('\/'(e:: ctx_root_neg, f:: ctx_root_neg):: ctx_root_neg):: ctx_root;
+    var int: g = let {
+      var int: h = 1:: ctx_root;
+      var bool: p = true:: ctx_non_root;
+      var bool: q = true:: ctx_root;
+      constraint q:: ctx_root;
+    } in h:: ctx_root:: ctx_root;
 "#]],
 			false,
 		)
@@ -663,6 +844,8 @@ mod test {
 	#[test]
 	fn test_fn_ctx() {
 		let program = r#"
+			predicate '>'(var int: x, var int: y);
+			function var int: '+'(var int: x, var int: y);
 			function var int: foo(var int: x, var int: y) = let {
 				constraint x > y;
 			} in x + y
@@ -670,18 +853,74 @@ mod test {
 		check_bool_ctx(
 			program,
 			expect![[r#"
+    function var bool: '>'(var int: x, var int: y);
+    function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint '><var $T, var $T>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
-    } in '+<var int, var int>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
+      constraint '>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
+    } in '+'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
 "#]],
 			false,
 		);
 		check_bool_ctx(
 			program,
 			expect![[r#"
+    function var bool: '>'(var int: x, var int: y);
+    function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint '><var $T, var $T>'(x:: ctx_root, y:: ctx_root):: ctx_root;
-    } in '+<var int, var int>'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
+      constraint '>'(x:: ctx_root, y:: ctx_root):: ctx_root;
+    } in '+'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
+"#]],
+			true,
+		);
+	}
+
+	#[test]
+	fn test_bool_ctx_let() {
+		check_bool_ctx(
+			r#"
+            function set of int: foo() = let {
+				var bool: b;
+				constraint b;
+			} in {1, 3, 5};
+		"#,
+			expect![[r#"
+    function set of int: foo() = let {
+      var bool: b;
+      constraint b:: ctx_non_root;
+    } in {1:: ctx_non_root, 3:: ctx_non_root, 5:: ctx_non_root}:: ctx_non_root:: ctx_non_root;
+"#]],
+			false,
+		);
+	}
+
+	#[test]
+	fn test_bool_ctx_abort() {
+		let program = r#"
+			test abort(string: msg);
+			test bar(int: x);
+			function int: foo(int: x) = let {
+				constraint if bar(x) then abort("foo") endif;
+			} in x;
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function bool: abort(string: msg);
+    function bool: bar(int: x);
+    function int: foo(int: x) = let {
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+    } in x:: ctx_non_root:: ctx_non_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function bool: abort(string: msg);
+    function bool: bar(int: x);
+    function int: foo(int: x) = let {
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+    } in x:: ctx_root:: ctx_root;
 "#]],
 			true,
 		);

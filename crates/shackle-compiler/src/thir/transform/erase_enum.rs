@@ -59,10 +59,10 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 	}
 
 	fn add_function(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.erase_enum
-			|| model[f].name() == self.ids.mzn_to_enum
-			|| model[f].name() == self.ids.mzn_erase_index_sets
-			|| model[f].name() == self.ids.enum_of
+		if model[f].name() == self.ids.functions.erase_enum
+			|| model[f].name() == self.ids.functions.mzn_to_enum
+			|| model[f].name() == self.ids.functions.mzn_erase_index_sets
+			|| model[f].name() == self.ids.functions.enum_of
 		{
 			// Remove unnecessary functions
 			return;
@@ -71,10 +71,10 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 	}
 
 	fn fold_function_body(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.erase_enum
-			|| model[f].name() == self.ids.mzn_to_enum
-			|| model[f].name() == self.ids.mzn_erase_index_sets
-			|| model[f].name() == self.ids.enum_of
+		if model[f].name() == self.ids.functions.erase_enum
+			|| model[f].name() == self.ids.functions.mzn_to_enum
+			|| model[f].name() == self.ids.functions.mzn_erase_index_sets
+			|| model[f].name() == self.ids.functions.enum_of
 		{
 			// Remove unnecessary functions
 			return;
@@ -89,7 +89,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		f: &Function<Src>,
 	) -> Function<Dst> {
 		let mut folded = fold_function(self, db, model, f);
-		if f.name() == self.ids.show && f.body().is_none() {
+		if f.name() == self.ids.builtins.show && f.body().is_none() {
 			let p = &model[f.parameter(0)];
 			if let Some(enum_ty) = p.ty().enum_ty(db.upcast()) {
 				let origin = p.origin();
@@ -107,7 +107,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.mzn_show_enum.into(),
+						function: self.ids.functions.mzn_show_enum.into(),
 						arguments: vec![enums, enum_id, arg],
 					},
 				);
@@ -156,7 +156,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 					]
 				};
 				LookupCall {
-					function: self.ids.mzn_construct_enum.into(),
+					function: self.ids.functions.mzn_construct_enum.into(),
 					arguments,
 				}
 				.resolve(db, &self.model)
@@ -172,7 +172,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 					self.fold_expression(db, model, &call.arguments[0]),
 				];
 				LookupCall {
-					function: self.ids.mzn_destruct_enum.into(),
+					function: self.ids.functions.mzn_destruct_enum.into(),
 					arguments,
 				}
 				.resolve(db, &self.model)
@@ -191,13 +191,13 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		maybe_grow_stack(|| {
 			if let ExpressionData::Call(c) = &**expression {
 				if let Callable::Function(f) = &c.function {
-					if model[*f].name() == self.ids.erase_enum
-						|| model[*f].name() == self.ids.mzn_erase_index_sets
+					if model[*f].name() == self.ids.functions.erase_enum
+						|| model[*f].name() == self.ids.functions.mzn_erase_index_sets
 					{
 						return self.fold_expression(db, model, &c.arguments[0]);
-					} else if model[*f].name() == self.ids.mzn_to_enum {
+					} else if model[*f].name() == self.ids.functions.mzn_to_enum {
 						return self.fold_expression(db, model, &c.arguments[1]);
-					} else if model[*f].name() == self.ids.enum_of {
+					} else if model[*f].name() == self.ids.functions.enum_of {
 						if let Some(e) = c.arguments[0].ty().enum_ty(db.upcast()) {
 							return Expression::new(
 								db,
@@ -211,7 +211,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 							&self.model,
 							expression.origin(),
 							LookupCall {
-								function: self.ids.mzn_infinite_range.into(),
+								function: self.ids.functions.mzn_infinite_range.into(),
 								arguments: vec![],
 							},
 						);
@@ -346,7 +346,7 @@ impl<Src: Marker, Dst: Marker> EnumEraser<Dst, Src> {
 			&self.model,
 			origin,
 			LookupCall {
-				function: self.ids.mzn_get_enum.into(),
+				function: self.ids.functions.mzn_get_enum.into(),
 				arguments: vec![enum_rhs],
 			},
 		));
@@ -371,7 +371,7 @@ impl<Src: Marker, Dst: Marker> EnumEraser<Dst, Src> {
 			&self.model,
 			origin,
 			LookupCall {
-				function: self.ids.mzn_defining_set.into(),
+				function: self.ids.functions.mzn_defining_set.into(),
 				arguments: vec![Expression::new(db, &self.model, origin, mzn_enum_idx)],
 			},
 		));
@@ -398,7 +398,7 @@ impl<Src: Marker, Dst: Marker> EnumEraser<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.mzn_construct_enum.into(),
+						function: self.ids.functions.mzn_construct_enum.into(),
 						arguments: vec![
 							Expression::new(db, &self.model, origin, mzn_enum_idx),
 							Expression::new(db, &self.model, origin, IntegerLiteral(i as i64 + 1)),

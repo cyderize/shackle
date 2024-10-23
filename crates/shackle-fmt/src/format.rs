@@ -55,7 +55,7 @@ impl<'a> MiniZincFormatter<'a> {
 			"Did not attach all comments {:?}",
 			self.comments.map
 		);
-		element.format(&self.options.core)
+		element.format(self.options)
 	}
 
 	/// Get the formatting options

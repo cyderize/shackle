@@ -46,8 +46,8 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for OptEraser<Dst, Src> {
 	}
 
 	fn add_function(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.mzn_construct_opt
-			|| model[f].name() == self.ids.mzn_destruct_opt
+		if model[f].name() == self.ids.functions.mzn_construct_opt
+			|| model[f].name() == self.ids.functions.mzn_destruct_opt
 		{
 			// Remove mzn_construct_opt/mzn_destruct_opt
 			return;
@@ -56,8 +56,8 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for OptEraser<Dst, Src> {
 	}
 
 	fn fold_function_body(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.mzn_construct_opt
-			|| model[f].name() == self.ids.mzn_destruct_opt
+		if model[f].name() == self.ids.functions.mzn_construct_opt
+			|| model[f].name() == self.ids.functions.mzn_destruct_opt
 		{
 			// Remove mzn_construct_opt/mzn_destruct_opt
 			return;
@@ -170,8 +170,8 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for OptEraser<Dst, Src> {
 			if let ExpressionData::Call(c) = &**expression {
 				// Remove calls to mzn_construct_opt/mzn_destruct_opt
 				if let Callable::Function(f) = &c.function {
-					if model[*f].name() == self.ids.mzn_construct_opt
-						|| model[*f].name() == self.ids.mzn_destruct_opt
+					if model[*f].name() == self.ids.functions.mzn_construct_opt
+						|| model[*f].name() == self.ids.functions.mzn_destruct_opt
 					{
 						return self.fold_expression(db, model, &c.arguments[0]);
 					}
@@ -186,7 +186,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for OptEraser<Dst, Src> {
 				&self.model,
 				expression.origin(),
 				LookupCall {
-					function: self.ids.mzn_opt_bool.into(),
+					function: self.ids.functions.mzn_opt_bool.into(),
 					arguments: vec![folded],
 				},
 			);
@@ -286,7 +286,7 @@ impl<Src: Marker, Dst: Marker> OptEraser<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.array_xd.into(),
+							function: self.ids.functions.array_xd.into(),
 							arguments: vec![
 								ident.clone(),
 								Expression::new(
@@ -375,7 +375,7 @@ impl<Src: Marker, Dst: Marker> OptEraser<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.mzn_opt_domain.into(),
+						function: self.ids.functions.mzn_opt_domain.into(),
 						arguments: vec![domain.clone()],
 					},
 				),
@@ -414,7 +414,7 @@ impl<Src: Marker, Dst: Marker> OptEraser<Dst, Src> {
 				&self.model,
 				origin,
 				LookupCall {
-					function: self.ids.mzn_opt_channel.into(),
+					function: self.ids.functions.mzn_opt_channel.into(),
 					arguments: vec![Expression::new(db, &self.model, origin, tuple), domain],
 				},
 			),

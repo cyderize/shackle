@@ -608,7 +608,7 @@
           "type": "REPEAT1",
           "content": {
             "type": "PREC_LEFT",
-            "value": 16,
+            "value": 140,
             "content": {
               "type": "SEQ",
               "members": [
@@ -1187,7 +1187,7 @@
     },
     "call": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1253,7 +1253,7 @@
     },
     "generator_call": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1579,7 +1579,7 @@
     },
     "indexed_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1691,7 +1691,7 @@
     },
     "tuple_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1725,7 +1725,7 @@
     },
     "record_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1757,7 +1757,7 @@
       "members": [
         {
           "type": "PREC_LEFT",
-          "value": 1,
+          "value": 10,
           "content": {
             "type": "SEQ",
             "members": [
@@ -1803,7 +1803,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 2,
+          "value": 20,
           "content": {
             "type": "SEQ",
             "members": [
@@ -1861,7 +1861,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 3,
+          "value": 30,
           "content": {
             "type": "SEQ",
             "members": [
@@ -1886,41 +1886,7 @@
                     {
                       "type": "STRING",
                       "value": "∨"
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "right",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "type": "PREC_LEFT",
-          "value": 4,
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "FIELD",
-                "name": "left",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "operator",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
+                    },
                     {
                       "type": "STRING",
                       "value": "xor"
@@ -1945,7 +1911,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 5,
+          "value": 40,
           "content": {
             "type": "SEQ",
             "members": [
@@ -1987,7 +1953,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 6,
+          "value": 55,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2093,7 +2059,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 7,
+          "value": 60,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2118,41 +2084,7 @@
                     {
                       "type": "STRING",
                       "value": "∪"
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "right",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "type": "PREC_LEFT",
-          "value": 8,
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "FIELD",
-                "name": "left",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "operator",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
+                    },
                     {
                       "type": "STRING",
                       "value": "diff"
@@ -2160,6 +2092,10 @@
                     {
                       "type": "STRING",
                       "value": "∖"
+                    },
+                    {
+                      "type": "STRING",
+                      "value": "symdiff"
                     }
                   ]
                 }
@@ -2177,40 +2113,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 9,
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "FIELD",
-                "name": "left",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "operator",
-                "content": {
-                  "type": "STRING",
-                  "value": "symdiff"
-                }
-              },
-              {
-                "type": "FIELD",
-                "name": "right",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_expression"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "type": "PREC_LEFT",
-          "value": 11,
+          "value": 70,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2252,7 +2155,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 10,
+          "value": 85,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2302,7 +2205,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 12,
+          "value": 90,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2356,7 +2259,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 13,
+          "value": 100,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2417,8 +2320,8 @@
           }
         },
         {
-          "type": "PREC_LEFT",
-          "value": 14,
+          "type": "PREC_RIGHT",
+          "value": 120,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2451,7 +2354,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 17,
+          "value": 130,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2486,7 +2389,7 @@
     },
     "annotated_expression": {
       "type": "PREC",
-      "value": 16,
+      "value": 140,
       "content": {
         "type": "SEQ",
         "members": [
@@ -2502,7 +2405,7 @@
             "type": "REPEAT1",
             "content": {
               "type": "PREC_LEFT",
-              "value": 16,
+              "value": 140,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -2776,7 +2679,7 @@
       "members": [
         {
           "type": "PREC",
-          "value": 15,
+          "value": 110,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2814,7 +2717,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 10,
+          "value": 80,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2858,7 +2761,7 @@
     },
     "postfix_operator": {
       "type": "PREC_RIGHT",
-      "value": 10,
+      "value": 80,
       "content": {
         "type": "SEQ",
         "members": [

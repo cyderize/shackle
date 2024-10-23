@@ -58,13 +58,18 @@ pub enum Precedence {
 	Prec(i64),
 	/// Specified using `prec.right`
 	Right(i64),
+	/// Non associative
+	NonAssoc(i64),
 }
 
 impl Precedence {
 	/// Get the precedence value
 	pub fn get(&self) -> i64 {
 		match self {
-			Precedence::Left(i) | Precedence::Prec(i) | Precedence::Right(i) => *i,
+			Precedence::Left(i)
+			| Precedence::Prec(i)
+			| Precedence::Right(i)
+			| Precedence::NonAssoc(i) => *i,
 		}
 	}
 }

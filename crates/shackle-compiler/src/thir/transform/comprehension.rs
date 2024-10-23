@@ -58,9 +58,9 @@ impl<Dst: Marker> Folder<'_, Dst> for ComprehensionRewriter<Dst> {
 		if let Callable::Function(f) = &call.function {
 			// forall, exists and sum comprehensions get special treatment
 			let special_cases = [
-				(self.ids.forall, SurroundingCall::Forall),
-				(self.ids.exists, SurroundingCall::Exists),
-				(self.ids.sum, SurroundingCall::Sum),
+				(self.ids.builtins.forall, SurroundingCall::Forall),
+				(self.ids.builtins.exists, SurroundingCall::Exists),
+				(self.ids.builtins.sum, SurroundingCall::Sum),
 			];
 			for (ident, surround) in special_cases {
 				if model[*f].name() == ident && call.arguments.len() == 1 {
@@ -102,7 +102,7 @@ impl<Dst: Marker> Folder<'_, Dst> for ComprehensionRewriter<Dst> {
 					&self.result,
 					expression.origin(),
 					LookupCall {
-						function: self.ids.array2set.into(),
+						function: self.ids.builtins.array2set.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.result,
@@ -199,7 +199,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 						let c = collection.clone();
 						let has_set2iter = self
 							.result
-							.lookup_function(db, self.ids.set2iter.into(), &[c.ty()])
+							.lookup_function(db, self.ids.functions.set2iter.into(), &[c.ty()])
 							.map_or(false, |f| f.fn_entry.has_body);
 						*collection = Expression::new(
 							db,
@@ -207,9 +207,9 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 							c.origin(),
 							LookupCall {
 								function: if has_set2iter {
-									self.ids.set2iter.into()
+									self.ids.functions.set2iter.into()
 								} else {
-									self.ids.ub.into()
+									self.ids.builtins.ub.into()
 								},
 								arguments: vec![c.clone()],
 							},
@@ -221,7 +221,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 									&self.result,
 									c.origin(),
 									LookupCall {
-										function: self.ids.in_.into(),
+										function: self.ids.builtins.in_.into(),
 										arguments: vec![
 											Expression::new(
 												db,
@@ -254,10 +254,12 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 		while let Some(w) = todo.pop() {
 			if let ExpressionData::Call(c) = &*w {
 				if let Callable::Function(f) = &c.function {
-					if self.result[*f].name() == self.ids.conj {
+					if self.result[*f].name() == self.ids.builtins.and {
 						todo.extend(c.arguments.iter().cloned());
 						continue;
-					} else if self.result[*f].name() == self.ids.forall && c.arguments.len() == 1 {
+					} else if self.result[*f].name() == self.ids.builtins.forall
+						&& c.arguments.len() == 1
+					{
 						if let ExpressionData::ArrayLiteral(al) = &*c.arguments[0] {
 							todo.extend(al.iter().cloned());
 							continue;
@@ -301,7 +303,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 							&self.result,
 							w.origin(),
 							LookupCall {
-								function: self.ids.conj.into(),
+								function: self.ids.builtins.and.into(),
 								arguments: vec![old_where, w],
 							},
 						))
@@ -336,7 +338,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 					db,
 					&self.result,
 					origin,
-					LookupIdentifier(self.ids.mzn_var_where_clause),
+					LookupIdentifier(self.ids.annotations.mzn_var_where_clause),
 				));
 				let decl_idx = self.result.add_declaration(Item::new(decl, origin));
 				let e = Expression::new(db, &self.result, origin, decl_idx);
@@ -358,7 +360,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 					&self.result,
 					origin,
 					LookupCall {
-						function: self.ids.forall.into(),
+						function: self.ids.builtins.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.result,
@@ -379,7 +381,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 						&self.result,
 						origin,
 						LookupCall {
-							function: self.ids.imp.into(),
+							function: self.ids.builtins.implies.into(),
 							arguments: vec![condition, template],
 						},
 					)
@@ -391,7 +393,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 						&self.result,
 						origin,
 						LookupCall {
-							function: self.ids.conj.into(),
+							function: self.ids.builtins.and.into(),
 							arguments: vec![condition, template],
 						},
 					)
@@ -404,7 +406,7 @@ impl<Dst: Marker> ComprehensionRewriter<Dst> {
 							&self.result,
 							origin,
 							LookupCall {
-								function: self.ids.times.into(),
+								function: self.ids.builtins.times.into(),
 								arguments: vec![condition, template],
 							},
 						)

@@ -9,6 +9,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// `HashMap` using pointers as keys
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefMap<'a, K, V> {
 	map: FxHashMap<KeyRef<'a, K>, V>,
 }
@@ -157,6 +158,7 @@ impl<'a, K> Extend<&'a K> for RefSet<'a, K> {
 	}
 }
 
+#[derive(Copy, Clone, Debug)]
 struct KeyRef<'a, T>(&'a T);
 
 impl<'a, T> PartialEq for KeyRef<'a, T> {

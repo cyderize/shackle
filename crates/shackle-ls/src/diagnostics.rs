@@ -3,11 +3,11 @@ use std::{
 	str::FromStr,
 };
 
-use lsp_types::{notification::Notification, Uri};
+use lsp_types::notification::Notification;
 use miette::{Diagnostic, Severity};
 use shackle_compiler::hir::db::Hir;
 
-use crate::utils::span_contents_to_range;
+use crate::utils::{path_to_uri, span_contents_to_range};
 
 pub fn diagnostics_notification(db: &dyn Hir, path: &Path) -> lsp_server::Notification {
 	let mut diagnostics = Vec::new();
@@ -20,7 +20,7 @@ pub fn diagnostics_notification(db: &dyn Hir, path: &Path) -> lsp_server::Notifi
 	lsp_server::Notification {
 		method: lsp_types::notification::PublishDiagnostics::METHOD.to_owned(),
 		params: serde_json::to_value(lsp_types::PublishDiagnosticsParams {
-			uri: Uri::from_str(path.as_os_str().to_str().unwrap()).unwrap(),
+			uri: path_to_uri(path),
 			diagnostics,
 			version: None,
 		})
@@ -43,7 +43,7 @@ fn collect_diagnostic(
 	if p != path {
 		return None;
 	}
-	let uri = Uri::from_str(path.as_os_str().to_str().unwrap()).ok()?;
+	let uri = path_to_uri(path);
 	let related_info: Vec<_> = ls
 		.filter_map(|l| {
 			let label = l.label()?;

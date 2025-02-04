@@ -137,10 +137,7 @@ impl Format for minizinc::PrefixOperator {
 				> formatter.precedence(&self.operand()).get();
 		Element::sequence(vec![
 			if self.operator().name() == "not" {
-				Element::sequence(vec![
-					Element::text(self.operator().name()),
-					Element::line_break_or_space(),
-				])
+				Element::text("not ")
 			} else {
 				Element::text(self.operator().name())
 			},

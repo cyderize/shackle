@@ -139,7 +139,7 @@ impl Ty {
 
 	/// Sets the inst of this type if possible.
 	///
-	/// Some types e.g. var arrays are not possible.
+	/// Some types e.g. var strings are not possible.
 	pub fn with_inst(&self, db: &dyn Interner, inst: VarType) -> Option<Ty> {
 		maybe_grow_stack(|| self.with_inst_inner(db, inst))
 	}
@@ -154,6 +154,11 @@ impl Ty {
 			TyData::Float(_, o) => TyData::Float(inst, o),
 			TyData::Enum(_, o, e) => TyData::Enum(inst, o, e),
 			TyData::Set(_, o, e) if e.known_enumerable(db) => TyData::Set(inst, o, e),
+			TyData::Array { opt, dim, element } => TyData::Array {
+				opt,
+				dim,
+				element: element.with_inst(db, inst)?,
+			},
 			TyData::Tuple(o, fs) => TyData::Tuple(
 				o,
 				fs.iter()

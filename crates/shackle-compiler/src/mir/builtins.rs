@@ -1,7 +1,8 @@
 //! Interpreter builtins
 //!
 
-use super::Value;
+use super::{db::Mir, Value};
+use crate::hir::Identifier;
 
 /// An interpreter builtin
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -34,6 +35,8 @@ pub enum Builtin {
 		/// The indices
 		slices: Box<Value>,
 	},
+	/// Coerce array to set
+	ArrayToSet(Box<Value>),
 	/// Array concatenation
 	ArrayPlusPlus {
 		/// Left-hand side array
@@ -106,7 +109,14 @@ pub enum Builtin {
 		std: Box<Value>,
 	},
 	/// Sample from uniform distribution
-	Uniform {
+	UniformFloat {
+		/// Lower bound
+		lower: Box<Value>,
+		/// Upper bound
+		upper: Box<Value>,
+	},
+	/// Sample from uniform distribution
+	UniformInt {
 		/// Lower bound
 		lower: Box<Value>,
 		/// Upper bound
@@ -188,17 +198,8 @@ pub enum Builtin {
 	/// Emit a warning
 	Warn(Box<Value>),
 
-	/// Trace
-	Trace {
-		/// The message to print
-		message: Box<Value>,
-		/// The value to return
-		value: Box<Value>,
-	},
 	/// Trace expression
 	TraceExp(Box<Value>),
-	/// Trace debug
-	TraceDbg(Box<Value>),
 	/// Trace to section
 	TraceToSection {
 		/// The section
@@ -207,20 +208,6 @@ pub enum Builtin {
 		message: Box<Value>,
 		/// Whether or not the string is JSON
 		json: Box<Value>,
-	},
-	/// Trace to standard output
-	TraceStdout {
-		/// The message
-		message: Box<Value>,
-		/// The value to return
-		value: Box<Value>,
-	},
-	/// Trace to log stream
-	TraceLogStream {
-		/// The message
-		message: Box<Value>,
-		/// The value to return
-		value: Box<Value>,
 	},
 	/// Output log stream as string
 	LogStreamToString,
@@ -299,93 +286,108 @@ pub enum Builtin {
 		strings: Box<Value>,
 	},
 
-	/// Less than
-	LessThan {
+	/// Par less than
+	LessThanPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Less than or equal to
-	LessThanEq {
+	/// Var less than
+	LessThanVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Greater than
-	GreaterThan {
+	/// Par less than or equal to
+	LessThanEqPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Greater than or equal to
-	GreaterThanEq {
+	/// Var less than or equal to
+	LessThanEqVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Not equal
-	NotEqual {
+	/// Par not equal
+	NotEqualPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Equality
-	Equal {
+	/// Var not equal
+	NotEqualVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-
-	/// And
-	And {
+	/// Par equality
+	EqualPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Or
-	Or {
+	/// Var equality
+	EqualVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Implication
-	Implication {
+	/// Par conjunction
+	AndPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Reverse implication
-	ReverseImplication {
+	/// Var conjunction
+	AndVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// If and only if
-	IfAndOnlyIf {
+	/// Par disjunction
+	OrPar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Exclusive or
-	Xor {
+	/// Var disjunction
+	OrVar {
 		/// Left-hand side
 		left: Box<Value>,
 		/// Right-hand side
 		right: Box<Value>,
 	},
-	/// Not
-	Not(Box<Value>),
+	/// Par implication
+	ImplicationPar {
+		/// Left-hand side
+		left: Box<Value>,
+		/// Right-hand side
+		right: Box<Value>,
+	},
+	/// Var implication
+	ImplicationVar {
+		/// Left-hand side
+		left: Box<Value>,
+		/// Right-hand side
+		right: Box<Value>,
+	},
+	/// Par not
+	NotPar(Box<Value>),
+	/// Var not
+	NotVar(Box<Value>),
 	/// Xorall
 	XorAll(Box<Value>),
 	/// Iffall
@@ -428,13 +430,6 @@ pub enum Builtin {
 
 	/// Format value as string
 	Format {
-		/// Width
-		width: Box<Value>,
-		/// Value to format
-		value: Box<Value>,
-	},
-	/// Format value as string
-	FormatWithPrecision {
 		/// Width
 		width: Box<Value>,
 		/// Precision for floats
@@ -500,43 +495,57 @@ pub enum Builtin {
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Test if set is a superset
-	SetSupersetPar {
+	/// Par set union
+	SetUnionPar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Test if set is a superset
-	SetSupersetVar {
+	/// Var set union
+	SetUnionVar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Set union
-	SetUnion {
+	/// Par set intersection
+	SetIntersectPar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Set intersection
-	SetIntersect {
+	/// Var set intersection
+	SetIntersectVar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Set difference
-	SetDiff {
+	/// Par set difference
+	SetDiffPar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
 		right: Box<Value>,
 	},
-	/// Set symmetric difference
-	SetSymDiff {
+	/// Var set difference
+	SetDiffVar {
+		/// Left-hand side set
+		left: Box<Value>,
+		/// Right-hand side set
+		right: Box<Value>,
+	},
+	/// Par set symmetric difference
+	SetSymDiffPar {
+		/// Left-hand side set
+		left: Box<Value>,
+		/// Right-hand side set
+		right: Box<Value>,
+	},
+	/// Var set symmetric difference
+	SetSymDiffVar {
 		/// Left-hand side set
 		left: Box<Value>,
 		/// Right-hand side set
@@ -553,7 +562,7 @@ pub enum Builtin {
 	/// Round
 	Round(Box<Value>),
 	/// Set to array
-	Set2Array(Box<Value>),
+	SetToArray(Box<Value>),
 
 	/// Par addition
 	AddPar {
@@ -608,8 +617,10 @@ pub enum Builtin {
 		exponent: Box<Value>,
 	},
 
-	/// Negation
-	Neg(Box<Value>),
+	/// Par negation
+	NegPar(Box<Value>),
+	/// Var negation
+	NegVar(Box<Value>),
 
 	/// Integer (truncating) division
 	DivInt {
@@ -706,143 +717,163 @@ pub enum Builtin {
 
 impl Builtin {
 	/// Get the name of the builtin (used for printing as MiniZinc)
-	pub fn name(&self) -> &'static str {
+	pub fn name(&self, db: &dyn Mir) -> Identifier {
+		let ids = db.identifier_registry();
 		match self {
-			Builtin::GetParameter(_) => "mzn_get_parameter",
-			Builtin::ForAllPar(_) | Builtin::ForAllVar(_) => "forall",
-			Builtin::ExistsPar(_) | Builtin::ExistsVar(_) => "exists",
-			Builtin::IndexedArray(_) => "mzn_indexed_array",
-			Builtin::ArrayAccess { .. } => "mzn_element_internal",
-			Builtin::ArraySlice { .. } => "mzn_slice_internal",
-			Builtin::ArrayPlusPlus { .. } | Builtin::StringPlusPlus { .. } => "'++'",
-			Builtin::ArrayLength(_) => "length",
-			Builtin::IndexSetsAgree { .. } => "index_sets_agree",
-			Builtin::IndexSets(_) => "index_sets",
-			Builtin::ArrayXd { .. } => "arrayXd",
-			Builtin::ArrayKd { .. } => "mzn_array_kd",
-			Builtin::ComputeDivBounds { .. } => "compute_div_bounds",
-			Builtin::ComputeModBounds { .. } => "compute_mod_bounds",
-			Builtin::ComputeFloatDivBounds { .. } => "compute_float_div_bounds",
-			Builtin::ComputePowBounds { .. } => "compute_pow_bounds",
-			Builtin::Normal { .. } => "normal",
-			Builtin::Uniform { .. } => "uniform",
-			Builtin::Poisson { .. } => "poisson",
-			Builtin::Gamma { .. } => "gamma",
-			Builtin::Weibull { .. } => "weibull",
-			Builtin::Exponential { .. } => "exponential",
-			Builtin::LogNormal { .. } => "lognormal",
-			Builtin::ChiSquared { .. } => "chisquared",
-			Builtin::Cauchy { .. } => "cauchy",
-			Builtin::FDistribution { .. } => "fdistribution",
-			Builtin::TDistribution { .. } => "tdistribution",
-			Builtin::DiscreteDistribution { .. } => "discrete_distribution",
-			Builtin::Bernoulli { .. } => "bernoulli",
-			Builtin::Binomial { .. } => "binomial",
-			Builtin::Warn(_) => "mzn_add_warning",
-			Builtin::Trace { .. } => "trace",
-			Builtin::TraceExp { .. } => "trace_exp",
-			Builtin::TraceDbg { .. } => "trace_dbg",
-			Builtin::TraceToSection { .. } => "trace_to_section",
-			Builtin::TraceStdout { .. } => "trace_stdout",
-			Builtin::TraceLogStream { .. } => "trace_logstream",
-			Builtin::LogStreamToString => "logstream_to_string",
-			Builtin::Abort(_) => "abort",
-			Builtin::CheckDebugMode => "mzn_internal_check_debug_mode",
-			Builtin::LowerBound(_) => "lb",
-			Builtin::UpperBound(_) => "ub",
-			Builtin::LowerBoundArray(_) => "lb_array",
-			Builtin::UpperBoundArray(_) => "ub_array",
-			Builtin::Domain(_) => "dom",
-			Builtin::DomainArray(_) => "dom_array",
-			Builtin::DomainBoundsArray(_) => "dom_bounds_array",
-			Builtin::HasBounds(_) => "has_bounds",
-			Builtin::HasUpperBoundSet(_) => "has_ub_set",
-			Builtin::IsFixed(_) => "is_fixed",
-			Builtin::Fix(_) => "fix",
-			Builtin::HasAnn { .. } => "has_ann",
-			Builtin::Annotate { .. } => "annotate",
-			Builtin::IsSame { .. } => "is_same",
-			Builtin::CompilerVersion => "mzn_compiler_version",
-			Builtin::StringLength(_) => "string_length",
-			Builtin::StringConcat(_) => "concat",
-			Builtin::StringJoin { .. } => "join",
-			Builtin::LessThan { .. } => "'<'",
-			Builtin::LessThanEq { .. } => "'<='",
-			Builtin::GreaterThan { .. } => "'>'",
-			Builtin::GreaterThanEq { .. } => "'>='",
-			Builtin::NotEqual { .. } => "'!='",
-			Builtin::Equal { .. } => "'='",
-			Builtin::And { .. } => "'/\\'",
-			Builtin::Or { .. } => "'\\/'",
-			Builtin::Implication { .. } => "'->'",
-			Builtin::ReverseImplication { .. } => "'<-'",
-			Builtin::IfAndOnlyIf { .. } => "'<->'",
-			Builtin::Xor { .. } => "'xor'",
-			Builtin::Not(_) => "not",
-			Builtin::XorAll(_) => "xorall",
-			Builtin::IffAll(_) => "iffall",
-			Builtin::ClausePar { .. } | Builtin::ClauseVar { .. } => "clause",
-			Builtin::Sort(_) => "sort",
-			Builtin::SortBy { .. } => "sort_by",
-			Builtin::Show(_) => "show",
-			Builtin::ShowDzn(_) => "showDzn",
-			Builtin::ShowDznId(_) => "showDznId",
-			Builtin::ShowCheckerOutput => "showCheckerOutput",
-			Builtin::ShowJson(_) => "showJSON",
-			Builtin::Format { .. } | Builtin::FormatWithPrecision { .. } => "format",
-			Builtin::FormatJustifyString { .. } => "format_justify_string",
-			Builtin::OutputToSection { .. } => "output_to_section",
-			Builtin::OutputToJsonSection { .. } => "output_to_json_section",
-			Builtin::SetRange { .. } => "'..'",
-			Builtin::SetInPar { .. } | Builtin::SetInVar { .. } => "'in'",
-			Builtin::SetSubsetPar { .. } | Builtin::SetSubsetVar { .. } => "'subset'",
-			Builtin::SetSupersetPar { .. } | Builtin::SetSupersetVar { .. } => "'superset'",
-			Builtin::SetUnion { .. } => "'union'",
-			Builtin::SetIntersect { .. } => "'intersect'",
-			Builtin::SetDiff { .. } => "'diff'",
-			Builtin::SetSymDiff { .. } => "'symdiff'",
-			Builtin::SetToRanges(_) => "set2ranges",
-			Builtin::Ceil(_) => "ceil",
-			Builtin::Floor(_) => "floor",
-			Builtin::Round(_) => "round",
-			Builtin::Set2Array(_) => "set2array",
-			Builtin::AddPar { .. } | Builtin::AddVar { .. } => "'+'",
-			Builtin::SubPar { .. } | Builtin::SubVar { .. } | Builtin::Neg(_) => "'-'",
-			Builtin::TimesPar { .. } | Builtin::TimesVar { .. } => "'*'",
-			Builtin::Pow { .. } => "pow",
-			Builtin::DivInt { .. } => "'div'",
-			Builtin::Mod { .. } => "'mod'",
-			Builtin::DivFloat { .. } => "'/'",
-			Builtin::SumPar(_) | Builtin::SumVar(_) => "sum",
-			Builtin::ProductPar(_) | Builtin::ProductVar(_) => "product",
-			Builtin::Minimum { .. } | Builtin::MinArray(_) => "min",
-			Builtin::Maximum { .. } | Builtin::MaxArray(_) => "max",
-			Builtin::ArgMin(_) => "arg_min",
-			Builtin::ArgMax(_) => "arg_max",
-			Builtin::Abs(_) => "abs",
-			Builtin::Sqrt(_) => "sqrt",
-			Builtin::Exp(_) => "exp",
-			Builtin::Ln(_) => "ln",
-			Builtin::Log10(_) => "log10",
-			Builtin::Sin(_) => "sin",
-			Builtin::Cos(_) => "cos",
-			Builtin::Tan(_) => "tan",
-			Builtin::ASin(_) => "asin",
-			Builtin::ACos(_) => "acos",
-			Builtin::ATan(_) => "atan",
-			Builtin::SinH(_) => "sinh",
-			Builtin::CosH(_) => "cosh",
-			Builtin::TanH(_) => "tanh",
-			Builtin::ASinH(_) => "asinh",
-			Builtin::ACosH(_) => "acosh",
-			Builtin::ATanH(_) => "atanh",
+			Builtin::GetParameter(_) => ids.builtins.mzn_get_parameter,
+			Builtin::ForAllPar(_) => ids.builtins.mzn_forall_par,
+			Builtin::ForAllVar(_) => ids.builtins.mzn_forall_var,
+			Builtin::ExistsPar(_) => ids.builtins.mzn_exists_par,
+			Builtin::ExistsVar(_) => ids.builtins.mzn_exists_var,
+			Builtin::IndexedArray(_) => ids.builtins.mzn_indexed_array,
+			Builtin::ArrayAccess { .. } => ids.builtins.mzn_element_internal,
+			Builtin::ArraySlice { .. } => ids.builtins.mzn_slice_internal,
+			Builtin::ArrayToSet(_) => ids.builtins.mzn_array_to_set,
+			Builtin::ArrayPlusPlus { .. } => ids.builtins.mzn_array_plus_plus,
+			Builtin::ArrayLength(_) => ids.builtins.mzn_array_length,
+			Builtin::IndexSetsAgree { .. } => ids.builtins.mzn_index_sets_agree,
+			Builtin::IndexSets(_) => ids.builtins.mzn_index_sets,
+			Builtin::ArrayXd { .. } => ids.builtins.mzn_array_xd,
+			Builtin::ArrayKd { .. } => ids.builtins.mzn_array_kd,
+			Builtin::ComputeDivBounds { .. } => ids.builtins.mzn_compute_div_bounds,
+			Builtin::ComputeModBounds { .. } => ids.builtins.mzn_compute_mod_bounds,
+			Builtin::ComputeFloatDivBounds { .. } => ids.builtins.mzn_compute_float_div_bounds,
+			Builtin::ComputePowBounds { .. } => ids.builtins.mzn_compute_pow_bounds,
+			Builtin::Normal { .. } => ids.builtins.mzn_normal,
+			Builtin::UniformFloat { .. } => ids.builtins.mzn_uniform_float,
+			Builtin::UniformInt { .. } => ids.builtins.mzn_uniform_int,
+			Builtin::Poisson { .. } => ids.builtins.mzn_poisson,
+			Builtin::Gamma { .. } => ids.builtins.mzn_gamma,
+			Builtin::Weibull { .. } => ids.builtins.mzn_weibull,
+			Builtin::Exponential { .. } => ids.builtins.mzn_exponential,
+			Builtin::LogNormal { .. } => ids.builtins.mzn_lognormal,
+			Builtin::ChiSquared { .. } => ids.builtins.mzn_chisquared,
+			Builtin::Cauchy { .. } => ids.builtins.mzn_cauchy,
+			Builtin::FDistribution { .. } => ids.builtins.mzn_fdistribution,
+			Builtin::TDistribution { .. } => ids.builtins.mzn_tdistribution,
+			Builtin::DiscreteDistribution { .. } => ids.builtins.mzn_discrete_distribution,
+			Builtin::Bernoulli { .. } => ids.builtins.mzn_bernoulli,
+			Builtin::Binomial { .. } => ids.builtins.mzn_binomial,
+			Builtin::Warn(_) => ids.builtins.mzn_add_warning,
+			Builtin::TraceExp(_) => ids.builtins.mzn_trace_exp,
+			Builtin::TraceToSection { .. } => ids.builtins.mzn_trace_to_section,
+			Builtin::LogStreamToString => ids.builtins.mzn_logstream_to_string,
+			Builtin::Abort(_) => ids.builtins.mzn_abort,
+			Builtin::CheckDebugMode => ids.builtins.mzn_internal_check_debug_mode,
+			Builtin::LowerBound(_) => ids.builtins.mzn_lb,
+			Builtin::UpperBound(_) => ids.builtins.mzn_ub,
+			Builtin::LowerBoundArray(_) => ids.builtins.mzn_lb_array,
+			Builtin::UpperBoundArray(_) => ids.builtins.mzn_ub_array,
+			Builtin::Domain(_) => ids.builtins.mzn_dom,
+			Builtin::DomainArray(_) => ids.builtins.mzn_dom_array,
+			Builtin::DomainBoundsArray(_) => ids.builtins.mzn_dom_bounds_array,
+			Builtin::HasBounds(_) => ids.builtins.mzn_has_bounds,
+			Builtin::HasUpperBoundSet(_) => ids.builtins.mzn_has_ub_set,
+			Builtin::IsFixed(_) => ids.builtins.mzn_is_fixed,
+			Builtin::Fix(_) => ids.builtins.mzn_fix,
+			Builtin::HasAnn { .. } => ids.builtins.mzn_has_ann,
+			Builtin::Annotate { .. } => ids.builtins.mzn_annotate,
+			Builtin::IsSame { .. } => ids.builtins.mzn_is_same,
+			Builtin::CompilerVersion => ids.builtins.mzn_compiler_version,
+			Builtin::StringPlusPlus { .. } => ids.builtins.mzn_string_plus_plus,
+			Builtin::StringLength(_) => ids.builtins.mzn_string_length,
+			Builtin::StringConcat(_) => ids.builtins.mzn_concat,
+			Builtin::StringJoin { .. } => ids.builtins.mzn_join,
+			Builtin::LessThanPar { .. } => ids.builtins.mzn_lt_par,
+			Builtin::LessThanVar { .. } => ids.builtins.mzn_lt_var,
+			Builtin::LessThanEqPar { .. } => ids.builtins.mzn_le_par,
+			Builtin::LessThanEqVar { .. } => ids.builtins.mzn_le_var,
+			Builtin::NotEqualPar { .. } => ids.builtins.mzn_ne_par,
+			Builtin::NotEqualVar { .. } => ids.builtins.mzn_ne_var,
+			Builtin::EqualPar { .. } => ids.builtins.mzn_eq_par,
+			Builtin::EqualVar { .. } => ids.builtins.mzn_eq_var,
+			Builtin::AndPar { .. } => ids.builtins.mzn_and_par,
+			Builtin::AndVar { .. } => ids.builtins.mzn_and_var,
+			Builtin::OrPar { .. } => ids.builtins.mzn_or_par,
+			Builtin::OrVar { .. } => ids.builtins.mzn_or_var,
+			Builtin::ImplicationPar { .. } => ids.builtins.mzn_implies_par,
+			Builtin::ImplicationVar { .. } => ids.builtins.mzn_implies_var,
+			Builtin::NotPar(_) => ids.builtins.mzn_not_par,
+			Builtin::NotVar(_) => ids.builtins.mzn_not_var,
+			Builtin::XorAll(_) => ids.builtins.mzn_xorall,
+			Builtin::IffAll(_) => ids.builtins.mzn_iffall,
+			Builtin::ClausePar { .. } => ids.builtins.mzn_clause_par,
+			Builtin::ClauseVar { .. } => ids.builtins.mzn_clause_var,
+			Builtin::Sort(_) => ids.builtins.mzn_sort,
+			Builtin::SortBy { .. } => ids.builtins.mzn_sort_by,
+			Builtin::Show(_) => ids.builtins.mzn_show,
+			Builtin::ShowDzn(_) => ids.builtins.mzn_show_dzn,
+			Builtin::ShowDznId(_) => ids.builtins.mzn_show_dzn_id,
+			Builtin::ShowCheckerOutput => ids.builtins.mzn_show_checker_output,
+			Builtin::ShowJson(_) => ids.builtins.mzn_show_json,
+			Builtin::Format { .. } => ids.builtins.mzn_format,
+			Builtin::FormatJustifyString { .. } => ids.builtins.mzn_format_justify_string,
+			Builtin::OutputToSection { .. } => ids.builtins.mzn_output_to_section,
+			Builtin::OutputToJsonSection { .. } => ids.builtins.mzn_output_to_json_section,
+			Builtin::SetRange { .. } => ids.builtins.mzn_set_range,
+			Builtin::SetInPar { .. } => ids.builtins.mzn_in_par,
+			Builtin::SetInVar { .. } => ids.builtins.mzn_in_var,
+			Builtin::SetSubsetPar { .. } => ids.builtins.mzn_subset_par,
+			Builtin::SetSubsetVar { .. } => ids.builtins.mzn_subset_var,
+			Builtin::SetUnionPar { .. } => ids.builtins.mzn_union_par,
+			Builtin::SetUnionVar { .. } => ids.builtins.mzn_union_var,
+			Builtin::SetIntersectPar { .. } => ids.builtins.mzn_intersect_par,
+			Builtin::SetIntersectVar { .. } => ids.builtins.mzn_intersect_var,
+			Builtin::SetDiffPar { .. } => ids.builtins.mzn_diff_par,
+			Builtin::SetDiffVar { .. } => ids.builtins.mzn_diff_var,
+			Builtin::SetSymDiffPar { .. } => ids.builtins.mzn_symdiff_par,
+			Builtin::SetSymDiffVar { .. } => ids.builtins.mzn_symdiff_var,
+			Builtin::SetToRanges(_) => ids.builtins.mzn_set_to_ranges,
+			Builtin::Ceil(_) => ids.builtins.mzn_ceil,
+			Builtin::Floor(_) => ids.builtins.mzn_floor,
+			Builtin::Round(_) => ids.builtins.mzn_round,
+			Builtin::SetToArray(_) => ids.builtins.mzn_set_to_array,
+			Builtin::AddPar { .. } => ids.builtins.mzn_add_par,
+			Builtin::AddVar { .. } => ids.builtins.mzn_add_var,
+			Builtin::SubPar { .. } => ids.builtins.mzn_sub_par,
+			Builtin::SubVar { .. } => ids.builtins.mzn_sub_var,
+			Builtin::TimesPar { .. } => ids.builtins.mzn_times_par,
+			Builtin::TimesVar { .. } => ids.builtins.mzn_times_var,
+			Builtin::Pow { .. } => ids.builtins.mzn_pow,
+			Builtin::NegPar(_) => ids.builtins.mzn_neg_par,
+			Builtin::NegVar(_) => ids.builtins.mzn_neg_var,
+			Builtin::DivInt { .. } => ids.builtins.mzn_div_int,
+			Builtin::Mod { .. } => ids.builtins.mzn_mod,
+			Builtin::DivFloat { .. } => ids.builtins.mzn_div_float,
+			Builtin::SumPar(_) => ids.builtins.mzn_sum_par,
+			Builtin::SumVar(_) => ids.builtins.mzn_sum_var,
+			Builtin::ProductPar(_) => ids.builtins.mzn_product_par,
+			Builtin::ProductVar(_) => ids.builtins.mzn_product_var,
+			Builtin::Minimum { .. } => ids.builtins.mzn_minimum,
+			Builtin::Maximum { .. } => ids.builtins.mzn_maximum,
+			Builtin::MinArray(_) => ids.builtins.mzn_min_array,
+			Builtin::MaxArray(_) => ids.builtins.mzn_max_array,
+			Builtin::ArgMin(_) => ids.builtins.mzn_arg_min,
+			Builtin::ArgMax(_) => ids.builtins.mzn_arg_max,
+			Builtin::Abs(_) => ids.builtins.mzn_abs,
+			Builtin::Sqrt(_) => ids.builtins.mzn_sqrt,
+			Builtin::Exp(_) => ids.builtins.mzn_exp,
+			Builtin::Ln(_) => ids.builtins.mzn_ln,
+			Builtin::Log10(_) => ids.builtins.mzn_log10,
+			Builtin::Sin(_) => ids.builtins.mzn_sin,
+			Builtin::Cos(_) => ids.builtins.mzn_cos,
+			Builtin::Tan(_) => ids.builtins.mzn_tan,
+			Builtin::ASin(_) => ids.builtins.mzn_asin,
+			Builtin::ACos(_) => ids.builtins.mzn_acos,
+			Builtin::ATan(_) => ids.builtins.mzn_atan,
+			Builtin::SinH(_) => ids.builtins.mzn_sinh,
+			Builtin::CosH(_) => ids.builtins.mzn_cosh,
+			Builtin::TanH(_) => ids.builtins.mzn_tanh,
+			Builtin::ASinH(_) => ids.builtins.mzn_asinh,
+			Builtin::ACosH(_) => ids.builtins.mzn_acosh,
+			Builtin::ATanH(_) => ids.builtins.mzn_tanh,
 		}
 	}
 
 	/// Get arguments (used for printing as MiniZinc)
 	pub fn arguments<'a>(&'a self) -> Vec<&'a Value> {
 		match self {
-			Builtin::FormatWithPrecision {
+			Builtin::Format {
 				width: v1,
 				precision: v2,
 				value: v3,
@@ -893,7 +924,11 @@ impl Builtin {
 				exponent: v2,
 			}
 			| Builtin::Normal { mean: v1, std: v2 }
-			| Builtin::Uniform {
+			| Builtin::UniformFloat {
+				lower: v1,
+				upper: v2,
+			}
+			| Builtin::UniformInt {
 				lower: v1,
 				upper: v2,
 			}
@@ -912,18 +947,6 @@ impl Builtin {
 			}
 			| Builtin::FDistribution { dof1: v1, dof2: v2 }
 			| Builtin::Binomial { n: v1, p: v2 }
-			| Builtin::Trace {
-				message: v1,
-				value: v2,
-			}
-			| Builtin::TraceStdout {
-				message: v1,
-				value: v2,
-			}
-			| Builtin::TraceLogStream {
-				message: v1,
-				value: v2,
-			}
 			| Builtin::HasAnn {
 				variable: v1,
 				ann: v2,
@@ -944,51 +967,59 @@ impl Builtin {
 				delimiter: v1,
 				strings: v2,
 			}
-			| Builtin::LessThan {
+			| Builtin::LessThanPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::LessThanEq {
+			| Builtin::LessThanVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::GreaterThan {
+			| Builtin::LessThanEqPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::GreaterThanEq {
+			| Builtin::LessThanEqVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::NotEqual {
+			| Builtin::NotEqualPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::Equal {
+			| Builtin::NotEqualVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::And {
+			| Builtin::EqualPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::Or {
+			| Builtin::EqualVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::Implication {
+			| Builtin::AndPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::ReverseImplication {
+			| Builtin::AndVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::IfAndOnlyIf {
+			| Builtin::OrPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::Xor {
+			| Builtin::OrVar {
+				left: v1,
+				right: v2,
+			}
+			| Builtin::ImplicationPar {
+				left: v1,
+				right: v2,
+			}
+			| Builtin::ImplicationVar {
 				left: v1,
 				right: v2,
 			}
@@ -997,10 +1028,6 @@ impl Builtin {
 			| Builtin::SortBy {
 				array: v1,
 				sort_by: v2,
-			}
-			| Builtin::Format {
-				width: v1,
-				value: v2,
 			}
 			| Builtin::FormatJustifyString {
 				width: v1,
@@ -1025,27 +1052,35 @@ impl Builtin {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetSupersetPar {
+			| Builtin::SetUnionPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetSupersetVar {
+			| Builtin::SetUnionVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetUnion {
+			| Builtin::SetIntersectPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetIntersect {
+			| Builtin::SetIntersectVar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetDiff {
+			| Builtin::SetDiffPar {
 				left: v1,
 				right: v2,
 			}
-			| Builtin::SetSymDiff {
+			| Builtin::SetDiffVar {
+				left: v1,
+				right: v2,
+			}
+			| Builtin::SetSymDiffPar {
+				left: v1,
+				right: v2,
+			}
+			| Builtin::SetSymDiffVar {
 				left: v1,
 				right: v2,
 			}
@@ -1106,7 +1141,6 @@ impl Builtin {
 			| Builtin::ArrayLength(value)
 			| Builtin::IndexSets(value)
 			| Builtin::TraceExp(value)
-			| Builtin::TraceDbg(value)
 			| Builtin::Warn(value)
 			| Builtin::Abort(value)
 			| Builtin::LowerBound(value)
@@ -1122,7 +1156,8 @@ impl Builtin {
 			| Builtin::Fix(value)
 			| Builtin::StringLength(value)
 			| Builtin::StringConcat(value)
-			| Builtin::Not(value)
+			| Builtin::NotPar(value)
+			| Builtin::NotVar(value)
 			| Builtin::XorAll(value)
 			| Builtin::IffAll(value)
 			| Builtin::Sort(value)
@@ -1134,8 +1169,10 @@ impl Builtin {
 			| Builtin::Ceil(value)
 			| Builtin::Floor(value)
 			| Builtin::Round(value)
-			| Builtin::Set2Array(value)
-			| Builtin::Neg(value)
+			| Builtin::SetToArray(value)
+			| Builtin::ArrayToSet(value)
+			| Builtin::NegPar(value)
+			| Builtin::NegVar(value)
 			| Builtin::SumPar(value)
 			| Builtin::SumVar(value)
 			| Builtin::ProductPar(value)

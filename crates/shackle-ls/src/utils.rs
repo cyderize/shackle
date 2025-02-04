@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+	path::{Path, PathBuf, MAIN_SEPARATOR_STR},
+	str::FromStr,
+};
 
 use lsp_types::Uri;
 use miette::{SourceCode, SpanContents};
@@ -32,9 +35,48 @@ pub fn node_ref_to_location<T: Into<NodeRef>>(
 ) -> Option<lsp_types::Location> {
 	let (src, span) = node.into().source_span(db);
 	let span_contents = src.read_span(&span, 0, 0).ok()?;
-	let uri = Uri::from_str(src.path()?.as_os_str().to_str().unwrap())
-		.ok()
-		.or_else(|| Uri::from_str(&format!("file:///{}", src.path()?.to_string_lossy())).ok())?;
+	let uri = path_to_uri(src.path()?);
 	let range = span_contents_to_range(&*span_contents);
 	Some(lsp_types::Location { uri, range })
+}
+
+pub fn uri_to_path(uri: &Uri) -> PathBuf {
+	// TODO: Replace with less ad-hoc implementation
+	assert_eq!(
+		uri.scheme()
+			.expect("Not a file path")
+			.as_str()
+			.to_lowercase(),
+		"file"
+	);
+	let mut p = PathBuf::new();
+	if let Some(auth) = uri.authority() {
+		let h = auth.host().as_str();
+		if h != "localhost" && !h.is_empty() {
+			p.push(format!(
+				"{}{}{}{}",
+				MAIN_SEPARATOR_STR, MAIN_SEPARATOR_STR, h, MAIN_SEPARATOR_STR
+			));
+		}
+	}
+	for segment in uri.path().segments() {
+		let s = segment.decode().into_string_lossy().to_string();
+		if s.ends_with(":") {
+			p.push(format!("{}{}", s, MAIN_SEPARATOR_STR));
+		} else {
+			p.push(s);
+		}
+	}
+	eprintln!("{:?}", p);
+	p
+}
+
+pub fn path_to_uri(path: &Path) -> Uri {
+	// TODO: Replace with less ad-hoc implementation
+	Uri::from_str(path.as_os_str().to_str().unwrap()).unwrap_or_else(|_| {
+		let p = path.to_string_lossy().replace("\\", "/");
+		let url = format!("file://{}{}", if p.starts_with("/") { "" } else { "/" }, p);
+		eprintln!("{:?}", url);
+		Uri::from_str(&url).unwrap()
+	})
 }

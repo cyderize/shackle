@@ -8,7 +8,7 @@ use shackle_compiler::{
 	file::{InputFile, InputLang, ModelRef},
 };
 
-use crate::{diagnostics, vfs::Vfs};
+use crate::{diagnostics, utils::uri_to_path, vfs::Vfs};
 
 /// Trait for handler preparation
 pub trait LanguageServerContext: Deref<Target = CompilerDatabase> {
@@ -101,8 +101,8 @@ impl LanguageServerContext for LanguageServerDatabase {
 		&mut self,
 		doc: &TextDocumentIdentifier,
 	) -> Result<ModelRef, ResponseError> {
-		let requested_path = Path::new(doc.uri.as_str());
-		self.set_active_file(requested_path);
+		let requested_path = uri_to_path(&doc.uri);
+		self.set_active_file(&requested_path);
 		Ok(self.input_models()[0])
 	}
 

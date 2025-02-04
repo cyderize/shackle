@@ -13,8 +13,8 @@ use crate::{
 		db::Hir,
 		ids::{EntityRef, ExpressionRef, ItemRef, NodeRef, PatternRef},
 		ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, Call, Case, Declaration,
-		Expression, Generator, Identifier, IfThenElse, IndexedArrayLiteral, ItemData, Lambda, Let,
-		LetItem, MaybeIndexSet, Pattern, PrimitiveType, RecordAccess, RecordLiteral,
+		Expression, Function, Generator, Identifier, IfThenElse, IndexedArrayLiteral, ItemData,
+		Lambda, Let, LetItem, MaybeIndexSet, Pattern, PrimitiveType, RecordAccess, RecordLiteral,
 		SetComprehension, SetLiteral, TupleAccess, TupleLiteral, Type,
 	},
 	ty::{
@@ -1483,7 +1483,8 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 				}
 				LetItem::Declaration(d) => {
 					let ty = self.collect_declaration(d);
-					if (ty.contains_par(db.upcast()) || ty.contains_function(db.upcast()))
+					if !ty.contains_error(db.upcast())
+						&& (ty.contains_par(db.upcast()) || ty.contains_function(db.upcast()))
 						&& d.definition.is_none()
 					{
 						let (src, span) =
@@ -1672,6 +1673,20 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 			self.ctx
 				.add_expression(ExpressionRef::new(self.item, expr), self.types.error);
 			return error;
+		}
+
+		if i == self.identifiers.functions.mzn_builtin {
+			// Special interpreter builtin
+			let op = Ty::function(
+				db.upcast(),
+				FunctionType {
+					return_type: self.types.bottom,
+					params: args.to_vec().into_boxed_slice(),
+				},
+			);
+			self.ctx
+				.add_expression(ExpressionRef::new(self.item, expr), op);
+			return (op, self.types.bottom);
 		}
 
 		// If there's a variable in scope which is a function, use it

@@ -366,7 +366,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 					&self.totalised_model,
 					l.in_expression.origin(),
 					LookupCall {
-						function: self.ids.builtins.forall.into(),
+						function: self.ids.functions.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.totalised_model,
@@ -388,7 +388,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for Totaliser<'a, Dst> {
 					&self.totalised_model,
 					l.in_expression.origin(),
 					LookupCall {
-						function: self.ids.builtins.forall.into(),
+						function: self.ids.functions.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.totalised_model,
@@ -516,7 +516,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				&self.totalised_model,
 				origin,
 				LookupCall {
-					function: self.ids.builtins.forall.into(),
+					function: self.ids.functions.forall.into(),
 					arguments: vec![Expression::new(
 						db,
 						&self.totalised_model,
@@ -792,7 +792,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 									&self.totalised_model,
 									o,
 									LookupCall {
-										function: self.ids.builtins.exists.into(),
+										function: self.ids.functions.exists.into(),
 										arguments: vec![Expression::new(
 											db,
 											&self.totalised_model,
@@ -878,7 +878,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				&self.totalised_model,
 				o,
 				LookupCall {
-					function: self.ids.builtins.forall.into(),
+					function: self.ids.functions.forall.into(),
 					arguments: vec![elements_defined],
 				},
 			));
@@ -985,7 +985,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 								&self.totalised_model,
 								origin,
 								LookupCall {
-									function: self.ids.builtins.forall.into(),
+									function: self.ids.functions.forall.into(),
 									arguments: vec![Expression::new(
 										db,
 										&self.totalised_model,
@@ -1037,7 +1037,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 							&self.totalised_model,
 							origin,
 							LookupCall {
-								function: self.ids.builtins.forall.into(),
+								function: self.ids.functions.forall.into(),
 								arguments: vec![Expression::new(
 									db,
 									&self.totalised_model,
@@ -1111,7 +1111,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 							&self.totalised_model,
 							origin,
 							LookupCall {
-								function: self.ids.builtins.and.into(),
+								function: self.ids.functions.and.into(),
 								arguments: vec![definedness, value],
 							},
 						)),
@@ -1570,7 +1570,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 						&self.totalised_model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.forall.into(),
+							function: self.ids.functions.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.totalised_model,
@@ -1620,7 +1620,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 			&self.totalised_model,
 			origin,
 			LookupCall {
-				function: self.ids.builtins.forall.into(),
+				function: self.ids.functions.forall.into(),
 				arguments: vec![Expression::new(
 					db,
 					&self.totalised_model,

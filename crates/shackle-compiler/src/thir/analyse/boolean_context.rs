@@ -479,13 +479,17 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 			ExpressionData::Call(c) => (|| {
 				match &c.function {
 					Callable::Function(f) => {
-						if self.model[*f].name() == self.ids.builtins.not && c.arguments.len() == 1
+						if (self.model[*f].name() == self.ids.builtins.mzn_not_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_not_var)
+							&& c.arguments.len() == 1
 						{
 							self.update(&c.arguments[0], !it.mode, false);
 							return;
-						} else if (self.model[*f].name() == self.ids.builtins.and
-							&& it.mode.is_root() || self.model[*f].name()
-							== self.ids.builtins.or
+						} else if ((self.model[*f].name() == self.ids.builtins.mzn_and_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_and_var)
+							&& it.mode.is_root() || (self.model[*f].name()
+							== self.ids.builtins.mzn_or_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_or_var)
 							&& it.mode.is_root_neg())
 							&& c.arguments.len() == 2
 							&& c.arguments[0].ty().is_bool(db.upcast())
@@ -493,9 +497,11 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 						{
 							self.update(&c.arguments[0], it.mode, false);
 							self.update(&c.arguments[1], it.mode, false);
-						} else if (self.model[*f].name() == self.ids.builtins.forall
-							&& it.mode.is_root() || self.model[*f].name()
-							== self.ids.builtins.exists
+						} else if ((self.model[*f].name() == self.ids.builtins.mzn_forall_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_forall_var)
+							&& it.mode.is_root() || (self.model[*f].name()
+							== self.ids.builtins.mzn_exists_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_exists_var)
 							&& it.mode.is_root_neg())
 							&& c.arguments.len() == 1
 							&& c.arguments[0]
@@ -506,7 +512,8 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 						{
 							self.update(&c.arguments[0], it.mode, true);
 							return;
-						} else if self.model[*f].name() == self.ids.builtins.clause
+						} else if (self.model[*f].name() == self.ids.builtins.mzn_clause_par
+							|| self.model[*f].name() == self.ids.builtins.mzn_clause_var)
 							&& c.arguments.len() == 2
 							&& it.mode.is_root_neg()
 						{
@@ -697,7 +704,7 @@ impl<'a, T: Marker> Visitor<'a, T> for BooleanVisitor<'a, T> {
 
 	fn visit_call(&mut self, model: &'a Model<T>, call: &'a Call<T>) {
 		if let Callable::Function(f) = &call.function {
-			if model[*f].name() == self.ids.builtins.abort {
+			if model[*f].name() == self.ids.builtins.mzn_abort {
 				return;
 			}
 		}

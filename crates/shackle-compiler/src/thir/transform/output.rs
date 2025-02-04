@@ -52,7 +52,7 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 					&model,
 					origin,
 					LookupCall {
-						function: ids.builtins.plus_plus.into(),
+						function: ids.functions.plus_plus.into(),
 						arguments: vec![acc, e],
 					},
 				)
@@ -63,7 +63,7 @@ pub fn generate_output(db: &dyn Thir, mut model: Model) -> Result<Model> {
 					&model,
 					origin,
 					LookupCall {
-						function: ids.builtins.concat.into(),
+						function: ids.functions.concat.into(),
 						arguments: vec![arg],
 					},
 				)

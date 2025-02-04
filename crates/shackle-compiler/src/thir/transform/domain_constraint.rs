@@ -437,7 +437,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 							&self.model,
 							origin,
 							LookupCall {
-								function: self.ids.builtins.index_sets.into(),
+								function: self.ids.functions.index_sets.into(),
 								arguments: vec![variable.clone()],
 							},
 						);
@@ -489,7 +489,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 									&self.model,
 									origin,
 									LookupCall {
-										function: self.ids.builtins.forall.into(),
+										function: self.ids.functions.forall.into(),
 										arguments: vec![Expression::new(
 											db,
 											&self.model,
@@ -509,7 +509,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.index_sets.into(),
+							function: self.ids.functions.index_sets.into(),
 							arguments: vec![variable.clone()],
 						},
 					);
@@ -596,7 +596,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.forall.into(),
+							function: self.ids.functions.forall.into(),
 							arguments: vec![comprehension],
 						},
 					));
@@ -609,7 +609,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.forall.into(),
+							function: self.ids.functions.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,
@@ -653,7 +653,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.forall.into(),
+							function: self.ids.functions.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,
@@ -702,7 +702,7 @@ impl<Dst: Marker, Src: Marker> DomainRewriter<Dst, Src> {
 						&self.model,
 						origin,
 						LookupCall {
-							function: self.ids.builtins.forall.into(),
+							function: self.ids.functions.forall.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.model,

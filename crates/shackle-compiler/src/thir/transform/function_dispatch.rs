@@ -109,7 +109,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for DispatchRewriter<Dst, Sr
 							&self.model,
 							model[f].origin(),
 							LookupCall {
-								function: self.ids.builtins.forall.into(),
+								function: self.ids.functions.forall.into(),
 								arguments: vec![Expression::new(
 									db,
 									&self.model,
@@ -236,12 +236,12 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
 				condition.push(self.call(
 					db,
-					self.ids.builtins.is_fixed,
+					self.ids.functions.is_fixed,
 					self.occurs(db, destruct_ce.clone()),
 				));
 				condition.push(self.call(
 					db,
-					self.ids.builtins.fix,
+					self.ids.functions.fix,
 					self.occurs(db, destruct_ce.clone()),
 				));
 				let deopt_ce = self.deopt(db, destruct_ce);
@@ -259,16 +259,16 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 				// var opt T -> opt U, var opt T -> U
 				let destruct_ce = self.call(db, self.ids.functions.mzn_destruct_opt, ce);
 				let destruct_ve = self.call(db, self.ids.functions.mzn_destruct_opt, ve);
-				condition.push(self.call(db, self.ids.builtins.is_fixed, destruct_ce.clone()));
+				condition.push(self.call(db, self.ids.functions.is_fixed, destruct_ce.clone()));
 				let fixed_ce = self.call(
 					db,
 					self.ids.functions.mzn_construct_opt,
-					self.call(db, self.ids.builtins.fix, destruct_ce),
+					self.call(db, self.ids.functions.fix, destruct_ce),
 				);
 				let fixed_ve = self.call(
 					db,
 					self.ids.functions.mzn_construct_opt,
-					self.call(db, self.ids.builtins.fix, destruct_ve),
+					self.call(db, self.ids.functions.fix, destruct_ve),
 				);
 				return self.dispatch_param(
 					db,
@@ -281,9 +281,9 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 			}
 			(VarType::Var, OptType::NonOpt, VarType::Par, OptType::NonOpt) => {
 				// var T -> U
-				condition.push(self.call(db, self.ids.builtins.is_fixed, ce.clone()));
-				let fix_ce = self.call(db, self.ids.builtins.fix, ce);
-				let fix_ve = self.call(db, self.ids.builtins.fix, ve);
+				condition.push(self.call(db, self.ids.functions.is_fixed, ce.clone()));
+				let fix_ce = self.call(db, self.ids.functions.fix, ce);
+				let fix_ve = self.call(db, self.ids.functions.fix, ve);
 				return self.dispatch_param(
 					db,
 					fix_ce,
@@ -326,7 +326,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 				let template = Box::new(self.dispatch_param(db, c_exp, v_exp, e1, e2, &mut cs));
 				condition.push(self.call(
 					db,
-					self.ids.builtins.forall,
+					self.ids.functions.forall,
 					Expression::new(
 						db,
 						&self.model,
@@ -343,7 +343,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 							} else {
 								self.call(
 									db,
-									self.ids.builtins.forall,
+									self.ids.functions.forall,
 									Expression::new(db, &self.model, origin, ArrayLiteral(cs)),
 								)
 							}),
@@ -391,7 +391,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 					&self.model,
 					origin,
 					LookupCall {
-						function: self.ids.builtins.forall.into(),
+						function: self.ids.functions.forall.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.model,
@@ -411,7 +411,7 @@ impl<Src: Marker, Dst: Marker> DispatchRewriter<Dst, Src> {
 										&self.model,
 										origin,
 										LookupCall {
-											function: self.ids.builtins.forall.into(),
+											function: self.ids.functions.forall.into(),
 											arguments: vec![Expression::new(
 												db,
 												&self.model,

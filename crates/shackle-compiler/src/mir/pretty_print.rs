@@ -99,7 +99,7 @@ impl PrettyPrinter {
 		match data {
 			ExpressionData::Builtin(b) => format!(
 				"{}({})",
-				b.name(),
+				b.name(db).pretty_print(db.upcast()),
 				b.arguments()
 					.into_iter()
 					.map(|arg| PrettyPrinter::print_value(db, arg))

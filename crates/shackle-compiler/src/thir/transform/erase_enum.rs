@@ -89,7 +89,7 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		f: &Function<Src>,
 	) -> Function<Dst> {
 		let mut folded = fold_function(self, db, model, f);
-		if f.name() == self.ids.builtins.show && f.body().is_none() {
+		if f.name() == self.ids.functions.show && f.body().is_none() {
 			let p = &model[f.parameter(0)];
 			if let Some(enum_ty) = p.ty().enum_ty(db.upcast()) {
 				let origin = p.origin();

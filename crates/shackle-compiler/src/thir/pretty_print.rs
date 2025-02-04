@@ -509,8 +509,8 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 					Callable::Function(f) => {
 						let name = self.model[*f].name();
 						if self.old_compat
-							&& (name == self.ids.builtins.forall
-								|| name == self.ids.builtins.exists)
+							&& (name == self.ids.functions.forall
+								|| name == self.ids.functions.exists)
 							&& c.arguments.len() == 1
 						{
 							if let ExpressionData::ArrayLiteral(al) = &*c.arguments[0] {
@@ -520,7 +520,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 										.iter()
 										.map(|e| format!("({})", self.pretty_print_expression(e)))
 										.collect::<Vec<_>>()
-										.join(if name == self.ids.builtins.forall {
+										.join(if name == self.ids.functions.forall {
 											" /\\ "
 										} else {
 											" \\/ "

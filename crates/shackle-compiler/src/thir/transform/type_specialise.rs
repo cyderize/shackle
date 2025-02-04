@@ -21,8 +21,9 @@ use crate::{
 		},
 		ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Declaration, DeclarationId,
 		Domain, DomainData, Expression, ExpressionBuilder, Function, FunctionId, FunctionName,
-		Generator, Identifier, IfThenElse, IntegerLiteral, Item, ItemId, Marker, Model, OptType,
-		OverloadMap, RecordAccess, StringLiteral, TupleAccess,
+		Generator, Identifier, IfThenElse, IntegerLiteral, Item, ItemId, LookupCall, Marker, Model,
+		OptType, OverloadMap, RecordAccess, RecordLiteral, StringLiteral, TupleAccess,
+		TupleLiteral,
 	},
 	ty::{FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations},
 	utils::{maybe_grow_stack, DebugPrint},
@@ -94,7 +95,7 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for TypeSpecialiser<'a, Dst> {
 				self.specialised_model[f].set_body(body);
 				continue;
 			}
-			if model[s.original].name() == self.ids.builtins.show {
+			if model[s.original].name() == self.ids.functions.show {
 				// Create specialised show function for types which will be erased, except show on direct enum which will be generated later
 				let p = self.specialised_model[f].parameter(0);
 				let ty = self.specialised_model[p].ty();
@@ -108,6 +109,13 @@ impl<'a, Dst: Marker> Folder<'_, Dst> for TypeSpecialiser<'a, Dst> {
 								.pretty_print_item(f.into())
 						);
 					}
+					continue;
+				}
+			}
+			if model[s.original].name() == self.ids.functions.array_access {
+				// Create specialised decomposition of array access for var access of struct types
+				if let Some(body) = self.decompose_array_access(db, model, f) {
+					self.specialised_model[f].set_body(body);
 					continue;
 				}
 			}
@@ -280,9 +288,9 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 
 		let needs_instantiation = model[f].is_polymorphic()
 			&& (model[f].body().is_some()
-				|| (model[f].name() == self.ids.builtins.show
-					|| model[f].name() == self.ids.builtins.show_json
-					|| model[f].name() == self.ids.builtins.show_dzn)
+				|| (model[f].name() == self.ids.functions.show
+					|| model[f].name() == self.ids.functions.show_json
+					|| model[f].name() == self.ids.functions.show_dzn)
 					&& args[0].contains_erased_type(db.upcast()));
 		if !needs_instantiation {
 			return self.fold_function_id(db, model, f);
@@ -359,9 +367,9 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 			.zip(function.parameters().iter().copied())
 			.collect();
 		let position = || {
-			if function.name() == self.ids.builtins.show
-				|| function.name() == self.ids.builtins.show_json
-				|| function.name() == self.ids.builtins.show_dzn
+			if function.name() == self.ids.functions.show
+				|| function.name() == self.ids.functions.show_json
+				|| function.name() == self.ids.functions.show_dzn
 			{
 				// Show involving enums must appear after the definition of the enum
 				let needs_enums = self.specialised_model[function.parameter(0)]
@@ -442,7 +450,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 			);
 			let show = call(
 				self,
-				self.ids.builtins.show,
+				self.ids.functions.show,
 				vec![self.expr(db, origin, deopt)],
 			);
 			return self.expr(
@@ -471,12 +479,12 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					.add_declaration(Item::new(gen, origin));
 				let show = call(
 					self,
-					self.ids.builtins.show,
+					self.ids.functions.show,
 					vec![self.expr(db, origin, x_i)],
 				);
 				let join = call(
 					self,
-					self.ids.builtins.join,
+					self.ids.functions.join,
 					vec![
 						self.expr(db, origin, StringLiteral::new(", ", db.upcast())),
 						self.expr(
@@ -496,7 +504,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				);
 				let concat = call(
 					self,
-					self.ids.builtins.concat,
+					self.ids.functions.concat,
 					vec![self.expr(
 						db,
 						origin,
@@ -517,12 +525,12 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					.add_declaration(Item::new(gen, origin));
 				let show = call(
 					self,
-					self.ids.builtins.show,
+					self.ids.functions.show,
 					vec![self.expr(db, origin, x_i)],
 				);
 				let join = call(
 					self,
-					self.ids.builtins.join,
+					self.ids.functions.join,
 					vec![
 						self.expr(db, origin, StringLiteral::new(", ", db.upcast())),
 						self.expr(
@@ -542,7 +550,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				);
 				let concat = call(
 					self,
-					self.ids.builtins.concat,
+					self.ids.functions.concat,
 					vec![self.expr(
 						db,
 						origin,
@@ -565,7 +573,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					}
 					let show = call(
 						self,
-						self.ids.builtins.show,
+						self.ids.functions.show,
 						vec![self.expr(
 							db,
 							origin,
@@ -580,7 +588,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				fields.push(self.expr(db, origin, StringLiteral::new(")", db.upcast())));
 				let concat = call(
 					self,
-					self.ids.builtins.concat,
+					self.ids.functions.concat,
 					vec![self.expr(db, origin, ArrayLiteral(fields))],
 				);
 				self.expr(db, origin, concat)
@@ -600,7 +608,7 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 					fields.push(self.expr(db, origin, StringLiteral::new(": ", db.upcast())));
 					let show = call(
 						self,
-						self.ids.builtins.show,
+						self.ids.functions.show,
 						vec![self.expr(
 							db,
 							origin,
@@ -615,13 +623,169 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 				fields.push(self.expr(db, origin, StringLiteral::new(")", db.upcast())));
 				let concat = call(
 					self,
-					self.ids.builtins.concat,
+					self.ids.functions.concat,
 					vec![self.expr(db, origin, ArrayLiteral(fields))],
 				);
 				self.expr(db, origin, concat)
 			}
 			_ => unreachable!(),
 		}
+	}
+
+	fn decompose_array_access(
+		&mut self,
+		db: &dyn Thir,
+		model: &Model,
+		f: FunctionId<Dst>,
+	) -> Option<Expression<Dst>> {
+		let array = self.specialised_model[f].parameter(0);
+		let indices = self.specialised_model[f].parameter(1);
+		if self.specialised_model[indices]
+			.ty()
+			.contains_var(db.upcast())
+		{
+			let elem = self.specialised_model[array]
+				.ty()
+				.elem_ty(db.upcast())
+				.unwrap();
+			if elem.is_tuple(db.upcast()) || elem.is_record(db.upcast()) {
+				// Decompose access to array of structured types
+				let call = |ts: &mut Self, name: Identifier, args: Vec<Expression<Dst>>| {
+					let arg_tys = args.iter().map(|arg| arg.ty()).collect::<Vec<_>>();
+					let idx = ts.instantiate(db, model, name.into(), &arg_tys);
+					Call {
+						function: Callable::Function(idx),
+						arguments: args,
+					}
+				};
+				let origin = self.specialised_model[f].origin();
+				let c_origin = self.specialised_model[array].origin();
+				let c_ident = Expression::new(db, &self.specialised_model, c_origin, array);
+				let i_origin = self.specialised_model[indices].origin();
+				let i_ident = Expression::new(db, &self.specialised_model, i_origin, indices);
+
+				if let Some(fields) = elem.record_fields(db.upcast()) {
+					let mut decomposed = Vec::with_capacity(fields.len());
+					for (k, _) in fields {
+						let field = Identifier::from(k);
+						let decl = Declaration::new(false, Domain::unbounded(db, c_origin, elem));
+						let decl_idx = self
+							.specialised_model
+							.add_declaration(Item::new(decl, c_origin));
+						let generators = vec![Generator::Iterator {
+							declarations: vec![decl_idx],
+							collection: c_ident.clone(),
+							where_clause: None,
+						}];
+						let comprehension = Expression::new(
+							db,
+							&self.specialised_model,
+							origin,
+							ArrayComprehension {
+								generators,
+								indices: None,
+								template: Box::new(Expression::new(
+									db,
+									&self.specialised_model,
+									origin,
+									RecordAccess {
+										record: Box::new(Expression::new(
+											db,
+											&self.specialised_model,
+											c_origin,
+											decl_idx,
+										)),
+										field,
+									},
+								)),
+							},
+						);
+						let array = Expression::new(
+							db,
+							&self.specialised_model,
+							origin,
+							LookupCall {
+								function: self.ids.functions.array_xd.into(),
+								arguments: vec![c_ident.clone(), comprehension],
+							},
+						);
+						let inner = call(
+							self,
+							self.ids.functions.array_access,
+							vec![array, i_ident.clone()],
+						);
+						decomposed.push((
+							field,
+							Expression::new(db, &self.specialised_model, origin, inner),
+						));
+					}
+					return Some(Expression::new(
+						db,
+						&self.specialised_model,
+						origin,
+						RecordLiteral(decomposed),
+					));
+				}
+				let fields = elem.field_len(db.upcast()).unwrap();
+				let mut decomposed = Vec::with_capacity(fields);
+				for i in 1..=(fields as i64) {
+					let decl = Declaration::new(false, Domain::unbounded(db, c_origin, elem));
+					let decl_idx = self
+						.specialised_model
+						.add_declaration(Item::new(decl, c_origin));
+					let generators = vec![Generator::Iterator {
+						declarations: vec![decl_idx],
+						collection: c_ident.clone(),
+						where_clause: None,
+					}];
+					let comprehension = Expression::new(
+						db,
+						&self.specialised_model,
+						origin,
+						ArrayComprehension {
+							generators,
+							indices: None,
+							template: Box::new(Expression::new(
+								db,
+								&self.specialised_model,
+								origin,
+								TupleAccess {
+									tuple: Box::new(Expression::new(
+										db,
+										&self.specialised_model,
+										c_origin,
+										decl_idx,
+									)),
+									field: IntegerLiteral(i),
+								},
+							)),
+						},
+					);
+					let array = Expression::new(
+						db,
+						&self.specialised_model,
+						origin,
+						LookupCall {
+							function: self.ids.functions.array_xd.into(),
+							arguments: vec![c_ident.clone(), comprehension],
+						},
+					);
+					let inner = call(
+						self,
+						self.ids.functions.array_access,
+						vec![array, i_ident.clone()],
+					);
+					decomposed.push(Expression::new(db, &self.specialised_model, origin, inner));
+				}
+				return Some(Expression::new(
+					db,
+					&self.specialised_model,
+					origin,
+					TupleLiteral(decomposed),
+				));
+			}
+		}
+		None
 	}
 }
 

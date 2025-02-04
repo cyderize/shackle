@@ -786,9 +786,8 @@ impl PolymorphicFunctionType {
 						)
 					})
 			}
-			// Type-inst vars don't accept functions/arrays currently
+			// Type-inst vars don't accept functions currently
 			(TyData::Function(_, _), TyData::TyVar(_, _, _)) => false,
-			(TyData::Array { .. }, TyData::TyVar(_, _, _)) => false,
 			(_, TyData::TyVar(inst, opt, t)) => {
 				if arg.contains_function(db) {
 					// $T doesn't accept functions

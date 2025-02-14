@@ -1,9 +1,6 @@
-use shackle_compiler::{
-	syntax::{
-		ast::AstNode,
-		minizinc::{self, PatternNumericLiteral},
-	},
-	utils::pretty_print_identifier,
+use shackle_syntax::{
+	ast::AstNode,
+	minizinc::{self, pretty_print_identifier, PatternNumericLiteral},
 };
 
 use crate::{

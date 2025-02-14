@@ -1,10 +1,6 @@
-use shackle_compiler::{
-	syntax::{
-		ast::AstNode,
-		minizinc::{self, RecordField},
-	},
-	ty::{OptType, VarType},
-	utils::maybe_grow_stack,
+use shackle_syntax::{
+	ast::AstNode,
+	minizinc::{self, OptType, RecordField, VarType},
 };
 
 use crate::{
@@ -14,7 +10,7 @@ use crate::{
 
 impl Format for minizinc::Type {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> crate::ir::Element {
-		maybe_grow_stack(|| {
+		stacker::maybe_grow(32 * 1024, 1024 * 1024, || {
 			let t = match self {
 				minizinc::Type::AnyType(a) => Element::text(a.cst_text()),
 				minizinc::Type::TypeBase(b) => b.format(formatter),

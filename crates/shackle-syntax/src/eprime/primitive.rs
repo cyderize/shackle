@@ -1,7 +1,7 @@
 //! AST representation of primitive values
 
 use super::{Domain, Expression};
-use crate::syntax::ast::{
+use crate::ast::{
 	ast_node, children_with_field_name, decode_string, optional_child_with_field_name, AstNode,
 	Children,
 };
@@ -77,7 +77,7 @@ ast_node!(
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::check_ast_eprime;
+	use crate::ast::test::check_ast_eprime;
 
 	#[test]
 	fn test_integer_literal() {

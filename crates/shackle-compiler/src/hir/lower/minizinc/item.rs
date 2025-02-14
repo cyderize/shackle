@@ -1,7 +1,9 @@
+use shackle_diagnostics::{Error, SyntaxError};
+use shackle_syntax::{ast::AstNode, minizinc};
+
 use super::{ExpressionCollector, TypeInstIdentifiers};
 use crate::{
 	constants::IdentifierRegistry,
-	diagnostics::SyntaxError,
 	file::ModelRef,
 	hir::{
 		db::Hir,
@@ -9,8 +11,6 @@ use crate::{
 		source::{Origin, SourceMap},
 		*,
 	},
-	syntax::{ast::AstNode, minizinc},
-	Error,
 };
 
 /// Collects AST items into an HIR model
@@ -173,12 +173,11 @@ impl ItemCollector<'_> {
 							todo.push(o.right());
 						}
 						_ => {
-							let (src, span) = e.cst_node().source_span(self.db.upcast());
+							let (src, span) = e.cst_node().source_span();
 							ctx.add_diagnostic(SyntaxError {
 								src,
 								span,
 								msg: "Expression not valid in enumeration assignment".to_string(),
-								other: Vec::new(),
 							});
 						}
 					}

@@ -28,10 +28,10 @@ pub struct MiniZincFormatOptions {
 impl Default for MiniZincFormatOptions {
 	fn default() -> Self {
 		Self {
-			line_width: 80,
+			line_width: 100,
 			use_tabs: true,
 			indent_size: 4,
-			keep_parentheses: false,
+			keep_parentheses: true,
 		}
 	}
 }

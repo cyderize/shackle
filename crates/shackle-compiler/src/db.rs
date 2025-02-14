@@ -10,9 +10,10 @@ use std::{
 	sync::Arc,
 };
 
+use shackle_diagnostics::{FileError, SourceFile};
+
 use crate::{
 	constants::TypeRegistry,
-	diagnostics::FileError,
 	file::{DefaultFileHandler, FileHandler, FileRef, FileRefData, InputFile, ModelRef},
 	hir::db::{Hir, HirStorage},
 	mir::db::{Mir, MirStorage},
@@ -49,13 +50,16 @@ pub trait Inputs {
 #[salsa::query_group(CompilerSettingsStorage)]
 pub trait CompilerSettings: Inputs {
 	/// Get the `share/minizinc` directory which contains `std`
-	fn share_directory(&self) -> crate::Result<Arc<PathBuf>>;
+	fn share_directory(&self) -> shackle_diagnostics::Result<Arc<PathBuf>>;
+
+	/// Get the `share/minizinc` directory that's inside the shackle codebase
+	fn shackle_share_directory(&self) -> Option<Arc<PathBuf>>;
 
 	/// Get all of the directories to search for includes
 	fn include_search_dirs(&self) -> Arc<Vec<PathBuf>>;
 }
 
-fn share_directory(db: &dyn CompilerSettings) -> crate::Result<Arc<PathBuf>> {
+fn share_directory(db: &dyn CompilerSettings) -> shackle_diagnostics::Result<Arc<PathBuf>> {
 	if let Some(p) = db.stdlib_directory() {
 		// If set with MZN_STDLIB_DIR then just use it
 		return Ok(p);
@@ -64,10 +68,10 @@ fn share_directory(db: &dyn CompilerSettings) -> crate::Result<Arc<PathBuf>> {
 	// if let Some(p) = shackle_share_directory() {
 	// 	return Ok(p);
 	// }
-	Err(crate::Error::StandardLibraryNotFound)
+	Err(shackle_diagnostics::Error::StandardLibraryNotFound)
 }
 
-fn shackle_share_directory() -> Option<Arc<PathBuf>> {
+fn shackle_share_directory(_db: &dyn CompilerSettings) -> Option<Arc<PathBuf>> {
 	if let Ok(p) = std::env::current_exe() {
 		// Otherwise find /share/minizinc/std from this executable
 		for path in p.ancestors() {
@@ -91,7 +95,7 @@ fn include_search_dirs(db: &dyn CompilerSettings) -> Arc<Vec<PathBuf>> {
 			}
 		}
 	}
-	if let Some(shackle_share) = shackle_share_directory() {
+	if let Some(shackle_share) = db.shackle_share_directory() {
 		// For now, add shackle's stdlib dir to override the old compiler's one
 		include_dirs.push(shackle_share.join("std"));
 	}
@@ -111,7 +115,7 @@ pub trait FileReader: HasFileHandler + Inputs + Upcast<dyn Inputs> {
 
 	/// Read source file
 	#[salsa::invoke(crate::file::file_contents)]
-	fn file_contents(&self, file: FileRef) -> Result<Arc<String>, FileError>;
+	fn file_contents(&self, file: FileRef) -> Result<SourceFile, FileError>;
 
 	/// Get input model files
 	#[salsa::invoke(crate::file::input_models)]

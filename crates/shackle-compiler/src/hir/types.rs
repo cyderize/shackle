@@ -2,8 +2,9 @@
 //!
 //! See the `typecheck` module for computing types.
 
+pub use shackle_syntax::minizinc::{OptType, PrimitiveType, VarType};
+
 use super::{Expression, ItemData, Pattern};
-pub use crate::syntax::minizinc::{OptType, PrimitiveType, VarType};
 use crate::utils::arena::ArenaIndex;
 
 /// Type of an expression

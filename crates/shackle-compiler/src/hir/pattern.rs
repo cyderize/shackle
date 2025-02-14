@@ -1,10 +1,12 @@
 //! Destructuring/case matching patterns
 //!
 
+use shackle_syntax::minizinc::pretty_print_identifier;
+
 use super::{db::Hir, BooleanLiteral, FloatLiteral, IntegerLiteral, ItemData, StringLiteral};
 use crate::{
 	db::{InternedString, InternedStringData},
-	utils::{arena::ArenaIndex, impl_enum_from, pretty_print_identifier},
+	utils::{arena::ArenaIndex, impl_enum_from},
 };
 
 /// A pattern for destructuring

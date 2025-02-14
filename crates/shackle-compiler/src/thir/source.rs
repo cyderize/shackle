@@ -3,12 +3,10 @@
 //! Tracks desugarings performed when lowering HIR to THIR.
 
 use miette::SourceSpan;
+use shackle_diagnostics::SourceFile;
 
 use super::db::Thir;
-use crate::{
-	file::SourceFile,
-	hir::ids::{EntityRef, ItemRef, NodeRef},
-};
+use crate::hir::ids::{EntityRef, ItemRef, NodeRef};
 
 /// The HIR node which produced a THIR node
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
@@ -59,7 +57,6 @@ impl Origin {
 	/// Debug print this origin
 	pub fn debug_print(&self, db: &dyn Thir) -> String {
 		let (src, span) = self.source_span(db);
-		let name = src.name().unwrap_or_else(|| "<unnamed file>".to_owned());
-		format!("{}[{}:{}]", name, span.offset(), span.len(),)
+		format!("{}[{}:{}]", src.name(), span.offset(), span.len(),)
 	}
 }

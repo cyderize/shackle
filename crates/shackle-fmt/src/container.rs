@@ -1,4 +1,4 @@
-use shackle_compiler::syntax::minizinc;
+use shackle_syntax::minizinc;
 use tree_sitter_minizinc::Precedence;
 
 use crate::{

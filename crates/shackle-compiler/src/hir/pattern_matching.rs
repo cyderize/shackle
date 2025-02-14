@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_diagnostics::{Error, NonExhaustivePatternMatching, UnreachablePattern, Warning};
 
 use super::{
 	db::Hir,
@@ -14,10 +15,8 @@ use super::{
 };
 use crate::{
 	constants::TypeRegistry,
-	diagnostics::{NonExhaustivePatternMatching, UnreachablePattern, Warning},
 	ty::{EnumRef, Ty, TyData},
 	utils::arena::ArenaIndex,
-	Error,
 };
 
 /// Compute a mapping from (non-introduced) enum types to the constructors for the enum

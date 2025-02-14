@@ -548,13 +548,11 @@ mod test {
 	use std::sync::Arc;
 
 	use expect_test::expect;
+	use shackle_syntax::InputLang;
 
 	use super::lower_from_thir;
 	use crate::{
-		db::Inputs,
-		file::{InputFile, InputLang},
-		mir::pretty_print::PrettyPrinter,
-		thir::db::Thir,
+		db::Inputs, file::InputFile, mir::pretty_print::PrettyPrinter, thir::db::Thir,
 		CompilerDatabase,
 	};
 

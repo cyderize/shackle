@@ -36,6 +36,8 @@ use std::{
 	sync::Arc,
 };
 
+use shackle_diagnostics::Error;
+
 use super::{
 	db::Hir,
 	ids::{ExpressionRef, ItemRef, LocalItemRef, PatternRef},
@@ -47,7 +49,6 @@ use crate::{
 		arena::{ArenaIndex, ArenaMap},
 		debug_print_strings, DebugPrint,
 	},
-	Error,
 };
 
 mod body;

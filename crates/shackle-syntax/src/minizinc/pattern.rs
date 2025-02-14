@@ -4,9 +4,7 @@ use super::{
 	Absent, Anonymous, BooleanLiteral, Children, FloatLiteral, Identifier, Infinity,
 	IntegerLiteral, StringLiteral,
 };
-use crate::syntax::ast::{
-	ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode,
-};
+use crate::ast::{ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode};
 
 ast_enum!(
 	/// A pattern for (future) destructuring.
@@ -123,7 +121,7 @@ impl PatternRecordField {
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::*;
+	use crate::ast::test::*;
 
 	#[test]
 	fn test_patterns() {

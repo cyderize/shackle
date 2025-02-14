@@ -3,12 +3,12 @@
 use std::borrow::Cow;
 
 use super::{
-	Absent, ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, BooleanLiteral,
-	Children, Constraint, Declaration, FloatLiteral, Generator, Infinity, IntegerLiteral,
-	Parameter, Pattern, RecordLiteral, SetComprehension, SetLiteral, StringLiteral, TupleLiteral,
-	Type,
+	parse_float_literal, parse_integer_literal, Absent, ArrayAccess, ArrayComprehension,
+	ArrayLiteral, ArrayLiteral2D, BooleanLiteral, Children, Constraint, Declaration, FloatLiteral,
+	Generator, Infinity, IntegerLiteral, Parameter, Pattern, RecordLiteral, SetComprehension,
+	SetLiteral, StringLiteral, TupleLiteral, Type,
 };
-use crate::syntax::{
+use crate::{
 	ast::{
 		ast_enum, ast_node, child_with_field_name, children_with_field_name, decode_string,
 		optional_child_with_field_name, AstNode,
@@ -514,11 +514,95 @@ impl Lambda {
 	}
 }
 
+/// Pretty print an identifier.
+///
+/// Either returns the string as is, if it is already a valid identifier,
+/// otherwise, encloses it in quotes.
+///
+/// Panics if the given name contains a quote.
+pub fn pretty_print_identifier(name: &str) -> String {
+	assert!(
+		!name.contains('\''),
+		"Identifier names cannot contain single quotes"
+	);
+	if matches!(
+		name,
+		"ann"
+			| "annotation"
+			| "any" | "array"
+			| "bool" | "case"
+			| "constraint"
+			| "default"
+			| "diff" | "div"
+			| "else" | "elseif"
+			| "endif" | "enum"
+			| "false" | "float"
+			| "function"
+			| "if" | "in"
+			| "include"
+			| "int" | "intersect"
+			| "let" | "list"
+			| "maximize"
+			| "minimize"
+			| "mod" | "not"
+			| "of" | "op"
+			| "opt" | "output"
+			| "par" | "predicate"
+			| "record"
+			| "satisfy"
+			| "set" | "solve"
+			| "string"
+			| "subset"
+			| "superset"
+			| "symdiff"
+			| "test" | "then"
+			| "true" | "tuple"
+			| "type" | "union"
+			| "var" | "where"
+			| "xor"
+	) {
+		// Identifiers which are keywords need quoting
+		return format!("'{}'", name);
+	}
+
+	for c in name.chars() {
+		if matches!(
+			c,
+			'"' | '\''
+				| '.' | '-' | '['
+				| ']' | '^' | ','
+				| ';' | ':' | '('
+				| ')' | '{' | '}'
+				| '&' | '|' | '$'
+				| '∞' | '%' | '<'
+				| '>' | '⟷' | '⇔'
+				| '→' | '⇒' | '←'
+				| '⇐' | '/' | '∨'
+				| '⊻' | '∧' | '='
+				| '!' | '≠' | '≤'
+				| '≥' | '∈' | '⊆'
+				| '⊇' | '∪' | '∩'
+				| '+' | '*' | '~'
+		) || c.is_whitespace()
+		{
+			// Operators in identifiers need quoting
+			return format!("'{}'", name);
+		}
+	}
+
+	if parse_integer_literal(name).is_ok() || parse_float_literal(name).is_ok() {
+		// Identifiers which are numeric literals need quoting
+		return format!("'{}'", name);
+	}
+
+	name.to_owned()
+}
+
 #[cfg(test)]
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::*;
+	use crate::{ast::test::*, minizinc::pretty_print_identifier};
 
 	#[test]
 	fn test_annotated_expression() {
@@ -1824,5 +1908,15 @@ MznModel(
 )
 "#]),
 		);
+	}
+
+	#[test]
+	fn pretty_print_ident() {
+		assert_eq!(pretty_print_identifier("x"), "x");
+		assert_eq!(pretty_print_identifier("-"), "'-'");
+		assert_eq!(pretty_print_identifier("a b"), "'a b'");
+		assert_eq!(pretty_print_identifier("😃"), "😃");
+		assert_eq!(pretty_print_identifier("123"), "'123'");
+		assert_eq!(pretty_print_identifier("1E24"), "'1E24'");
 	}
 }

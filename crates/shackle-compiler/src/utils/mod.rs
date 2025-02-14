@@ -65,11 +65,7 @@ pub(crate) use impl_enum_from;
 pub(crate) use impl_index;
 use salsa::InternKey;
 
-use crate::{
-	db::InternedString,
-	hir::db::Hir,
-	syntax::minizinc::{parse_float_literal, parse_integer_literal},
-};
+use crate::{db::InternedString, hir::db::Hir};
 
 /// Trait for pretty printing for debugging with a Salsa database
 pub trait DebugPrint<'a> {
@@ -118,109 +114,10 @@ pub fn levenshtein_distance(s: &str, t: &str) -> usize {
 	*dp0.last().unwrap()
 }
 
-/// Pretty print an identifier.
-///
-/// Either returns the string as is, if it is already a valid identifier,
-/// otherwise, encloses it in quotes.
-///
-/// Panics if the given name contains a quote.
-pub fn pretty_print_identifier(name: &str) -> String {
-	assert!(
-		!name.contains('\''),
-		"Identifier names cannot contain single quotes"
-	);
-	if matches!(
-		name,
-		"ann"
-			| "annotation"
-			| "any" | "array"
-			| "bool" | "case"
-			| "constraint"
-			| "default"
-			| "diff" | "div"
-			| "else" | "elseif"
-			| "endif" | "enum"
-			| "false" | "float"
-			| "function"
-			| "if" | "in"
-			| "include"
-			| "int" | "intersect"
-			| "let" | "list"
-			| "maximize"
-			| "minimize"
-			| "mod" | "not"
-			| "of" | "op"
-			| "opt" | "output"
-			| "par" | "predicate"
-			| "record"
-			| "satisfy"
-			| "set" | "solve"
-			| "string"
-			| "subset"
-			| "superset"
-			| "symdiff"
-			| "test" | "then"
-			| "true" | "tuple"
-			| "type" | "union"
-			| "var" | "where"
-			| "xor"
-	) {
-		// Identifiers which are keywords need quoting
-		return format!("'{}'", name);
-	}
-
-	for c in name.chars() {
-		if matches!(
-			c,
-			'"' | '\''
-				| '.' | '-' | '['
-				| ']' | '^' | ','
-				| ';' | ':' | '('
-				| ')' | '{' | '}'
-				| '&' | '|' | '$'
-				| '∞' | '%' | '<'
-				| '>' | '⟷' | '⇔'
-				| '→' | '⇒' | '←'
-				| '⇐' | '/' | '∨'
-				| '⊻' | '∧' | '='
-				| '!' | '≠' | '≤'
-				| '≥' | '∈' | '⊆'
-				| '⊇' | '∪' | '∩'
-				| '+' | '*' | '~'
-		) || c.is_whitespace()
-		{
-			// Operators in identifiers need quoting
-			return format!("'{}'", name);
-		}
-	}
-
-	if parse_integer_literal(name).is_ok() || parse_float_literal(name).is_ok() {
-		// Identifiers which are numeric literals need quoting
-		return format!("'{}'", name);
-	}
-
-	name.to_owned()
-}
-
 /// Grow the stack if necessary to run the given function.
 ///
 /// Useful for recursive calls which may overrun the stack otherwise.
 #[inline]
 pub fn maybe_grow_stack<R>(f: impl FnOnce() -> R) -> R {
 	stacker::maybe_grow(64 * 1024, 1024 * 1024, f)
-}
-
-#[cfg(test)]
-mod test {
-	use super::pretty_print_identifier;
-
-	#[test]
-	fn pretty_print_ident() {
-		assert_eq!(pretty_print_identifier("x"), "x");
-		assert_eq!(pretty_print_identifier("-"), "'-'");
-		assert_eq!(pretty_print_identifier("a b"), "'a b'");
-		assert_eq!(pretty_print_identifier("😃"), "😃");
-		assert_eq!(pretty_print_identifier("123"), "'123'");
-		assert_eq!(pretty_print_identifier("1E24"), "'1E24'");
-	}
 }

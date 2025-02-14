@@ -5,6 +5,8 @@ use std::fmt::Write;
 
 use miette::SourceSpan;
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::SourceFile;
+use shackle_syntax::{ast::AstNode, cst::CstNode};
 use tree_sitter::Node;
 pub use tree_sitter::Point;
 
@@ -14,8 +16,7 @@ use super::{
 	ItemDataSourceMap, Type,
 };
 use crate::{
-	file::{FileRef, SourceFile},
-	syntax::{ast::AstNode, cst::CstNode},
+	file::FileRef,
 	utils::{debug_print_strings, DebugPrint},
 };
 
@@ -150,8 +151,8 @@ pub fn find_expression(
 /// Origin of an HIR node.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Origin {
-	file: FileRef,
-	range: std::ops::Range<usize>,
+	source: SourceFile,
+	span: SourceSpan,
 	node_id: usize,
 }
 
@@ -159,29 +160,27 @@ impl Origin {
 	/// Create an origin.
 	pub fn new<T: AstNode>(node: &T) -> Self {
 		let node = node.cst_node();
+		let (source, span) = node.source_span();
 		Self {
-			file: node.cst().file(),
-			range: node.as_ref().byte_range(),
+			source,
+			span,
 			node_id: node.as_ref().id(),
 		}
 	}
 
 	/// Get the source and span
-	pub fn source_span(&self, db: &dyn Hir) -> (SourceFile, SourceSpan) {
-		(
-			SourceFile::new(self.file, db.upcast()),
-			self.range.clone().into(),
-		)
+	pub fn source_span(&self) -> (SourceFile, SourceSpan) {
+		(self.source.clone(), self.span)
 	}
 
 	/// Print for debugging purposes
-	pub fn debug_print(&self, db: &dyn Hir) -> String {
+	pub fn debug_print(&self) -> String {
 		let path = self
-			.file
-			.path(db.upcast())
+			.source
+			.path()
 			.map(|p| p.to_string_lossy().into_owned())
 			.unwrap_or_else(|| "<unknown>".to_owned());
-		format!("{} @ {}-{}", path, self.range.start, self.range.end)
+		format!("{} @ {} [{}]", path, self.span.offset(), self.span.len())
 	}
 }
 

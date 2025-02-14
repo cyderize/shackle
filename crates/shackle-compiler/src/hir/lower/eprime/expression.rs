@@ -1,16 +1,15 @@
 use std::iter;
 
-use crate::{
-	db::InternedStringData,
-	diagnostics::InvalidArrayLiteral,
-	hir::{db::Hir, source::Origin, *},
-	syntax::{
-		ast::AstNode,
-		eprime::{self, MatrixComprehension},
-	},
-	Error,
+use shackle_diagnostics::{Error, InvalidArrayLiteral};
+use shackle_syntax::{
+	ast::AstNode,
+	eprime::{self, MatrixComprehension},
 };
 
+use crate::{
+	db::InternedStringData,
+	hir::{db::Hir, source::Origin, *},
+};
 /// Collects AST expressions for owned by an item and lowers them into HIR recursively.
 pub struct ExpressionCollector<'a> {
 	db: &'a dyn Hir,
@@ -343,7 +342,7 @@ impl ExpressionCollector<'_> {
 			),
 			// Case of nd array with possible index set
 			(d, i, c) => {
-				let (src, span) = ml.cst_node().source_span(self.db.upcast());
+				let (src, span) = ml.cst_node().source_span();
 				if d > 6 {
 					return self
 						.add_array_over_dims_diagnostic(eprime::Expression::MatrixLiteral(ml));
@@ -535,7 +534,7 @@ impl ExpressionCollector<'_> {
 
 	/// Add diagnostic for array literals with >6 dimensions
 	pub fn add_array_over_dims_diagnostic<N: AstNode>(&mut self, n: N) -> ArenaIndex<Expression> {
-		let (src, span) = n.cst_node().source_span(self.db.upcast());
+		let (src, span) = n.cst_node().source_span();
 		self.add_diagnostic(InvalidArrayLiteral {
 			src,
 			span,

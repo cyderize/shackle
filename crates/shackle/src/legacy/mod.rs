@@ -13,11 +13,11 @@ use serde::{
 	de::{DeserializeSeed, Error as SerdeError, IgnoredAny, Visitor},
 	Deserializer,
 };
+use shackle_diagnostics::{FileError, InternalError, SourceFile};
 use tempfile::Builder;
 
 use crate::{
 	data::serde::SerdeValueVisitor,
-	error::{FileError, InternalError},
 	value::{Array, EnumInner, EnumRangeInclusive, EnumValue, Index, Polarity, Set, Value},
 	Enum, Error, Message, OptType, Program, Result, Status, Type,
 };
@@ -108,8 +108,9 @@ impl Program {
 				Ok(line) => {
 					match serde_json::Deserializer::from_str(&line)
 						.deserialize_map(SerdeMessageVisitor(&self.output_types))
-						.map_err(|e| Error::from_serde_json(e, &Arc::new(line.clone()).into()))?
-					{
+						.map_err(|e| {
+							Error::from_serde_json(e, &SourceFile::unnamed(line.clone()))
+						})? {
 						LegacyOutput::Status(s) => status = s,
 						LegacyOutput::Msg(msg) => {
 							if let Message::Solution(_) = msg {

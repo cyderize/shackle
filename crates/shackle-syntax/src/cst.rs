@@ -9,14 +9,8 @@ use std::{
 };
 
 use miette::SourceSpan;
+use shackle_diagnostics::{Error, MultipleErrors, SourceFile, SyntaxError};
 use tree_sitter::{Node, Tree};
-
-use super::db::SourceParser;
-use crate::{
-	db::FileReader,
-	diagnostics::SyntaxError,
-	file::{FileRef, SourceFile},
-};
 
 /// Wrapper for a tree sitter tree.
 ///
@@ -29,47 +23,29 @@ pub struct Cst {
 #[derive(Debug, Clone)]
 struct CstInner {
 	tree: Tree,
-	file: Option<FileRef>,
-	source: Arc<String>,
+	source: SourceFile,
 }
 
 impl Cst {
 	/// Create a CST from a tree sitter tree and source buffer.
-	pub fn new(tree: Tree, file: FileRef, source: Arc<String>) -> Self {
+	pub fn new(tree: Tree, source: SourceFile) -> Self {
 		Cst {
-			inner: Arc::new(CstInner {
-				tree,
-				file: Some(file),
-				source,
-			}),
+			inner: Arc::new(CstInner { tree, source }),
 		}
-	}
-
-	/// Create from string (without any `FileRef`).
-	pub fn from_str(tree: Tree, source: &str) -> Self {
-		Cst {
-			inner: Arc::new(CstInner {
-				tree,
-				file: None,
-				source: Arc::new(source.to_owned()),
-			}),
-		}
-	}
-
-	/// Get the underlying source file
-	pub fn file(&self) -> FileRef {
-		self.inner
-			.file
-			.expect("Called file() on Cst constructed without FileRef")
 	}
 
 	/// Get the underlying source text.
 	pub fn text(&self) -> &str {
-		self.inner.source.as_str()
+		self.inner.source.contents()
+	}
+
+	/// Get the source file
+	pub fn source(&self) -> SourceFile {
+		self.inner.source.clone()
 	}
 
 	/// Get the error/missing nodes if any
-	pub fn error_nodes(&self) -> impl Iterator<Item = CstNode> + '_ {
+	fn error_nodes(&self) -> impl Iterator<Item = CstNode> + '_ {
 		let mut cursor = self.walk();
 		let mut done = false;
 		std::iter::from_fn(move || {
@@ -96,11 +72,8 @@ impl Cst {
 	}
 
 	/// Get the syntax error(s) if any
-	pub fn error<F: Fn(Option<FileRef>) -> SourceFile>(
-		&self,
-		get_source: F,
-	) -> Result<(), SyntaxError> {
-		let mut errors = self.error_nodes().map(|cst_node| {
+	pub fn errors(&self) -> impl Iterator<Item = SyntaxError> + '_ {
+		self.error_nodes().map(|cst_node| {
 			let mut node = *cst_node.as_ref();
 			if node.is_error() {
 				if node.parent().is_none() {
@@ -134,7 +107,6 @@ impl Cst {
 					node = child;
 				}
 			}
-			let src = get_source(self.inner.file);
 			let msg = if node.is_missing() {
 				format!("Missing {}", node.kind())
 			} else if node.is_error() {
@@ -144,18 +116,21 @@ impl Cst {
 			} else {
 				format!("Unexpected {}", node.kind())
 			};
-			SyntaxError {
-				src,
-				span: node.byte_range().into(),
-				msg,
-				other: Vec::new(),
-			}
-		});
-		let Some(mut error) = errors.next() else {
-			return Ok(());
-		};
-		error.other.extend(errors);
-		Err(error)
+			let (src, span) = self.node(node).source_span();
+			SyntaxError { src, span, msg }
+		})
+	}
+
+	/// Check for syntax errors
+	pub fn check(&self) -> Result<(), Error> {
+		let mut errors = self.errors().map(|e| e.into()).collect::<Vec<_>>();
+		if errors.is_empty() {
+			Ok(())
+		} else if errors.len() == 1 {
+			Err(errors.pop().unwrap())
+		} else {
+			Err(MultipleErrors { errors }.into())
+		}
 	}
 
 	/// Create a [`CstNode`] from the given raw node from the same tree.
@@ -231,9 +206,9 @@ impl CstNode {
 	}
 
 	/// Get the source and span for this node (convenience function for producing errors)
-	pub fn source_span(&self, db: &dyn SourceParser) -> (SourceFile, SourceSpan) {
+	pub fn source_span(&self) -> (SourceFile, SourceSpan) {
 		(
-			SourceFile::new(self.cst().file(), db.upcast()),
+			self.cst().inner.source.clone(),
 			self.as_ref().byte_range().into(),
 		)
 	}
@@ -244,9 +219,8 @@ impl CstNode {
 	}
 
 	/// Get the location of this node
-	pub fn debug_location(&self, db: &dyn FileReader) -> String {
-		let source = SourceFile::new(self.cst().file(), db);
-		let file = source.name();
+	pub fn debug_location(&self) -> String {
+		let file = self.cst().inner.source.name();
 		let start = self.node.start_position();
 		let end = self.node.end_position();
 		format!(
@@ -325,6 +299,7 @@ where
 #[cfg(test)]
 mod test {
 	use expect_test::{expect, expect_file, ExpectFile};
+	use shackle_diagnostics::SourceFile;
 	use tree_sitter::Parser;
 
 	use super::Cst;
@@ -335,7 +310,7 @@ mod test {
 			.set_language(&tree_sitter_minizinc::language())
 			.unwrap();
 		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::from_str(tree, source);
+		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 		let mut buf = String::new();
 		cst.debug_print(&mut buf);
 		expected.assert_eq(&buf);
@@ -344,8 +319,8 @@ mod test {
 	#[test]
 	fn test_doc_simple_model() {
 		check_cst_file(
-			include_str!("../../../../docs/src/examples/simple-model.mzn"),
-			expect_file!("../../../../docs/src/examples/simple-model-cst.txt"),
+			include_str!("../../../docs/src/examples/simple-model.mzn"),
+			expect_file!("../../../docs/src/examples/simple-model-cst.txt"),
 		)
 	}
 
@@ -361,7 +336,7 @@ mod test {
 			.set_language(&tree_sitter_minizinc::language())
 			.unwrap();
 		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::from_str(tree, source);
+		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 		let actual = cst
 			.error_nodes()
 			.map(|n| {

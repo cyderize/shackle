@@ -1,7 +1,7 @@
 //! AST representation of Eprime Expressions
 
 use super::{BooleanLiteral, Domain, Infinity, IntegerLiteral, MatrixLiteral, StringLiteral};
-use crate::syntax::ast::{
+use crate::ast::{
 	ast_enum, ast_node, child_with_field_name, children_with_field_name,
 	optional_child_with_field_name, AstNode, Children,
 };
@@ -287,7 +287,7 @@ impl SetConstructor {
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::check_ast_eprime;
+	use crate::ast::test::check_ast_eprime;
 
 	#[test]
 	fn test_call() {

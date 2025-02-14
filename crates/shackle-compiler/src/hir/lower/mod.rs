@@ -8,13 +8,14 @@ pub mod test;
 
 use std::sync::Arc;
 
+use shackle_diagnostics::Error;
+use shackle_syntax::ast::ConstraintModel;
+
 use self::{eprime::ItemCollector as EPrimeItemCollector, minizinc::ItemCollector};
 use crate::{
 	constants::IdentifierRegistry,
 	file::ModelRef,
 	hir::{db::Hir, source::SourceMap, *},
-	syntax::ast::ConstraintModel,
-	Error,
 };
 
 /// Lower a model to HIR

@@ -4,14 +4,15 @@
 #![warn(unused_crate_dependencies, unused_extern_crates)]
 #![warn(variant_size_differences)]
 
-use std::{ffi::OsStr, fs::File, ops::Deref, panic, path::PathBuf};
+use std::{ffi::OsStr, fs::File, io::BufReader, ops::Deref, panic, path::PathBuf};
 
-use clap::{crate_version, Args, Parser, Subcommand};
+use clap::{crate_version, Args, Parser, Subcommand, ValueEnum};
 use env_logger::{fmt::TimestampPrecision, Builder};
 use humantime::Duration;
 use log::warn;
 use miette::{IntoDiagnostic, Report, Result};
 use shackle::{error::InternalError, Error, Message, Model, Solver, Status};
+use shackle_fmt::{check_format, format_files, MiniZincFormatOptions};
 
 /// The main function is the entry point for the `shackle` executable.
 ///
@@ -57,6 +58,7 @@ fn main() -> Result<()> {
 		SubCommand::Compile(c) => c.dispatch(),
 		SubCommand::Solve(s) => s.dispatch(),
 		SubCommand::Check(c) => c.dispatch(),
+		SubCommand::Format(f) => f.dispatch(),
 	}) {
 		Err(_) => Err(InternalError::new("Panic occurred during execution").into()),
 		Ok(res) => res,
@@ -85,6 +87,7 @@ enum SubCommand {
 	Compile(Box<Compile>),
 	Solve(Box<Solve>),
 	Check(Box<Check>),
+	Format(Box<Format>),
 }
 
 /// Solve the given model instance using the given solver
@@ -232,5 +235,86 @@ impl Compile {
 
 		let mut file = File::create(filename).into_diagnostic()?;
 		prg.write(&mut file).into_diagnostic()
+	}
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum BooleanFlag {
+	/// Enabled
+	#[value(alias("true"), alias("1"))]
+	On,
+	/// Disabled
+	#[value(alias("false"), alias("0"))]
+	Off,
+}
+
+impl From<BooleanFlag> for bool {
+	fn from(value: BooleanFlag) -> Self {
+		match value {
+			BooleanFlag::On => true,
+			BooleanFlag::Off => false,
+		}
+	}
+}
+
+/// Format MiniZinc code
+#[derive(Args)]
+struct Format {
+	/// Files or directories to format.
+	#[arg(required = true, value_hint = clap::ValueHint::AnyPath)]
+	files: Vec<PathBuf>,
+
+	/// Check formatting only without modifying files.
+	#[arg(long)]
+	check: bool,
+
+	#[arg(long, value_hint = clap::ValueHint::FilePath)]
+	config: Option<PathBuf>,
+
+	/// Target maximum line length
+	#[arg(long)]
+	line_width: Option<usize>,
+	/// Whether to indent using tabs
+	#[arg(long)]
+	use_tabs: Option<BooleanFlag>,
+	/// Size of indent
+	#[arg(long)]
+	indent_size: Option<usize>,
+
+	/// Keep parentheses (except double parentheses)
+	#[arg(long)]
+	keep_parentheses: Option<BooleanFlag>,
+}
+
+impl Format {
+	/// The dispatch method checks the validity of the user input and runs the formatter
+	pub fn dispatch(&self) -> Result<()> {
+		let mut options = if let Some(config) = &self.config {
+			let f = File::open(config).into_diagnostic()?;
+			let reader = BufReader::new(f);
+			serde_json::from_reader(reader).into_diagnostic()?
+		} else {
+			MiniZincFormatOptions::default()
+		};
+
+		if let Some(line_width) = self.line_width {
+			options.line_width = line_width;
+		}
+		if let Some(use_tabs) = self.use_tabs {
+			options.use_tabs = use_tabs.into();
+		}
+		if let Some(indent_size) = self.indent_size {
+			options.indent_size = indent_size;
+		}
+		if let Some(keep_parentheses) = self.keep_parentheses {
+			options.keep_parentheses = keep_parentheses.into();
+		}
+
+		if self.check {
+			check_format(self.files.iter(), &options)?;
+		} else {
+			format_files(self.files.iter(), &options)?;
+		}
+		Ok(())
 	}
 }

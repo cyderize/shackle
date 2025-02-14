@@ -34,9 +34,10 @@ pub mod test {
 	use lsp_server::ResponseError;
 	use shackle_compiler::{
 		db::{CompilerDatabase, FileReader, Inputs},
-		diagnostics::FileError,
-		file::{FileHandler, InputFile, InputLang},
+		file::{FileHandler, InputFile},
 	};
+	use shackle_diagnostics::{FileError, SourceFile};
+	use shackle_syntax::InputLang;
 
 	use crate::{db::LanguageServerContext, dispatch::RequestHandler};
 
@@ -47,12 +48,12 @@ pub mod test {
 			true
 		}
 
-		fn read_file(&self, path: &Path) -> Result<Arc<String>, FileError> {
+		fn read_file(&self, path: &Path) -> Result<SourceFile, FileError> {
 			if path == PathBuf::from_str("test.mzn").unwrap() {
-				return Ok(Arc::new(self.0.clone()));
+				return Ok(SourceFile::new(path.to_owned(), self.0.clone()));
 			}
 			std::fs::read_to_string(path)
-				.map(Arc::new)
+				.map(|contents| SourceFile::new(path.to_owned(), contents))
 				.map_err(|err| FileError {
 					file: path.to_path_buf(),
 					message: err.to_string(),

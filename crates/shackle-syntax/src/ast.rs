@@ -1,7 +1,7 @@
 //! Helper utilities for dealing with AST nodes.
 use std::{fmt::Debug, marker::PhantomData, num::NonZeroU16};
 
-use crate::syntax::cst::CstNode;
+use crate::cst::CstNode;
 
 /// Base trait for AST nodes
 pub trait AstNode: Debug {
@@ -201,17 +201,17 @@ macro_rules! ast_node {
 		#[allow(missing_docs)]
 		#[derive(Clone, Eq, PartialEq, Hash)]
 		pub struct $name {
-			syntax: $crate::syntax::cst::CstNode,
+			syntax: $crate::cst::CstNode,
 		}
 
-		impl ::std::convert::From<$crate::syntax::cst::CstNode> for $name {
-			fn from(syntax: $crate::syntax::cst::CstNode) -> Self {
+		impl ::std::convert::From<$crate::cst::CstNode> for $name {
+			fn from(syntax: $crate::cst::CstNode) -> Self {
 				$name { syntax }
 			}
 		}
 
-		impl $crate::syntax::ast::AstNode for $name {
-			fn cst_node(&self) -> &$crate::syntax::cst::CstNode {
+		impl $crate::ast::AstNode for $name {
+			fn cst_node(&self) -> &$crate::cst::CstNode {
 				&self.syntax
 			}
 		}
@@ -240,11 +240,11 @@ macro_rules! ast_enum {
 		ast_enum!(@enum ($($tail)+) ($(#[$meta])* #[derive(Clone, Eq, PartialEq, Hash, Debug)] pub enum $name));
 		ast_enum!(@cast $name, $($tail)+);
 
-		impl ::std::convert::From<$crate::syntax::cst::CstNode> for $name {
+		impl ::std::convert::From<$crate::cst::CstNode> for $name {
 			ast_enum!(@ast_node $name syntax ($($tail)+));
 		}
 
-		impl $crate::syntax::ast::AstNode for $name {
+		impl $crate::ast::AstNode for $name {
 			ast_enum!(@cst_node $name ($($tail)+));
 		}
 	};
@@ -277,7 +277,7 @@ macro_rules! ast_enum {
 
 	// AstNode impl
 	(@ast_node $enum:ident $syntax:ident ($(,)?) $($tail:tt)*) => {
-		fn from($syntax: $crate::syntax::cst::CstNode) -> Self {
+		fn from($syntax: $crate::cst::CstNode) -> Self {
 			match $syntax.as_ref().kind() {
 				$($tail)*
 				#[allow(unreachable_patterns)]
@@ -300,7 +300,7 @@ macro_rules! ast_enum {
 		},);
 	};
 	(@cst_node $enum:ident ($(,)?) $($tail:tt)*) => {
-		fn cst_node(&self) -> &$crate::syntax::cst::CstNode {
+		fn cst_node(&self) -> &$crate::cst::CstNode {
 			match *self {
 				$($tail)*
 			}
@@ -316,7 +316,7 @@ macro_rules! ast_enum {
 	// Conversions impl
 	(@cast $enum:ident, $(,)?) => {};
 	(@cast $enum:ident, $pattern:pat => $name:ident $(, $($rest:tt)*)?) => {
-		impl $crate::syntax::ast::TryCastFrom<$enum> for $name {
+		impl $crate::ast::TryCastFrom<$enum> for $name {
 			fn from_ref(value: &$enum) -> Option<&Self> {
 				match *value {
 					$enum::$name(ref x) => Some(x),
@@ -343,7 +343,7 @@ macro_rules! ast_enum {
 		ast_enum!(@cast $enum, $($($rest)*)?);
 	};
 	(@cast $enum:ident, $pattern:pat => $name:ident($type:ty) $(, $($rest:tt)*)?) => {
-		impl $crate::syntax::ast::TryCastFrom<$enum> for $type {
+		impl $crate::ast::TryCastFrom<$enum> for $type {
 			fn from_ref(value: &$enum) -> Option<&Self> {
 				match *value {
 					$enum::$name(ref x) => Some(x),
@@ -389,13 +389,11 @@ pub enum ConstraintModel {
 #[cfg(test)]
 pub mod test {
 	use expect_test::{Expect, ExpectFile};
+	use shackle_diagnostics::SourceFile;
 	use tree_sitter::Parser;
 
 	use super::ConstraintModel;
-	use crate::{
-		file::InputLang,
-		syntax::{cst::Cst, eprime::EPrimeModel, minizinc::MznModel},
-	};
+	use crate::{cst::Cst, eprime::EPrimeModel, minizinc::MznModel, InputLang};
 
 	/// Helper to check parsed AST
 	pub fn check_ast_with_lang(language: InputLang, source: &str, expected: Expect) {
@@ -407,7 +405,7 @@ pub mod test {
 		let mut parser = Parser::new();
 		parser.set_language(&lang).unwrap();
 		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::from_str(tree, source);
+		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 		let model = match language {
 			InputLang::MiniZinc => ConstraintModel::MznModel(MznModel::new(cst)),
 			InputLang::EPrime => ConstraintModel::EPrimeModel(EPrimeModel::new(cst)),
@@ -433,7 +431,7 @@ pub mod test {
 			.set_language(&tree_sitter_minizinc::language())
 			.unwrap();
 		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::from_str(tree, source);
+		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 		let model = ConstraintModel::MznModel(MznModel::new(cst));
 		expected.assert_debug_eq(&model);
 	}

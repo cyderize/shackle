@@ -5,7 +5,8 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
-use shackle_compiler::{diagnostics::FileError, file::FileHandler};
+use shackle_compiler::file::FileHandler;
+use shackle_diagnostics::{FileError, SourceFile};
 
 /// Virtual filesystem allowing us to override file reads
 ///
@@ -41,14 +42,14 @@ impl FileHandler for Vfs {
 		false
 	}
 
-	fn read_file(&self, path: &Path) -> Result<Arc<String>, FileError> {
+	fn read_file(&self, path: &Path) -> Result<SourceFile, FileError> {
 		let guard = self.files.lock().unwrap();
 		if let Some(s) = guard.get(path) {
-			return Ok(Arc::new(s.clone()));
+			return Ok(SourceFile::new(path.to_path_buf(), s.clone()));
 		}
 
 		std::fs::read_to_string(path)
-			.map(Arc::new)
+			.map(|contents| SourceFile::new(path.to_path_buf(), contents))
 			.map_err(|err| FileError {
 				file: path.to_path_buf(),
 				message: err.to_string(),

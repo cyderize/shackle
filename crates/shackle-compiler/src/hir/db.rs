@@ -4,7 +4,13 @@
 
 use std::{collections::HashSet, path::Path, sync::Arc};
 
+use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_diagnostics::{Diagnostics, Error, IncludeError, MultipleErrors, Result, Warning};
+use shackle_syntax::{
+	ast::{AstNode, ConstraintModel},
+	minizinc,
+};
 use streaming_iterator::StreamingIterator;
 
 use super::{
@@ -17,15 +23,9 @@ use super::{
 use crate::{
 	constants::IdentifierRegistry,
 	db::{CompilerSettings, FileReader, Interner, Upcast},
-	diagnostics::{Diagnostics, IncludeError, MultipleErrors},
-	file::{FileRef, ModelRef, SourceFile},
-	syntax::{
-		ast::{AstNode, ConstraintModel},
-		db::SourceParser,
-		minizinc,
-	},
+	file::{FileRef, ModelRef},
+	syntax::db::SourceParser,
 	ty::EnumRef,
-	Error, Result, Warning,
 };
 
 /// HIR queries
@@ -346,12 +346,12 @@ fn resolve_includes(db: &dyn Hir) -> Result<Arc<Vec<ModelRef>>> {
 					// Resolve relative to search directories, then current file
 					let file_dir = model
 						.cst()
-						.file()
-						.path(db.upcast())
+						.source()
+						.path()
 						.and_then(|p| p.parent().map(|p| p.to_owned()));
 					if let Some(f) = &file_dir {
 						// let joined = f.join(included);
-						eprintln!("Tried: {:?} {:?}", f, f.exists());
+						debug!("Tried: {:?} exists? {:?}", f, f.exists());
 					}
 					let resolved = if included.starts_with("./") {
 						file_dir.map(|p| p.join(included)).filter(|p| p.exists())
@@ -366,7 +366,7 @@ fn resolve_includes(db: &dyn Hir) -> Result<Arc<Vec<ModelRef>>> {
 					match resolved {
 						Some(r) => r,
 						None => {
-							let (src, span) = i.cst_node().source_span(db.upcast());
+							let (src, span) = i.cst_node().source_span();
 							errors.push(
 								IncludeError {
 									src,
@@ -530,18 +530,14 @@ fn lookup_case_exhaustiveness_warnings(db: &dyn Hir, item: ItemRef) -> Arc<Vec<W
 }
 
 fn syntax_errors(db: &dyn Hir) -> Arc<Vec<Error>> {
-	let errors = db
+	let mut errors = Vec::new();
+	for model in db
 		.resolve_includes()
 		.expect("Can't get syntax errors when resolving includes failed")
 		.iter()
-		.filter_map(|m| {
-			db.cst(**m)
-				.unwrap()
-				.error(|file_ref| SourceFile::new(file_ref.unwrap(), db.upcast()))
-				.err()
-		})
-		.map(|e| e.into())
-		.collect::<Vec<_>>();
+	{
+		errors.extend(db.cst(**model).unwrap().errors().map(Error::from));
+	}
 	Arc::new(errors)
 }
 

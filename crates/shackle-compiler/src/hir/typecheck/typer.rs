@@ -1,20 +1,20 @@
 use std::{collections::hash_map::Entry, fmt::Write, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::{
+	AmbiguousCall, BranchMismatch, Error, IllegalType, InvalidArrayLiteral, InvalidFieldAccess,
+	NoMatchingFunction, SyntaxError, TypeInferenceFailure, TypeMismatch, UndefinedIdentifier,
+};
 
 use super::{PatternTy, TypeContext};
 use crate::{
 	constants::{IdentifierRegistry, TypeRegistry},
-	diagnostics::{
-		AmbiguousCall, BranchMismatch, IllegalType, InvalidArrayLiteral, InvalidFieldAccess,
-		NoMatchingFunction, SyntaxError, TypeInferenceFailure, TypeMismatch, UndefinedIdentifier,
-	},
 	hir::{
 		db::Hir,
 		ids::{EntityRef, ExpressionRef, ItemRef, NodeRef, PatternRef},
 		ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, Call, Case, Declaration,
-		Expression, Function, Generator, Identifier, IfThenElse, IndexedArrayLiteral, ItemData,
-		Lambda, Let, LetItem, MaybeIndexSet, Pattern, PrimitiveType, RecordAccess, RecordLiteral,
+		Expression, Generator, Identifier, IfThenElse, IndexedArrayLiteral, ItemData, Lambda, Let,
+		LetItem, MaybeIndexSet, Pattern, PrimitiveType, RecordAccess, RecordLiteral,
 		SetComprehension, SetLiteral, TupleAccess, TupleLiteral, Type,
 	},
 	ty::{
@@ -22,7 +22,6 @@ use crate::{
 		TyData, VarType,
 	},
 	utils::{arena::ArenaIndex, maybe_grow_stack},
-	Error,
 };
 
 /// Mode for completing types
@@ -624,7 +623,6 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 								"Record literal contains duplicate field '{}'",
 								ident.pretty_print(db)
 							),
-							other: Vec::new(),
 						},
 					);
 				}
@@ -2606,7 +2604,6 @@ supported in operation types."
 										"Record type contains duplicate field '{}'",
 										i.pretty_print(db)
 									),
-									other: Vec::new(),
 								},
 							);
 						}

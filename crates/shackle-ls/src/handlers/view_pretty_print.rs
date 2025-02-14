@@ -30,7 +30,7 @@ impl RequestHandler<ViewPrettyPrint, ModelRef> for ViewPrettyPrintHandler {
 			};
 			let printer = PrettyPrinter::new(db, &thir);
 			let text = printer.pretty_print();
-			if let Some(f) = format(&text, &MiniZincFormatOptions::default()) {
+			if let Ok(f) = format(&text, &MiniZincFormatOptions::default()) {
 				return Ok(f);
 			}
 			Ok(format!("% Failed to format parsed text:\n{}", text))

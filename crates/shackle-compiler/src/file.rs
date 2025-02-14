@@ -3,17 +3,16 @@
 //! `FileRef` is an interned data structure used to represent a pointer to a file (or inline string).
 
 use std::{
-	ffi::OsStr,
-	fs::read_to_string,
 	ops::Deref,
 	panic::{RefUnwindSafe, UnwindSafe},
 	path::{Path, PathBuf},
 	sync::Arc,
 };
 
-use miette::{MietteSpanContents, SourceCode};
+use shackle_diagnostics::{FileError, SourceFile};
+use shackle_syntax::InputLang;
 
-use crate::{db::FileReader, diagnostics::FileError};
+use crate::db::FileReader;
 
 /// Input files
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -29,163 +28,6 @@ impl InputFile {
 		match self {
 			InputFile::Path(_, l) | InputFile::String(_, l) => *l,
 		}
-	}
-}
-
-/// Input languages
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum InputLang {
-	/// MiniZinc modelling language
-	MiniZinc,
-	/// Essence' modelling language
-	EPrime,
-	/// DataZinc data input language
-	DataZinc,
-	/// JSON data input language
-	Json,
-}
-
-impl InputLang {
-	/// Gues the input language based on a file extension.
-	///
-	/// Note that this function will use MiniZinc as a fall
-	pub fn from_extension(ext: Option<&OsStr>) -> Self {
-		let Some(ext) = ext else {
-			return Self::MiniZinc;
-		};
-		match ext.to_str() {
-			Some("mzn") => Self::MiniZinc,
-			Some("eprime") => Self::EPrime,
-			Some("dzn") => Self::DataZinc,
-			Some("json") => Self::Json,
-			_ => Self::MiniZinc,
-		}
-	}
-}
-
-/// Source file/text for error reporting
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct SourceFile(SourceFileInner);
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum SourceFileInner {
-	Text {
-		name: Option<PathBuf>,
-		source: Arc<String>,
-	},
-	Introduced(&'static str),
-}
-
-impl std::fmt::Debug for SourceFile {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("SourceFile")
-			.field("name", &self.name())
-			.field(
-				"source",
-				&format!("<{} byte string>", self.contents().len()),
-			);
-		Ok(())
-	}
-}
-
-impl SourceFile {
-	/// Create a new source file from a `FileRef`
-	pub fn new(file: FileRef, db: &dyn FileReader) -> Self {
-		Self(SourceFileInner::Text {
-			name: file.path(db),
-			source: file.contents(db).unwrap_or_default(),
-		})
-	}
-
-	/// Create a new introduced source file
-	pub fn introduced(name: &'static str) -> Self {
-		Self(SourceFileInner::Introduced(name))
-	}
-
-	/// Get the path for this source file if any
-	pub fn path(&self) -> Option<&Path> {
-		match &self.0 {
-			SourceFileInner::Text { name, .. } => name.as_deref(),
-			_ => None,
-		}
-	}
-
-	/// Get the pretty name of this source file if any
-	pub fn name(&self) -> Option<String> {
-		match &self.0 {
-			SourceFileInner::Text { name, .. } => name
-				.as_deref()
-				.map(|p| {
-					std::env::current_dir()
-						.ok()
-						.and_then(|c| c.canonicalize().ok())
-						.and_then(move |c| p.strip_prefix(c).ok().map(|p| p.to_owned()))
-						.unwrap_or_else(|| p.to_owned())
-				})
-				.map(|p| p.to_string_lossy().to_string()),
-			SourceFileInner::Introduced(name) => Some(name.to_string()),
-		}
-	}
-
-	/// Get the contents of this source file
-	pub fn contents(&self) -> &str {
-		match &self.0 {
-			SourceFileInner::Text { source, .. } => source,
-			SourceFileInner::Introduced(_) => "",
-		}
-	}
-}
-
-impl TryFrom<&Path> for SourceFile {
-	type Error = FileError;
-
-	fn try_from(path: &Path) -> Result<Self, Self::Error> {
-		let content = read_to_string(path).map_err(|err| FileError {
-			file: path.to_path_buf(),
-			message: err.to_string(),
-			other: Vec::new(),
-		})?;
-		Ok(Self(SourceFileInner::Text {
-			name: Some(path.to_owned()),
-			source: content.into(),
-		}))
-	}
-}
-
-impl From<Arc<String>> for SourceFile {
-	fn from(source: Arc<String>) -> Self {
-		Self(SourceFileInner::Text { name: None, source })
-	}
-}
-
-impl SourceCode for SourceFile {
-	fn read_span<'a>(
-		&'a self,
-		span: &miette::SourceSpan,
-		context_lines_before: usize,
-		context_lines_after: usize,
-	) -> Result<Box<dyn miette::SpanContents<'a> + 'a>, miette::MietteError> {
-		let contents =
-			self.contents()
-				.read_span(span, context_lines_before, context_lines_after)?;
-
-		Ok(Box::new(match self.name() {
-			Some(name) => MietteSpanContents::new_named(
-				name,
-				contents.data(),
-				*contents.span(),
-				contents.line(),
-				contents.column(),
-				contents.line_count(),
-			),
-			None => MietteSpanContents::new(
-				contents.data(),
-				*contents.span(),
-				contents.line(),
-				contents.column(),
-				contents.line_count(),
-			),
-		}))
 	}
 }
 
@@ -227,12 +69,12 @@ impl FileRef {
 				InputFile::Path(_, l) => l,
 				InputFile::String(_, l) => l,
 			},
-			FileRefData::ExternalFile(p) => InputLang::from_extension(p.extension()),
+			FileRefData::ExternalFile(p) => InputLang::from_path(&p),
 		}
 	}
 
 	/// Get the contents of this file
-	pub fn contents(&self, db: &dyn FileReader) -> Result<Arc<String>, FileError> {
+	pub fn contents(&self, db: &dyn FileReader) -> Result<SourceFile, FileError> {
 		db.file_contents(*self)
 	}
 
@@ -264,7 +106,7 @@ pub fn input_file_refs(db: &dyn FileReader) -> Arc<Vec<FileRef>> {
 }
 
 /// Get the contents of a file
-pub fn file_contents(db: &dyn FileReader, file: FileRef) -> Result<Arc<String>, FileError> {
+pub fn file_contents(db: &dyn FileReader, file: FileRef) -> Result<SourceFile, FileError> {
 	match db.lookup_intern_file_ref(file) {
 		FileRefData::InputFile(i) => match db.input_files()[i] {
 			InputFile::Path(ref p, _) => {
@@ -275,7 +117,7 @@ pub fn file_contents(db: &dyn FileReader, file: FileRef) -> Result<Arc<String>, 
 				}
 				h.read_file(p)
 			}
-			InputFile::String(ref s, _) => Ok(Arc::new(s.clone())),
+			InputFile::String(ref s, _) => Ok(SourceFile::unnamed(s.clone())),
 		},
 		FileRefData::ExternalFile(p) => {
 			let h = db.get_file_handler();
@@ -333,7 +175,7 @@ pub trait FileHandler: Send + UnwindSafe {
 	}
 
 	/// Read a file and return its contents.
-	fn read_file(&self, path: &Path) -> Result<Arc<String>, FileError>;
+	fn read_file(&self, path: &Path) -> Result<SourceFile, FileError>;
 
 	/// Create a snapshot of the file handler
 	fn snapshot(&self) -> Box<dyn FileHandler + RefUnwindSafe>;
@@ -344,9 +186,9 @@ pub trait FileHandler: Send + UnwindSafe {
 pub struct DefaultFileHandler;
 
 impl FileHandler for DefaultFileHandler {
-	fn read_file(&self, path: &Path) -> Result<Arc<String>, FileError> {
+	fn read_file(&self, path: &Path) -> Result<SourceFile, FileError> {
 		std::fs::read_to_string(path)
-			.map(Arc::new)
+			.map(|contents| SourceFile::new(path.to_owned(), contents))
 			.map_err(|err| FileError {
 				file: path.to_path_buf(),
 				message: err.to_string(),

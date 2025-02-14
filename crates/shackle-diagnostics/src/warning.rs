@@ -3,7 +3,7 @@
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 
-use crate::file::SourceFile;
+use crate::SourceFile;
 
 /// Identifier shadows another
 #[derive(Error, Debug, Diagnostic, PartialEq, Eq, Clone)]

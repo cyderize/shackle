@@ -9,7 +9,6 @@
 
 pub mod constants;
 pub mod db;
-pub mod diagnostics;
 pub mod file;
 pub mod hir;
 pub mod mir;
@@ -19,10 +18,7 @@ pub mod ty;
 pub mod utils;
 
 pub use db::CompilerDatabase;
-pub use diagnostics::{Error, Warning};
-
-/// Result type for Shackle operations
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub use shackle_diagnostics::Result;
 
 #[cfg(test)]
 mod tests {}

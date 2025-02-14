@@ -5,6 +5,7 @@
 /// - RHS of variable declarations
 /// - Bodies of functions
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::Error;
 
 use super::{PatternTy, TypeContext, Typer};
 use crate::{
@@ -15,7 +16,6 @@ use crate::{
 	},
 	ty::Ty,
 	utils::arena::{ArenaIndex, ArenaMap},
-	Error,
 };
 
 /// Collected types for an item body

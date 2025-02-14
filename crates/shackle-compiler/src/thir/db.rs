@@ -4,8 +4,10 @@
 
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
+use shackle_diagnostics::{Diagnostics, Error, Result};
+
 use super::{transform::thir_transforms, Model};
-use crate::{db::Upcast, diagnostics::Diagnostics, hir::db::Hir, Error, Result};
+use crate::{db::Upcast, hir::db::Hir};
 
 /// THIR queries
 #[salsa::query_group(ThirStorage)]

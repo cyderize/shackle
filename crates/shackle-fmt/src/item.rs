@@ -1,4 +1,7 @@
-use shackle_compiler::syntax::{ast::AstNode, minizinc};
+use shackle_syntax::{
+	ast::AstNode,
+	minizinc::{self, Expression},
+};
 
 use crate::{
 	format::{Format, MiniZincFormatter},
@@ -89,13 +92,28 @@ impl Format for minizinc::Constraint {
 	}
 }
 
+struct DeclAnnotation(Expression);
+
+impl Format for DeclAnnotation {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		let Self(e) = self;
+		match e {
+			Expression::Identifier(ident) if ident.name() == "output" => {
+				// This doesn't need to be quoted when used on declarations
+				Element::text("output")
+			}
+			_ => e.format(formatter),
+		}
+	}
+}
+
 impl Format for minizinc::Declaration {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			self.declared_type().format(formatter),
 			Element::text(": "),
 			self.pattern().format(formatter),
-			formatter.format_annotations(self.annotations()),
+			formatter.format_annotations(self.annotations().map(DeclAnnotation)),
 		];
 		if let Some(def) = self.definition() {
 			elements.push(Element::text(" ="));

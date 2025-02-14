@@ -6,14 +6,14 @@
 use std::sync::Arc;
 
 use itertools::Itertools;
-use shackle_compiler::{
-	diagnostics::{Error, InvalidArrayLiteral, InvalidNumericLiteral, SyntaxError, TypeMismatch},
-	file::SourceFile,
-	syntax::{
-		ast::{AstNode, Children},
-		cst::{Cst, CstNode},
-		minizinc::{Assignment, Expression, Identifier, InfixOperator, RecordLiteralMember},
-	},
+use shackle_diagnostics::{
+	Error, InvalidArrayLiteral, InvalidNumericLiteral, SourceFile, SyntaxError,
+	TypeMismatch,
+};
+use shackle_syntax::{
+	ast::{AstNode, Children},
+	cst::{Cst, CstNode},
+	minizinc::{Assignment, Expression, Identifier, InfixOperator, RecordLiteralMember},
 };
 use tree_sitter::Parser;
 
@@ -37,8 +37,10 @@ pub(crate) fn parse_dzn(src: &SourceFile) -> Result<Vec<Assignment>, Error> {
 		.parse(src.contents().as_bytes(), None)
 		.expect("DataZinc Tree Sitter parser did not return tree object");
 
-	let cst = Cst::from_str(tree, src.contents());
-	cst.error(|_| src.clone())?; // Check for any syntax errors
+	let cst = Cst::new(tree, src.clone());
+
+	// Check for any syntax errors
+	cst.check()?;
 
 	let root = cst.node(cst.root_node());
 	let it = Children::from_cst(&root, "item");
@@ -450,7 +452,6 @@ pub(crate) fn collect_dzn_value(
 								span: e.as_ref().byte_range().into(),
 								msg: "non range expression found in datazinc union operation"
 									.to_string(),
-								other: Vec::new(),
 							}
 							.into())
 						};
@@ -517,7 +518,6 @@ impl EnumInner {
 							msg: "List definitions of enumerated type can only contain identifiers"
 								.to_string(),
 							span: el.cst_node().as_ref().byte_range().into(),
-							other: Vec::new(),
 						}
 						.into());
 						}
@@ -566,7 +566,6 @@ impl EnumInner {
 								x
 							),
 							span: op.cst_node().as_ref().byte_range().into(),
-							other: Vec::new(),
 						}
 						.into())
 					}
@@ -577,7 +576,6 @@ impl EnumInner {
 						msg: "This expression type cannot be used to define a enumerated type"
 							.to_string(),
 						span: expr.cst_node().as_ref().byte_range().into(),
-						other: Vec::new(),
 					}
 					.into())
 				}
@@ -593,13 +591,13 @@ mod tests {
 	use std::sync::Arc;
 
 	use expect_test::{expect, Expect};
-	use shackle_compiler::file::SourceFile;
+	use shackle_diagnostics::SourceFile;
 
 	use super::parse_dzn;
 	use crate::{data::dzn::collect_dzn_value, Enum, OptType, Type};
 
 	fn check_serialization(input: &str, ty: &Type, expected: &Expect) {
-		let src = SourceFile::from(Arc::new(format!("x = {input};")));
+		let src = SourceFile::unnamed(format!("x = {input};"));
 		let assignments = parse_dzn(&src).expect("unexpected syntax error");
 		assert_eq!(assignments.len(), 1);
 
@@ -609,7 +607,7 @@ mod tests {
 		expected.assert_eq(&val.to_string());
 
 		// Serialize as DZN and then deserialize again ensuring it is equal
-		let src = SourceFile::from(Arc::new(format!("x = {val};")));
+		let src = SourceFile::unnamed(format!("x = {val};"));
 		let assignments = parse_dzn(&src).expect("unexpected syntax error");
 		assert_eq!(assignments.len(), 1);
 		let val2 = collect_dzn_value(&src, &assignments[0].definition(), ty)
@@ -625,7 +623,7 @@ mod tests {
 		expected: &[Expect],
 	) {
 		let a = Arc::new(Enum::from_data("A".into()));
-		let src = SourceFile::from(Arc::new(format!("A = {ty_input};")));
+		let src = SourceFile::unnamed(format!("A = {ty_input};"));
 		let assignments = parse_dzn(&src).expect("unexpected syntax error");
 		assert_eq!(assignments.len(), 1);
 		{
@@ -637,7 +635,7 @@ mod tests {
 		expected[0].assert_eq(&a.to_string());
 
 		let b = Arc::new(Enum::from_data("A".into()));
-		let src = SourceFile::from(Arc::new(format!("{a};")));
+		let src = SourceFile::unnamed(format!("{a};"));
 		let assignments = parse_dzn(&src).expect("unexpected syntax error");
 		assert_eq!(assignments.len(), 1);
 		{

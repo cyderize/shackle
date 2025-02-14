@@ -182,11 +182,12 @@ mod test {
 	use std::sync::Arc;
 
 	use expect_test::{expect, Expect};
+	use shackle_syntax::InputLang;
 
 	use super::{analyse_totality, Totality};
 	use crate::{
 		db::Inputs,
-		file::{InputFile, InputLang},
+		file::InputFile,
 		thir::{analyse::ModeAnalysis, db::Thir, pretty_print::PrettyPrinter},
 		CompilerDatabase,
 	};

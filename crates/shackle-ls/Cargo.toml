@@ -15,7 +15,9 @@ miette = "7.0.0"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.96"
 shackle-compiler = { path = "../shackle-compiler" }
+shackle-diagnostics = { path = "../shackle-diagnostics" }
 shackle-fmt = { path = "../shackle-fmt" }
+shackle-syntax = { path = "../shackle-syntax" }
 streaming-iterator = "0.1.9"
 threadpool = "1.8.1"
 tree-sitter = "0.24.2"

@@ -755,11 +755,12 @@ mod test {
 	use std::sync::Arc;
 
 	use expect_test::{expect, Expect};
+	use shackle_syntax::InputLang;
 
 	use super::ModeAnalysis;
 	use crate::{
 		db::{FileReader, Inputs},
-		file::{InputFile, InputLang},
+		file::InputFile,
 		hir::ids::NodeRef,
 		thir::{db::Thir, pretty_print::PrettyPrinter},
 		CompilerDatabase,

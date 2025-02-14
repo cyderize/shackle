@@ -69,7 +69,7 @@ impl Debug for MznModel {
 mod test {
 	use expect_test::{expect, expect_file};
 
-	use crate::syntax::ast::test::*;
+	use crate::ast::test::*;
 
 	#[test]
 	fn test_model() {
@@ -88,8 +88,8 @@ MznModel(
 	#[test]
 	fn test_doc_simple_model() {
 		check_ast_file(
-			include_str!("../../../../../docs/src/examples/simple-model.mzn"),
-			expect_file!("../../../../../docs/src/examples/simple-model-ast.txt"),
+			include_str!("../../../../docs/src/examples/simple-model.mzn"),
+			expect_file!("../../../../docs/src/examples/simple-model-ast.txt"),
 		);
 	}
 }

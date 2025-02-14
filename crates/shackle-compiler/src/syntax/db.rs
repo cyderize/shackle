@@ -1,12 +1,14 @@
 #![allow(missing_docs)]
 //! Database queries for syntax parsing
 
+use shackle_syntax::{
+	ast::ConstraintModel, cst::Cst, eprime::EPrimeModel, minizinc::MznModel, InputLang,
+};
 use tree_sitter::Parser;
 
-use super::{ast::ConstraintModel, cst::Cst, eprime::EPrimeModel, minizinc::MznModel};
 use crate::{
 	db::{FileReader, Upcast},
-	file::{FileRef, InputLang},
+	file::FileRef,
 	Result,
 };
 
@@ -27,7 +29,7 @@ pub trait SourceParser: FileReader + Upcast<dyn FileReader> {
 }
 
 fn cst(db: &dyn SourceParser, file: FileRef) -> Result<Cst> {
-	let contents = file.contents(db.upcast())?;
+	let source_file = file.contents(db.upcast())?;
 
 	let tree_sitter_lang = match file.lang(db.upcast()) {
 		InputLang::MiniZinc => tree_sitter_minizinc::language(),
@@ -40,15 +42,15 @@ fn cst(db: &dyn SourceParser, file: FileRef) -> Result<Cst> {
 		.set_language(&tree_sitter_lang)
 		.expect("Failed to set Tree Sitter parser language");
 	let tree = parser
-		.parse(contents.as_bytes(), None)
+		.parse(source_file.contents().as_bytes(), None)
 		.expect("Tree Sitter parser did not return tree object");
 
-	Ok(Cst::new(tree, file, contents))
+	Ok(Cst::new(tree, source_file))
 }
 
 fn ast(db: &dyn SourceParser, file: FileRef) -> Result<ConstraintModel> {
 	let cst = db.cst(file)?;
-	match cst.file().lang(db.upcast()) {
+	match file.lang(db.upcast()) {
 		InputLang::MiniZinc => Ok(ConstraintModel::MznModel(MznModel::new(cst))),
 		InputLang::EPrime => Ok(ConstraintModel::EPrimeModel(EPrimeModel::new(cst))),
 		_ => unreachable!("ast should only be called on ,odel files"),

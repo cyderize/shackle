@@ -3,13 +3,14 @@
 
 use std::sync::Arc;
 
+use shackle_diagnostics::{Diagnostics, Error};
+use shackle_syntax::InputLang;
+
 use super::{db::Thir, pretty_print::PrettyPrinter};
 use crate::{
 	db::{CompilerDatabase, Inputs},
-	diagnostics::Diagnostics,
-	file::{InputFile, InputLang},
+	file::InputFile,
 	hir::db::Hir,
-	Error,
 };
 
 /// Get the diagnostics for running the pretty printed THIR.

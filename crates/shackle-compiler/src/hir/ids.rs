@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use miette::SourceSpan;
+use shackle_diagnostics::SourceFile;
 
 use super::{
 	db::Hir, Annotation, Assignment, Constraint, Declaration, EnumAssignment, Enumeration,
@@ -10,7 +11,7 @@ use super::{
 	TypeAlias,
 };
 use crate::{
-	file::{ModelRef, SourceFile},
+	file::ModelRef,
 	utils::{arena::ArenaIndex, impl_enum_from, DebugPrint},
 };
 
@@ -395,6 +396,6 @@ impl NodeRef {
 		};
 		let sm = db.lookup_source_map(model);
 		let origin = sm.get_origin(*self).expect("No origin for this node!");
-		origin.source_span(db)
+		origin.source_span()
 	}
 }

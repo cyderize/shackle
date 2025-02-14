@@ -4,7 +4,8 @@
 
 use format::Format;
 pub use options::MiniZincFormatOptions;
-use shackle_compiler::syntax::{cst, minizinc::MznModel};
+use shackle_diagnostics::{Result, SourceFile};
+use shackle_syntax::{cst, minizinc::MznModel};
 use tree_sitter::Parser;
 
 use crate::format::MiniZincFormatter;
@@ -18,43 +19,44 @@ pub(crate) mod options;
 pub(crate) mod pattern;
 pub(crate) mod types;
 
+#[cfg(feature = "fancy")]
+mod fancy;
+#[cfg(feature = "fancy")]
+pub use fancy::*;
+
 /// Format the given source code
-pub fn format(source: &str, options: &MiniZincFormatOptions) -> Option<String> {
+pub fn format(source: &str, options: &MiniZincFormatOptions) -> Result<String> {
 	let mut parser = Parser::new();
 	parser
 		.set_language(&tree_sitter_minizinc::language())
 		.unwrap();
 	let tree = parser.parse(source.as_bytes(), None).unwrap();
-	let cst = cst::Cst::from_str(tree, source);
+	let cst = cst::Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 	format_model(&MznModel::new(cst), options)
 }
 
 /// Format an AST model
-pub fn format_model(model: &MznModel, options: &MiniZincFormatOptions) -> Option<String> {
-	if model.cst().error_nodes().next().is_some() {
-		return None;
-	}
-	Some(MiniZincFormatter::new(model, options).format())
+pub fn format_model(model: &MznModel, options: &MiniZincFormatOptions) -> Result<String> {
+	model.cst().check()?;
+	Ok(MiniZincFormatter::new(model, options).format())
 }
 
 /// Get IR for debugging
-pub fn format_debug(source: &str, options: &MiniZincFormatOptions) -> Option<String> {
+pub fn format_debug(source: &str, options: &MiniZincFormatOptions) -> Result<String> {
 	let mut parser = Parser::new();
 	parser
 		.set_language(&tree_sitter_minizinc::language())
 		.unwrap();
 	let tree = parser.parse(source.as_bytes(), None).unwrap();
-	let cst = cst::Cst::from_str(tree, source);
+	let cst = cst::Cst::new(tree, SourceFile::unnamed(source.to_owned()));
 	format_model_debug(&MznModel::new(cst), options)
 }
 
 /// Get IR for debugging
-pub fn format_model_debug(model: &MznModel, options: &MiniZincFormatOptions) -> Option<String> {
-	if model.cst().error_nodes().next().is_some() {
-		return None;
-	}
+pub fn format_model_debug(model: &MznModel, options: &MiniZincFormatOptions) -> Result<String> {
+	model.cst().check()?;
 	let mut formatter = MiniZincFormatter::new(model, options);
-	Some(format!("{:#?}", model.format(&mut formatter)))
+	Ok(format!("{:#?}", model.format(&mut formatter)))
 }
 
 #[cfg(test)]

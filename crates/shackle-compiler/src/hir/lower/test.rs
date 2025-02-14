@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use expect_test::Expect;
+use shackle_syntax::InputLang;
 
 use crate::{
 	db::{CompilerDatabase, FileReader, Inputs},
-	file::{InputFile, InputLang},
+	file::InputFile,
 	hir::db::Hir,
 	utils::DebugPrint,
 };

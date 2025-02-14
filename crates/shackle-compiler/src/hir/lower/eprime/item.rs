@@ -1,5 +1,8 @@
 use std::{collections::HashMap, iter};
 
+use shackle_diagnostics::Error;
+use shackle_syntax::eprime;
+
 use crate::{
 	constants::IdentifierRegistry,
 	file::ModelRef,
@@ -10,8 +13,6 @@ use crate::{
 		source::{Origin, SourceMap},
 		*,
 	},
-	syntax::eprime,
-	Error,
 };
 
 /// Collects AST items into an HIR model

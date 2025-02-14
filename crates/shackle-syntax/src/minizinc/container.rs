@@ -1,7 +1,7 @@
 //! AST Representation for containers
 
 use super::{Children, Expression, Identifier, Pattern};
-use crate::syntax::ast::{
+use crate::ast::{
 	ast_enum, ast_node, child_with_field_name, children_with_field_name,
 	optional_child_with_field_name, AstNode,
 };
@@ -279,7 +279,7 @@ impl AssignmentGenerator {
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::*;
+	use crate::ast::test::*;
 
 	#[test]
 	fn test_tuple_literal() {

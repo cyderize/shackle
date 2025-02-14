@@ -1,5 +1,5 @@
 use rustc_hash::FxHashMap;
-use shackle_compiler::syntax::{
+use shackle_syntax::{
 	ast::AstNode,
 	minizinc::{Expression, MznModel},
 };

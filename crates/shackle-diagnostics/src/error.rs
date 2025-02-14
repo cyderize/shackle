@@ -9,8 +9,7 @@ use std::{
 use miette::{Diagnostic, SourceOffset, SourceSpan};
 use thiserror::Error;
 
-use super::Diagnostics;
-use crate::file::SourceFile;
+use crate::{Diagnostics, SourceFile};
 
 /// An error internal to Shackle.
 ///
@@ -82,9 +81,6 @@ pub struct SyntaxError {
 	pub span: SourceSpan,
 	/// The error message
 	pub msg: String,
-	/// Related syntax errors
-	#[related]
-	pub other: Vec<SyntaxError>,
 }
 
 /// Could not resolve include
@@ -650,7 +646,6 @@ impl Error {
 				src: src.clone(),
 				span: SourceOffset::from_location(src.contents(), err.line(), err.column()).into(),
 				msg: err.to_string(),
-				other: Vec::new(),
 			}
 			.into(),
 			Category::Data => TypeMismatch {

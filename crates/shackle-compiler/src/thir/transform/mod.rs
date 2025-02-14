@@ -67,10 +67,11 @@ pub mod test {
 
 	use expect_test::Expect;
 	use rustc_hash::FxHashMap;
+	use shackle_syntax::InputLang;
 
 	use crate::{
 		db::{CompilerDatabase, FileReader, Inputs},
-		file::{InputFile, InputLang, ModelRef},
+		file::{InputFile, ModelRef},
 		hir::{ids::NodeRef, Identifier},
 		thir::{
 			db::Thir,

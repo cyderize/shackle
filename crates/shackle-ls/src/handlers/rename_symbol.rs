@@ -11,8 +11,8 @@ use shackle_compiler::{
 		source::{find_node, Point},
 	},
 	syntax::db::SourceParser,
-	utils,
 };
+use shackle_syntax::minizinc::pretty_print_identifier;
 use streaming_iterator::StreamingIterator;
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::node_ref_to_location};
@@ -55,7 +55,7 @@ impl RequestHandler<Rename, SymbolHandlerData> for RenameHandler {
 			db.set_active_file_from_document(&params.text_document_position.text_document)?;
 
 		// pretty print it to add single quotes, etc as necessary
-		let new_name = utils::pretty_print_identifier(&params.new_name);
+		let new_name = pretty_print_identifier(&params.new_name);
 
 		Ok(SymbolHandlerData {
 			cursor_pos,

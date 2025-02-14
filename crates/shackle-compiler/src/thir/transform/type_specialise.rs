@@ -8,10 +8,10 @@
 use std::{collections::hash_map::Entry, sync::Arc};
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_diagnostics::{Result, TypeSpecialisationRecursionLimit};
 
 use crate::{
 	constants::IdentifierRegistry,
-	diagnostics::TypeSpecialisationRecursionLimit,
 	thir::{
 		db::Thir,
 		pretty_print::PrettyPrinter,
@@ -27,7 +27,6 @@ use crate::{
 	},
 	ty::{FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations},
 	utils::{maybe_grow_stack, DebugPrint},
-	Result,
 };
 
 struct SpecialisedFunction<Dst: Marker> {

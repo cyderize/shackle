@@ -1,13 +1,12 @@
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::{Error, InvalidArrayLiteral, InvalidNumericLiteral, SyntaxError};
+use shackle_syntax::{ast::AstNode, minizinc};
 
 use crate::{
 	constants::IdentifierRegistry,
 	db::InternedStringData,
-	diagnostics::{InvalidArrayLiteral, InvalidNumericLiteral, SyntaxError},
 	hir::{db::Hir, source::Origin, *},
-	syntax::{ast::AstNode, minizinc},
 	utils::maybe_grow_stack,
-	Error,
 };
 
 /// Collects AST expressions for owned by an item and lowers them into HIR recursively.
@@ -56,7 +55,7 @@ impl ExpressionCollector<'_> {
 		log::debug!(
 			"Lowering {} to HIR ({})",
 			expression.cst_node().text(),
-			origin.debug_print(self.db)
+			origin.debug_print()
 		);
 		if expression.is_missing() {
 			return self.alloc_expression(origin, Expression::Missing);
@@ -64,7 +63,7 @@ impl ExpressionCollector<'_> {
 		let collected: Expression = match expression {
 			minizinc::Expression::IntegerLiteral(i) => {
 				IntegerLiteral(i.value().unwrap_or_else(|e| {
-					let (src, span) = i.cst_node().source_span(self.db.upcast());
+					let (src, span) = i.cst_node().source_span();
 					self.add_diagnostic(InvalidNumericLiteral {
 						src,
 						span,
@@ -76,7 +75,7 @@ impl ExpressionCollector<'_> {
 			}
 			minizinc::Expression::FloatLiteral(f) => {
 				FloatLiteral::new(f.value().unwrap_or_else(|e| {
-					let (src, span) = f.cst_node().source_span(self.db.upcast());
+					let (src, span) = f.cst_node().source_span();
 					self.add_diagnostic(InvalidNumericLiteral {
 						src,
 						span,
@@ -92,12 +91,11 @@ impl ExpressionCollector<'_> {
 			minizinc::Expression::Infinity(_) => Expression::Infinity,
 			minizinc::Expression::Anonymous(a) => {
 				// No longer support anonymous variables, instead use opt
-				let (src, span) = a.cst_node().source_span(self.db.upcast());
+				let (src, span) = a.cst_node().source_span();
 				self.add_diagnostic(SyntaxError {
 					src,
 					span,
 					msg: "Anonymous variables in expressions are not supported".to_string(),
-					other: Vec::new(),
 				});
 				Expression::Missing
 			}
@@ -258,7 +256,7 @@ impl ExpressionCollector<'_> {
 					let pat = Pattern::Integer {
 						negated: n.negated(),
 						value: IntegerLiteral(i.value().unwrap_or_else(|e| {
-							let (src, span) = i.cst_node().source_span(self.db.upcast());
+							let (src, span) = i.cst_node().source_span();
 							self.add_diagnostic(InvalidNumericLiteral {
 								src,
 								span,
@@ -273,7 +271,7 @@ impl ExpressionCollector<'_> {
 					let pat = Pattern::Float {
 						negated: n.negated(),
 						value: FloatLiteral::new(f.value().unwrap_or_else(|e| {
-							let (src, span) = f.cst_node().source_span(self.db.upcast());
+							let (src, span) = f.cst_node().source_span();
 							self.add_diagnostic(InvalidNumericLiteral {
 								src,
 								span,
@@ -476,7 +474,7 @@ impl ExpressionCollector<'_> {
 					fully_indexed = false;
 				}
 				if !start_indexed && !fully_indexed {
-					let (src, span) = al.cst_node().source_span(self.db.upcast());
+					let (src, span) = al.cst_node().source_span();
 					self.add_diagnostic(InvalidArrayLiteral {
 						src,
 						span,
@@ -522,7 +520,7 @@ impl ExpressionCollector<'_> {
 				first = false;
 
 				if !col_indices.is_empty() && col_count != col_indices.len() {
-					let (src, span) = al.cst_node().source_span(self.db.upcast());
+					let (src, span) = al.cst_node().source_span();
 					self.add_diagnostic(InvalidArrayLiteral {
 						src,
 						span,
@@ -531,7 +529,7 @@ impl ExpressionCollector<'_> {
 					return self.alloc_expression(origin, Expression::Missing);
 				}
 			} else if members.len() != col_count {
-				let (src, span) = al.cst_node().source_span(self.db.upcast());
+				let (src, span) = al.cst_node().source_span();
 				self.add_diagnostic(InvalidArrayLiteral {
 					src,
 					span,
@@ -541,7 +539,7 @@ impl ExpressionCollector<'_> {
 			}
 
 			if index.is_none() != row_indices.is_empty() {
-				let (src, span) = al.cst_node().source_span(self.db.upcast());
+				let (src, span) = al.cst_node().source_span();
 				self.add_diagnostic(InvalidArrayLiteral {
 					src,
 					span,
@@ -831,7 +829,7 @@ impl ExpressionCollector<'_> {
 	fn collect_tuple_access(&mut self, t: minizinc::TupleAccess) -> TupleAccess {
 		TupleAccess {
 			field: IntegerLiteral(t.field().value().unwrap_or_else(|e| {
-				let (src, span) = t.field().cst_node().source_span(self.db.upcast());
+				let (src, span) = t.field().cst_node().source_span();
 				self.add_diagnostic(InvalidNumericLiteral {
 					src,
 					span,

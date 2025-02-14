@@ -1,11 +1,8 @@
 use lsp_server::ResponseError;
 use lsp_types::TextDocumentPositionParams;
-use shackle_compiler::{
-	db::CompilerDatabase,
-	file::ModelRef,
-	syntax::{ast::ConstraintModel, db::SourceParser},
-};
+use shackle_compiler::{db::CompilerDatabase, file::ModelRef, syntax::db::SourceParser};
 use shackle_fmt::{format_model_debug, MiniZincFormatOptions};
+use shackle_syntax::ast::ConstraintModel;
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler, extensions::ViewFormatIr};
 
@@ -24,7 +21,7 @@ impl RequestHandler<ViewFormatIr, ModelRef> for ViewFormatIrHandler {
 		match db.ast(*model_ref) {
 			Ok(ConstraintModel::MznModel(ast)) => {
 				Ok(format_model_debug(&ast, &MiniZincFormatOptions::default())
-					.unwrap_or_else(|| "Failed to format".to_owned()))
+					.unwrap_or_else(|_| "Failed to format".to_owned()))
 			}
 			Ok(_) => todo!("no formatter available for this file type"),
 			Err(e) => Ok(e.to_string()),

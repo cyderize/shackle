@@ -22,8 +22,6 @@ use data::{
 	dzn::{collect_dzn_value, parse_dzn},
 	serde::SerdeFileVisitor,
 };
-// Result type for Shackle operations
-pub use error::{Error, Result};
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserializer;
@@ -31,23 +29,25 @@ use serde::Deserializer;
 pub use shackle_compiler::ty::OptType;
 use shackle_compiler::{
 	db::{CompilerDatabase, Inputs, InternedString, Interner},
-	file::{InputFile, InputLang, SourceFile},
+	file::InputFile,
 	hir::db::Hir,
-	syntax::{ast::AstNode, minizinc::Identifier},
 	thir::{self, db::Thir, pretty_print::PrettyPrinter, Declaration},
 	ty::{Ty, TyData},
 };
+// Result type for Shackle operations
+pub use shackle_diagnostics::{Error, FileError, Result, SourceFile};
+use shackle_syntax::{ast::AstNode, minizinc::Identifier, InputLang};
 use value::EnumInner;
 pub use value::{Enum, Value};
 
 /// Shackle errors
 pub mod error {
-	pub use shackle_compiler::{diagnostics::error::*, Result};
+	pub use shackle_diagnostics::{error::*, Result};
 }
 
 /// Shackle warnings
 pub mod warning {
-	pub use shackle_compiler::diagnostics::warning::*;
+	pub use shackle_diagnostics::warning::*;
 }
 
 /// Structure used to build a shackle model
@@ -59,7 +59,7 @@ impl Model {
 	/// Create a Model from the file at the given path
 	pub fn from_file(path: PathBuf) -> Model {
 		let mut db = CompilerDatabase::default();
-		let l = InputLang::from_extension(path.extension());
+		let l = InputLang::from_path(&path);
 		db.set_input_files(Arc::new(vec![InputFile::Path(path, l)]));
 		Model { db }
 	}
@@ -429,7 +429,14 @@ impl Program {
 		let mut data = Vec::new();
 		let mut names = FxHashSet::default();
 		for f in files {
-			let src = SourceFile::try_from(f)?;
+			let src = SourceFile::new(
+				f.to_path_buf(),
+				std::fs::read_to_string(f).map_err(|err| FileError {
+					file: f.to_path_buf(),
+					message: err.to_string(),
+					other: Vec::new(),
+				})?,
+			);
 			match f.extension().and_then(OsStr::to_str) {
 				Some("dzn") => {
 					// Parse the DZN file

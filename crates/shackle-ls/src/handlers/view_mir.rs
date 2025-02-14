@@ -29,7 +29,7 @@ impl RequestHandler<ViewMir, ModelRef> for ViewMirHandler {
 				Err(e) => return Ok(format!("%: Error: {}", e)),
 			};
 			let text = PrettyPrinter::print_model(db, &mir);
-			if let Some(f) = format(&text, &MiniZincFormatOptions::default()) {
+			if let Ok(f) = format(&text, &MiniZincFormatOptions::default()) {
 				return Ok(f);
 			}
 			Ok(format!("% Failed to format parsed text:\n{}", text))

@@ -5,8 +5,9 @@ use lsp_server::{Connection, Message, ResponseError};
 use lsp_types::{TextDocumentIdentifier, Uri};
 use shackle_compiler::{
 	db::{CompilerDatabase, FileReader, HasFileHandler, Inputs},
-	file::{InputFile, InputLang, ModelRef},
+	file::{InputFile, ModelRef},
 };
+use shackle_syntax::InputLang;
 
 use crate::{diagnostics, utils::uri_to_path, vfs::Vfs};
 

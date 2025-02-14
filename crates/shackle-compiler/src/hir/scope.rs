@@ -6,10 +6,12 @@
 use std::{collections::hash_map::Entry, fmt::Debug, sync::Arc};
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_diagnostics::{
+	Error, IdentifierAlreadyDefined, IdentifierShadowing, InvalidPattern, Result, Warning,
+};
 
 use super::{Constructor, EnumConstructor, Generator, MaybeIndexSet};
 use crate::{
-	diagnostics::{IdentifierAlreadyDefined, IdentifierShadowing, InvalidPattern},
 	hir::{
 		db::Hir,
 		ids::{EntityRef, ItemRef, LocalItemRef, NodeRef, PatternRef},
@@ -19,7 +21,6 @@ use crate::{
 		arena::{Arena, ArenaIndex, ArenaMap},
 		maybe_grow_stack,
 	},
-	Error, Result, Warning,
 };
 
 /// Gets all variables in global scope.

@@ -1,6 +1,6 @@
-use shackle_compiler::{
-	syntax::{ast::AstNode, minizinc},
-	utils::pretty_print_identifier,
+use shackle_syntax::{
+	ast::AstNode,
+	minizinc::{self, pretty_print_identifier},
 };
 use tree_sitter_minizinc::Precedence;
 

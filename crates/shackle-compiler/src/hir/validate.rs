@@ -10,6 +10,11 @@
 use std::{collections::hash_map::Entry, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::{
+	AdditionalSolveItem, ConstructorAlreadyDefined, DuplicateAssignment, DuplicateConstructor,
+	DuplicateFunction, Error, FunctionAlreadyDefined, IllegalOverload, IllegalOverloading,
+	MultipleAssignments, MultipleSolveItems,
+};
 
 use super::{
 	db::Hir,
@@ -17,14 +22,8 @@ use super::{
 	PatternTy,
 };
 use crate::{
-	diagnostics::{
-		AdditionalSolveItem, ConstructorAlreadyDefined, DuplicateAssignment, DuplicateConstructor,
-		DuplicateFunction, FunctionAlreadyDefined, IllegalOverload, IllegalOverloading,
-		MultipleAssignments, MultipleSolveItems,
-	},
 	hir::ids::{ItemRef, NodeRef},
 	ty::{FunctionEntry, OverloadingError},
-	Error,
 };
 
 /// Validate HIR

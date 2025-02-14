@@ -866,7 +866,7 @@ mod tests {
 	use expect_test::{expect, Expect};
 	use rustc_hash::FxHashMap;
 	use serde::Deserializer;
-	use shackle_compiler::file::SourceFile;
+	use shackle_diagnostics::SourceFile;
 
 	use super::SerdeFileVisitor;
 	use crate::{Enum, Error, OptType, Type};
@@ -874,7 +874,7 @@ mod tests {
 	fn check_serialization(input: &str, ty: &Type, expected: &Expect) {
 		let input_types = FxHashMap::from_iter([("x".into(), ty.clone())]);
 		let enum_types = FxHashMap::default();
-		let src = SourceFile::from(Arc::new(format!("{{ \"x\": {input} }}")));
+		let src = SourceFile::unnamed(format!("{{ \"x\": {input} }}"));
 		let assignments = serde_json::Deserializer::from_str(src.contents())
 			.deserialize_map(SerdeFileVisitor {
 				input_types: &input_types,
@@ -893,10 +893,10 @@ mod tests {
 		expected.assert_eq(&s);
 
 		// Serialize as DZN and then deserialize again ensuring it is equal
-		let src = SourceFile::from(Arc::new(format!(
+		let src = SourceFile::unnamed(format!(
 			"{{ \"x\":  {} }}",
 			serde_json::to_string(&val).expect("unexpected serialization error")
-		)));
+		));
 		let assignments = serde_json::Deserializer::from_str(src.contents())
 			.deserialize_map(SerdeFileVisitor {
 				input_types: &input_types,
@@ -924,7 +924,7 @@ mod tests {
 		let input_types = FxHashMap::default();
 		let enum_types = FxHashMap::from_iter([("A".into(), a.clone())]);
 
-		let src = SourceFile::from(Arc::new(format!("{{ \"A\": {ty_input} }}")));
+		let src = SourceFile::unnamed(format!("{{ \"A\": {ty_input} }}"));
 		let assignments = serde_json::Deserializer::from_str(src.contents())
 			.deserialize_map(SerdeFileVisitor {
 				input_types: &input_types,
@@ -936,9 +936,9 @@ mod tests {
 		expected[0].assert_eq(&a.to_string());
 
 		let b = Arc::new(Enum::from_data("A".into()));
-		let src = SourceFile::from(Arc::new(
+		let src = SourceFile::unnamed(
 			serde_json::to_string(&*a).expect("unexpected serialization error"),
-		));
+		);
 		let enum_types = FxHashMap::from_iter([("A".into(), b.clone())]);
 		let assignments = serde_json::Deserializer::from_str(src.contents())
 			.deserialize_map(SerdeFileVisitor {

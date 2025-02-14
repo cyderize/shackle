@@ -9,10 +9,10 @@
 use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_diagnostics::{CyclicDefinition, Error};
 
 use super::PatternTy;
 use crate::{
-	diagnostics::CyclicDefinition,
 	hir::{
 		db::Hir,
 		ids::{ExpressionRef, ItemRef, LocalItemRef, NodeRef, PatternRef},
@@ -20,7 +20,6 @@ use crate::{
 	},
 	ty::FunctionEntry,
 	utils::DebugPrint,
-	Error,
 };
 
 /// Topologically sort items
@@ -353,10 +352,11 @@ mod test {
 	use std::sync::Arc;
 
 	use expect_test::{expect, Expect};
+	use shackle_syntax::InputLang;
 
 	use crate::{
 		db::{CompilerDatabase, FileReader, Inputs},
-		file::{InputFile, InputLang},
+		file::InputFile,
 		hir::db::Hir,
 	};
 
@@ -373,7 +373,7 @@ mod test {
 		let mut actual = String::new();
 		for item in items.iter().copied() {
 			let origin = sm.get_origin(item.into()).unwrap();
-			let (source, span) = origin.source_span(&db);
+			let (source, span) = origin.source_span();
 			actual.push_str(&source.contents()[span.offset()..span.offset() + span.len()]);
 			actual.push_str(";\n");
 		}

@@ -4,10 +4,10 @@
 /// - Function parameter/return type
 /// - Variable declaration LHS types
 use rustc_hash::FxHashMap;
+use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch};
 
 use super::{EnumConstructorEntry, PatternTy, TypeCompletionMode, TypeContext, Typer};
 use crate::{
-	diagnostics::{SyntaxError, TypeInferenceFailure, TypeMismatch},
 	hir::{
 		db::Hir,
 		ids::{EntityRef, ExpressionRef, ItemRef, LocalItemRef, NodeRef, PatternRef},
@@ -17,7 +17,6 @@ use crate::{
 		EnumRef, FunctionEntry, FunctionType, OverloadedFunction, PolymorphicFunctionType, Ty,
 		TyData, TyVar, TyVarRef,
 	},
-	Error,
 };
 
 /// Collected types for an item signature
@@ -195,7 +194,6 @@ impl SignatureTypeContext {
 										src,
 										span,
 										msg: "'annotated_expression' only allowed on first function parameter.".to_owned(),
-										other: Vec::new(),
 									},
 								);
 							}
@@ -335,7 +333,6 @@ impl SignatureTypeContext {
 							src,
 							span,
 							msg: "declaration must have a right-hand side.".to_owned(),
-							other: Vec::new(),
 						},
 					);
 				}
@@ -351,7 +348,6 @@ impl SignatureTypeContext {
 								span,
 								msg: "'output_only' declarations must have a right-hand side."
 									.to_owned(),
-								other: Vec::new(),
 							},
 						);
 					}

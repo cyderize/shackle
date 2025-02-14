@@ -1,9 +1,7 @@
 //! Eprime Domain Expressions
 
 use super::{Children, Expression, Identifier, Operator};
-use crate::syntax::ast::{
-	ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode,
-};
+use crate::ast::{ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode};
 
 ast_enum!(
 	/// Domain
@@ -89,7 +87,7 @@ impl DomainOperation {
 mod test {
 	use expect_test::expect;
 
-	use crate::syntax::ast::test::check_ast_eprime;
+	use crate::ast::test::check_ast_eprime;
 
 	#[test]
 	fn test_domain_operation() {

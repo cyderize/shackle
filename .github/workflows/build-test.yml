@@ -43,8 +43,16 @@ jobs:
           channel: ${{ env.RUST_TEST_CHANNEL }}
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Checkout MiniZinc repo
+        uses: actions/checkout@v4
+        with:
+          repository: MiniZinc/libminizinc
+          path: minizinc
+          ref: develop
       - name: Generate code coverage
         run: cargo llvm-cov --all-features --workspace --codecov --output-path codecov.json
+        env:
+          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -60,8 +68,17 @@ jobs:
         uses: moonrepo/setup-rust@v1
         with:
           channel: ${{ env.RUST_TEST_CHANNEL }}
+      - name: Checkout MiniZinc repo
+        uses: actions/checkout@v4
+        with:
+          repository: MiniZinc/libminizinc
+          path: minizinc
+          ref: develop
       - name: Run cargo test
         run: cargo test
+        env:
+          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc
+
   clippy:
     runs-on: ubuntu-latest
     steps:
@@ -71,5 +88,13 @@ jobs:
         with:
           channel: ${{ env.RUST_CHANNEL }}
           components: clippy
+      - name: Checkout MiniZinc repo
+        uses: actions/checkout@v4
+        with:
+          repository: MiniZinc/libminizinc
+          path: minizinc
+          ref: develop
       - name: Run clippy
         run: cargo clippy --tests -- -D warnings
+        env:
+          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc

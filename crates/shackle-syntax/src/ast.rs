@@ -93,13 +93,13 @@ impl<T: From<CstNode>> Iterator for Children<'_, T> {
 	}
 }
 
-impl<'a, T: Debug + From<CstNode>> std::fmt::Debug for Children<'a, T> {
+impl<T: Debug + From<CstNode>> std::fmt::Debug for Children<'_, T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut cursor = self.cursor.clone();
 		cursor.goto_parent();
 		let done = !cursor.goto_first_child();
 
-		let iter: Children<'a, T> = Children {
+		let iter: Children<'_, T> = Children {
 			field: self.field,
 			tree: self.tree,
 			cursor,

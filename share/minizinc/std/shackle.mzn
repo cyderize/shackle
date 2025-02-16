@@ -1,3 +1,6 @@
+include "stdlib.mzn";
+include "solver_redefinitions.mzn";
+
 /** @group stdlib.builtins.compare Return if \a x is equal to \a y */
 function var bool: '='(var $T: x, $T: y) :: mzn_internal_representation :: promise_commutative;
 /** @group stdlib.builtins.compare Return if \a x is equal to \a y */

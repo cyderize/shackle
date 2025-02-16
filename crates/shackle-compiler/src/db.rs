@@ -75,7 +75,7 @@ fn shackle_share_directory(_db: &dyn CompilerSettings) -> Option<Arc<PathBuf>> {
 	if let Ok(p) = std::env::current_exe() {
 		// Otherwise find /share/minizinc/std from this executable
 		for path in p.ancestors() {
-			if path.join("share/minizinc/std/stdlib.mzn").exists() {
+			if path.join("share/minizinc/std/shackle.mzn").exists() {
 				return Some(Arc::new(path.join("share/minizinc")));
 			}
 		}

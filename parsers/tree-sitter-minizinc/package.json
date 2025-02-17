@@ -2,50 +2,53 @@
 	"name": "tree-sitter-minizinc",
 	"version": "0.1.0",
 	"description": "MiniZinc grammar for tree-sitter",
+	"repository": "git+https://github.com/shackle-rs/shackle.git",
+	"license": "MPL-2.0",
+	"author": {
+		"name": "Jip J. Dekker",
+		"email": "jip.dekker@monash.edu",
+		"url": "https://dekker.one/"
+	},
 	"main": "bindings/node",
 	"types": "bindings/node",
-	"scripts": {
-		"build": "tree-sitter generate && node-gyp build",
-		"test": "tree-sitter test",
-		"install": "node-gyp-build",
-		"prebuildify": "prebuildify --napi --strip"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/shackle-rs/shackle.git"
-	},
 	"keywords": [
-		"parser",
+		"incremental",
+		"parsing",
+		"tree-sitter",
 		"minizinc"
 	],
 	"files": [
 		"grammar.js",
+		"tree-sitter.json",
 		"binding.gyp",
 		"prebuilds/**",
 		"bindings/node/*",
 		"queries/*",
-		"src/**"
+		"src/**",
+		"*.wasm"
 	],
-	"author": "Jip J. Dekker <jip.dekker@monash.edu> (https://dekker.one/)",
-	"license": "MPL-2.0",
-	"bugs": {
-		"url": "https://github.com/shackle-rs/shackle/issues"
-	},
-	"homepage": "https://github.com/shackle-rs/shackle/issues#readme",
 	"dependencies": {
-		"node-addon-api": "^8.3.0",
-		"node-gyp-build": "^4.8.4"
+		"node-addon-api": "^8.2.1",
+		"node-gyp-build": "^4.8.2"
+	},
+	"devDependencies": {
+		"prebuildify": "^6.0.1",
+		"tree-sitter-cli": "^0.25.1"
 	},
 	"peerDependencies": {
-		"tree-sitter": "^0.21.0"
+		"tree-sitter": "^0.21.1"
 	},
 	"peerDependenciesMeta": {
-		"tree_sitter": {
+		"tree-sitter": {
 			"optional": true
 		}
 	},
-	"devDependencies": {
-		"tree-sitter-cli": "^0.25",
-		"prebuildify": "^6.0.1"
+	"scripts": {
+		"build": "tree-sitter generate && node-gyp build",
+		"install": "node-gyp-build",
+		"node-test": "node --test bindings/node/*_test.js",
+		"prestart": "tree-sitter build --wasm",
+		"start": "tree-sitter playground",
+		"test": "tree-sitter test"
 	}
 }

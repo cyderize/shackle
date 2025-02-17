@@ -401,8 +401,8 @@ pub mod test {
 	/// Helper to check parsed AST
 	pub fn check_ast_with_lang(language: InputLang, source: &str, expected: Expect) {
 		let lang = match language {
-			InputLang::MiniZinc => tree_sitter_minizinc::language(),
-			InputLang::EPrime => tree_sitter_eprime::language(),
+			InputLang::MiniZinc => tree_sitter_minizinc::LANGUAGE.into(),
+			InputLang::EPrime => tree_sitter_eprime::LANGUAGE.into(),
 			_ => unreachable!("check_ast_with_lang should only be called on model files"),
 		};
 		let mut parser = Parser::new();
@@ -431,7 +431,7 @@ pub mod test {
 	pub fn check_ast_file(source: &str, expected: ExpectFile) {
 		let mut parser = Parser::new();
 		parser
-			.set_language(&tree_sitter_minizinc::language())
+			.set_language(&tree_sitter_minizinc::LANGUAGE.into())
 			.unwrap();
 		let tree = parser.parse(source.as_bytes(), None).unwrap();
 		let cst = Cst::from_str(tree, source);

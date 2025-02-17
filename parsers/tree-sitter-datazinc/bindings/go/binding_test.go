@@ -3,8 +3,8 @@ package tree_sitter_datazinc_test
 import (
 	"testing"
 
-	tree_sitter "github.com/smacker/go-tree-sitter"
-	"github.com/shackle-rs/shackle/tree-sitter-datazinc"
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_datazinc "git+github.com/shackle-rs/shackle.git/bindings/go"
 )
 
 func TestCanLoadGrammar(t *testing.T) {

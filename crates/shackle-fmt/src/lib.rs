@@ -30,7 +30,7 @@ pub struct MiniZincFormatOptions {
 pub fn format(source: &str, options: &MiniZincFormatOptions) -> Option<String> {
 	let mut parser = Parser::new();
 	parser
-		.set_language(&tree_sitter_minizinc::language())
+		.set_language(&tree_sitter_minizinc::LANGUAGE.into())
 		.unwrap();
 	let tree = parser.parse(source.as_bytes(), None).unwrap();
 	let cst = cst::Cst::from_str(tree, source);
@@ -49,7 +49,7 @@ pub fn format_model(model: &MznModel, options: &MiniZincFormatOptions) -> Option
 pub fn format_debug(source: &str, options: &MiniZincFormatOptions) -> Option<String> {
 	let mut parser = Parser::new();
 	parser
-		.set_language(&tree_sitter_minizinc::language())
+		.set_language(&tree_sitter_minizinc::LANGUAGE.into())
 		.unwrap();
 	let tree = parser.parse(source.as_bytes(), None).unwrap();
 	let cst = cst::Cst::from_str(tree, source);
@@ -257,7 +257,7 @@ mod test {
 		let actual = format(
 			r#"
 
-			
+
 			% Foo
 			/* hello */
 			int: x = (1 /* foo */ + /* bar */ 2) + 3 % hello
@@ -270,7 +270,7 @@ mod test {
 			% bar
 			int /* foo */:y= 3;
 			/* world */
-			
+
 			/* one */
 			% Hello
 			"#,
@@ -333,7 +333,7 @@ mod test {
 	fn test_attach_comments_infix() {
 		let actual = format(
 			r#"
-			any: x = 
+			any: x =
 				albatross+ % a
 				/* b */ bonobo+ % b
 				cassowary+ /* c */

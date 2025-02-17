@@ -30,8 +30,8 @@ fn cst(db: &dyn SourceParser, file: FileRef) -> Result<Cst> {
 	let contents = file.contents(db.upcast())?;
 
 	let tree_sitter_lang = match file.lang(db.upcast()) {
-		InputLang::MiniZinc => tree_sitter_minizinc::language(),
-		InputLang::EPrime => tree_sitter_eprime::language(),
+		InputLang::MiniZinc => tree_sitter_minizinc::LANGUAGE.into(),
+		InputLang::EPrime => tree_sitter_eprime::LANGUAGE.into(),
 		_ => unreachable!("cst should only be called on model files"),
 	};
 

@@ -208,6 +208,36 @@ pub fn collect_global_scope(db: &dyn Hir) -> (Arc<ScopeData>, Arc<Vec<Error>>) {
 				_ => unreachable!("Type-alias must have identifier pattern"),
 			}
 		}
+		for (i, d) in model.dimensions.iter() {
+			match &d.data[d.name] {
+				Pattern::Identifier(identifier) => {
+					if let Err(e) = scope.add_variable(
+						db,
+						*identifier,
+						0,
+						PatternRef::new(ItemRef::new(db, *m, i), d.name),
+					) {
+						diagnostics.push(e);
+					}
+				}
+				_ => unreachable!("Dimension must have identifier pattern"),
+			}
+		}
+		for (i, u) in model.units.iter() {
+			match &u.data[u.name] {
+				Pattern::Identifier(identifier) => {
+					if let Err(e) = scope.add_variable(
+						db,
+						*identifier,
+						0,
+						PatternRef::new(ItemRef::new(db, *m, i), u.name),
+					) {
+						diagnostics.push(e);
+					}
+				}
+				_ => unreachable!("Unit must have identifier pattern"),
+			}
+		}
 	}
 	log::info!(
 		"{} atoms, {} variables, {} function names in global scope",
@@ -737,6 +767,11 @@ impl ScopeCollector<'_> {
 	/// Collect scope for a type
 	fn collect_type(&mut self, index: ArenaIndex<Type>) {
 		match &self.data[index] {
+			Type::Primitive { unit, .. } => {
+				if let Some(e) = unit {
+					self.collect_expression(*e);
+				}
+			}
 			Type::Bounded { domain, .. } => self.collect_expression(*domain),
 			Type::Array {
 				dimensions,
@@ -1025,6 +1060,9 @@ pub fn collect_item_scope(db: &dyn Hir, item: ItemRef) -> ScopeCollectorResult {
 					collector.collect_pattern(t.name, true);
 				}
 			}
+			for u in function.unit_vars.iter() {
+				collector.collect_pattern(u.name, true);
+			}
 			for p in function.parameters.iter() {
 				collector.collect_type(p.declared_type);
 			}
@@ -1070,6 +1108,23 @@ pub fn collect_item_scope(db: &dyn Hir, item: ItemRef) -> ScopeCollectorResult {
 				collector.collect_expression(*ann);
 			}
 			collector.collect_type(type_alias.aliased_type);
+			collector.finish()
+		}
+		LocalItemRef::Dimension(d) => {
+			let dimension = &model[d];
+			let mut collector = ScopeCollector::new(db, item, dimension.data.as_ref());
+			if let Some(def) = dimension.definition {
+				collector.collect_expression(def);
+			}
+			collector.finish()
+		}
+		LocalItemRef::Unit(u) => {
+			let unit = &model[u];
+			let mut collector = ScopeCollector::new(db, item, unit.data.as_ref());
+			collector.collect_expression(unit.dimension);
+			if let Some(def) = unit.definition {
+				collector.collect_expression(def);
+			}
 			collector.finish()
 		}
 	}

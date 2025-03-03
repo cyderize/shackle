@@ -244,6 +244,8 @@ id_registry!(
 	empty_string: "",
 	return_value: "<return value>",
 	default,
+	at: '@',
+	coord,
 );
 
 id_registry!(

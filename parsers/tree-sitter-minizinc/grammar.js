@@ -7,6 +7,7 @@ const PREC_ORDER = /** @type {const} */ ([
 	"default",
 	"exponent",
 	"unary",
+	"unit",
 	"multiplicative",
 	"additive",
 	"range",
@@ -44,7 +45,7 @@ const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]
 const ADDITIVE_OPERATORS = ["+", "-", "++", "~+", "~-"]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "div", "mod", "~*", "~div", "~/"]
 
-const OPERATOR_CHARACTERS = `,;:(){}&|$.∞%`.concat(
+const OPERATOR_CHARACTERS = `,;:(){}&|$.∞%@`.concat(
 	getOpChars(EQUIVALENCE_OPERATORS),
 	getOpChars(IMPLICATION_OPERATORS),
 	getOpChars(DISJUNCTION_OPERATORS),
@@ -92,7 +93,9 @@ module.exports = grammar({
 				$.include,
 				$.output,
 				$.predicate,
-				$.type_alias
+				$.type_alias,
+				$.dimension,
+				$.unit_item
 			),
 
 		annotation: ($) =>
@@ -224,6 +227,23 @@ module.exports = grammar({
 		type_alias: ($) =>
 			seq("type", field("name", $._identifier), "=", field("type", $._type)),
 
+		dimension: ($) =>
+			seq(
+				"unit",
+				"type",
+				field("name", $._identifier),
+				optional(seq("=", field("definition", $._expression)))
+			),
+
+		unit_item: ($) =>
+			seq(
+				"unit",
+				field("dimension", $._identifier),
+				":",
+				field("name", $._identifier),
+				optional(seq("=", field("definition", $._expression)))
+			),
+
 		_expression: ($) =>
 			choice($._unannotated_expression, $.annotated_expression),
 		_unannotated_expression: ($) =>
@@ -240,6 +260,8 @@ module.exports = grammar({
 				$.postfix_operator,
 				$.set_comprehension,
 				$.string_interpolation,
+				$.type_inst_id,
+				$.type_inst_enum_id,
 				$._callable
 			),
 		_callable: ($) =>
@@ -375,6 +397,7 @@ module.exports = grammar({
 				[prec.left, PREC.multiplicative, choice(...MULTIPLICATIVE_OPERATORS)],
 				[prec.right, PREC.exponent, "^"],
 				[prec.left, PREC.default, "default"],
+				[prec.left, PREC.unit, "@"],
 			])
 
 			return choice(
@@ -544,19 +567,15 @@ module.exports = grammar({
 				seq(
 					optional(field("var_par", choice("var", "par"))),
 					optional(field("opt", "opt")),
-					field(
-						"domain",
-						choice(
-							$.primitive_type,
-							$.type_inst_id,
-							$.type_inst_enum_id,
-							$._expression
-						)
-					)
+					field("domain", choice($.primitive_type, $._expression))
 				),
 				seq(field("any", "any"), field("domain", $.type_inst_id))
 			),
-		primitive_type: ($) => choice(...primitive_types),
+		primitive_type: ($) =>
+			seq(
+				field("primitive_type", choice(...primitive_types)),
+				optional(seq("@", field("unit", $._expression)))
+			),
 		type_inst_id: ($) => /\$[A-Za-z][A-Za-z0-9_]*/,
 		type_inst_enum_id: ($) => /\$\$[A-Za-z][A-Za-z0-9_]*/,
 		any_type: ($) => "any",

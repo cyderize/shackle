@@ -1,0 +1,40 @@
+===========
+Units
+===========
+unit type distance;
+unit distance: mm;
+unit distance: cm = 10@mm;
+unit type velocity = distance/time;
+unit velocity: kph = km / hour;
+unit velocity: kps = 3600@(km / hour);
+---
+
+(source_file
+  item: (dimension
+    name: (identifier))
+  item: (unit_item
+    name: (identifier)
+    dimension: (identifier))
+  item: (unit_item
+    name: (identifier)
+    dimension: (identifier)
+    coefficient: (integer_literal)
+    unit: (identifier))
+  item: (dimension
+    name: (identifier)
+    definition: (unit_infix_operator
+      left: (identifier)
+      right: (identifier)))
+  item: (unit_item
+    name: (identifier)
+    dimension: (identifier)
+    unit: (unit_infix_operator
+      left: (identifier)
+      right: (identifier)))
+  item: (unit_item
+    name: (identifier)
+    dimension: (identifier)
+    coefficient: (integer_literal)
+    unit: (unit_infix_operator
+      left: (identifier)
+      right: (identifier))))

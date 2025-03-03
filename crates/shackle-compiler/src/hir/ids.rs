@@ -6,9 +6,9 @@ use miette::SourceSpan;
 use shackle_diagnostics::SourceFile;
 
 use super::{
-	db::Hir, Annotation, Assignment, Constraint, Declaration, EnumAssignment, Enumeration,
-	Expression, Function, Identifier, Item, ItemData, Model, Output, Pattern, Solve, Type,
-	TypeAlias,
+	db::Hir, Annotation, Assignment, Constraint, Declaration, Dimension, EnumAssignment,
+	Enumeration, Expression, Function, Identifier, Item, ItemData, Model, Output, Pattern, Solve,
+	Type, TypeAlias, Unit,
 };
 use crate::{
 	file::ModelRef,
@@ -38,6 +38,10 @@ pub enum LocalItemRef {
 	Solve(ArenaIndex<Item<Solve>>),
 	/// Type alias item ID
 	TypeAlias(ArenaIndex<Item<TypeAlias>>),
+	/// Dimension item ID
+	Dimension(ArenaIndex<Item<Dimension>>),
+	/// Unit item ID
+	Unit(ArenaIndex<Item<Unit>>),
 }
 
 impl LocalItemRef {
@@ -54,6 +58,8 @@ impl LocalItemRef {
 			LocalItemRef::Output(i) => &model[i].data,
 			LocalItemRef::Solve(i) => &model[i].data,
 			LocalItemRef::TypeAlias(i) => &model[i].data,
+			LocalItemRef::Dimension(i) => &model[i].data,
+			LocalItemRef::Unit(i) => &model[i].data,
 		}
 	}
 }
@@ -68,6 +74,8 @@ impl_enum_from!(LocalItemRef::Function(ArenaIndex<Item<Function>>));
 impl_enum_from!(LocalItemRef::Output(ArenaIndex<Item<Output>>));
 impl_enum_from!(LocalItemRef::Solve(ArenaIndex<Item<Solve>>));
 impl_enum_from!(LocalItemRef::TypeAlias(ArenaIndex<Item<TypeAlias>>));
+impl_enum_from!(LocalItemRef::Dimension(ArenaIndex<Item<Dimension>>));
+impl_enum_from!(LocalItemRef::Unit(ArenaIndex<Item<Unit>>));
 
 /// Global reference to an item.
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
@@ -112,6 +120,8 @@ impl<'a> DebugPrint<'a> for ItemRef {
 			LocalItemRef::Output(i) => model[i].debug_print(db),
 			LocalItemRef::Solve(i) => model[i].debug_print(db),
 			LocalItemRef::TypeAlias(i) => model[i].debug_print(db),
+			LocalItemRef::Dimension(i) => model[i].debug_print(db),
+			LocalItemRef::Unit(i) => model[i].debug_print(db),
 		}
 	}
 }

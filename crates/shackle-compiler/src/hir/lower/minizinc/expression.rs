@@ -368,6 +368,23 @@ impl ExpressionCollector<'_> {
 				inst: b.var_type().unwrap_or(VarType::Par),
 				opt: b.opt_type().unwrap_or(OptType::NonOpt),
 				primitive_type: u.primitive_type(),
+				unit: u.unit().map(|unit| match unit {
+					minizinc::PrimitiveUnit::TypeInstIdentifier(t) => {
+						let origin = Origin::new(&t);
+						let ident = Identifier::new(t.name(), self.db);
+						tiids
+							.units
+							.entry(ident)
+							.or_insert_with(|| UnitTypeVariableDeclaration {
+								name: self.alloc_pattern(origin.clone(), ident),
+							});
+						self.alloc_expression(origin, Expression::Identifier(ident))
+					}
+					minizinc::PrimitiveUnit::TypeInstEnumIdentifier(e) => {
+						self.ident_exp(Origin::new(&e), e.name())
+					}
+					minizinc::PrimitiveUnit::Expression(e) => self.collect_expression(e),
+				}),
 			},
 			minizinc::Domain::TypeInstIdentifier(tiid) => {
 				let ident = Identifier::new(tiid.name(), self.db);
@@ -388,16 +405,18 @@ impl ExpressionCollector<'_> {
 						tiid.is_indexable = tiid.is_indexable || is_array_dim;
 						*in_param = *in_param || is_fn_parameter;
 					})
-					.or_insert((
-						is_fn_parameter,
-						TypeInstIdentifierDeclaration {
-							name: self.alloc_pattern(origin.clone(), ident),
-							anonymous: false,
-							is_enum: false,
-							is_varifiable: inst == Some(VarType::Var) || is_array_dim,
-							is_indexable: is_array_dim,
-						},
-					));
+					.or_insert_with(|| {
+						(
+							is_fn_parameter,
+							TypeInstIdentifierDeclaration {
+								name: self.alloc_pattern(origin.clone(), ident),
+								anonymous: false,
+								is_enum: false,
+								is_varifiable: inst == Some(VarType::Var) || is_array_dim,
+								is_indexable: is_array_dim,
+							},
+						)
+					});
 				Type::Bounded {
 					inst,
 					opt,
@@ -414,16 +433,18 @@ impl ExpressionCollector<'_> {
 						tiid.is_enum = true;
 						*in_param = *in_param || is_fn_parameter;
 					})
-					.or_insert((
-						is_fn_parameter,
-						TypeInstIdentifierDeclaration {
-							name: self.alloc_pattern(origin.clone(), ident),
-							anonymous: false,
-							is_enum: true,
-							is_varifiable: true,
-							is_indexable: false,
-						},
-					));
+					.or_insert_with(|| {
+						(
+							is_fn_parameter,
+							TypeInstIdentifierDeclaration {
+								name: self.alloc_pattern(origin.clone(), ident),
+								anonymous: false,
+								is_enum: true,
+								is_varifiable: true,
+								is_indexable: false,
+							},
+						)
+					});
 				let (inst, opt) = match (b.any_type(), b.var_type(), b.opt_type()) {
 					(true, _, _) => (None, None), // Unrestricted
 					(_, None, None) => (Some(VarType::Par), Some(OptType::NonOpt)), // No prefix means par non-opt
@@ -926,11 +947,18 @@ pub struct TypeInstIdentifiers {
 	pub tiids: FxHashMap<Identifier, (bool, TypeInstIdentifierDeclaration)>,
 	/// Anonymous type-inst ids
 	pub anons: Vec<TypeInstIdentifierDeclaration>,
+	/// Unit variable ids
+	pub units: FxHashMap<Identifier, UnitTypeVariableDeclaration>,
 }
 
 impl TypeInstIdentifiers {
 	/// Get the `TypeInstIdentifierDeclaration`s
-	pub fn into_vec(self) -> Vec<TypeInstIdentifierDeclaration> {
+	pub fn finish(
+		self,
+	) -> (
+		Box<[TypeInstIdentifierDeclaration]>,
+		Box<[UnitTypeVariableDeclaration]>,
+	) {
 		let mut tiids = self
 			.tiids
 			.into_values()
@@ -938,6 +966,8 @@ impl TypeInstIdentifiers {
 			.chain(self.anons)
 			.collect::<Vec<_>>();
 		tiids.sort_by_key(|tiid| tiid.name);
-		tiids
+		let mut units = self.units.into_values().collect::<Vec<_>>();
+		units.sort_by_key(|unit| unit.name);
+		(tiids.into_boxed_slice(), units.into_boxed_slice())
 	}
 }

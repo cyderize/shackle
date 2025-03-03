@@ -55,6 +55,7 @@ mod body;
 mod signature;
 mod toposort;
 mod typer;
+mod units;
 
 pub use self::{body::*, signature::*, toposort::*, typer::*};
 

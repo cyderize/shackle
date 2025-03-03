@@ -1686,6 +1686,33 @@ impl<'a, T: TypeContext> Typer<'a, T> {
 				.add_expression(ExpressionRef::new(self.item, expr), op);
 			return (op, self.types.bottom);
 		}
+		// Ignore these at this stage and deal with them during unit checking
+		if i == self.identifiers.literals.at && args.len() == 2 {
+			let lhs = args[0];
+			let rhs = args[1];
+			let fn_ty = Ty::function(
+				db.upcast(),
+				FunctionType {
+					return_type: lhs,
+					params: Box::new([lhs, rhs]),
+				},
+			);
+			self.ctx
+				.add_expression(ExpressionRef::new(self.item, expr), fn_ty);
+			return (fn_ty, lhs);
+		}
+		if i == self.identifiers.literals.coord && args.len() == 1 {
+			let fn_ty = Ty::function(
+				db.upcast(),
+				FunctionType {
+					return_type: args[0],
+					params: Box::new([args[0]]),
+				},
+			);
+			self.ctx
+				.add_expression(ExpressionRef::new(self.item, expr), fn_ty);
+			return (fn_ty, args[0]);
+		}
 
 		// If there's a variable in scope which is a function, use it
 		if let Some(p) = self.find_variable(expr, i) {
@@ -2314,16 +2341,18 @@ supported in operation types."
 				inst,
 				opt,
 				primitive_type,
+				unit,
 			} => {
 				set_unbounded(self);
-				let ty = match primitive_type {
+				let primitive_ty = match primitive_type {
 					PrimitiveType::Ann => Ty::ann(db.upcast()),
 					PrimitiveType::Bool => Ty::par_bool(db.upcast()),
 					PrimitiveType::Float => Ty::par_float(db.upcast()),
 					PrimitiveType::Int => Ty::par_int(db.upcast()),
 					PrimitiveType::String => Ty::string(db.upcast()),
 				};
-				ty.with_inst(db.upcast(), *inst)
+				let ty = primitive_ty
+					.with_inst(db.upcast(), *inst)
 					.unwrap_or_else(|| {
 						let (src, span) =
 							NodeRef::from(EntityRef::new(db, self.item, t)).source_span(db);
@@ -2335,14 +2364,66 @@ supported in operation types."
 								ty: inst
 									.pretty_print()
 									.into_iter()
-									.chain([ty.pretty_print(db.upcast())])
+									.chain([primitive_ty.pretty_print(db.upcast())])
 									.collect::<Vec<_>>()
 									.join(" "),
 							},
 						);
 						self.types.error
 					})
-					.with_opt(db.upcast(), *opt)
+					.with_opt(db.upcast(), *opt);
+
+				if let Some(u) = unit {
+					match &self.data[*u] {
+						Expression::Identifier(i) => {
+							if let Some(p) = self.find_variable(*u, *i) {
+								let unit_ref = ExpressionRef::new(self.item, *u);
+								self.ctx.add_identifier_resolution(unit_ref, p);
+								match self.ctx.type_pattern(db, p) {
+									PatternTy::Variable(_)
+									| PatternTy::Argument(_)
+									| PatternTy::Enum(_)
+									| PatternTy::TyVar(_) => {}
+									PatternTy::Computing => {
+										// Error will be emitted during topological sorting
+										return self.types.error;
+									}
+									_ => {
+										let (src, span) =
+											NodeRef::from(EntityRef::new(db, self.item, t))
+												.source_span(db);
+										self.ctx.add_diagnostic(
+											self.item,
+											TypeMismatch {
+												src,
+												span,
+												msg: "Expected a unit.".to_owned(),
+											},
+										);
+										return self.types.error;
+									}
+								}
+							} else {
+								let (src, span) = NodeRef::from(EntityRef::new(db, self.item, *u))
+									.source_span(db);
+								self.ctx.add_diagnostic(
+									self.item,
+									UndefinedIdentifier {
+										identifier: i.pretty_print(db),
+										src,
+										span,
+									},
+								);
+								return self.types.error;
+							}
+						}
+						_ => {
+							self.collect_expression(*u);
+						}
+					};
+				}
+
+				ty
 			}
 			Type::Bounded { inst, opt, domain } => {
 				let mut ty = match &self.data[*domain] {

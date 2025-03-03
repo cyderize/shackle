@@ -26,7 +26,7 @@ ast_enum!(
 	"set_literal" => SetLiteral,
 	"boolean_literal" => BooleanLiteral,
 	"string_literal" => StringLiteral,
-	"identifier" | "quoted_identifier" | "inversed_identifier" => Identifier,
+	"identifier" | "quoted_identifier" | "inversed_identifier" | "type_inst_id" | "type_inst_enum_id" => Identifier,
 	"absent" => Absent,
 	"infinity" => Infinity,
 	"anonymous" => Anonymous,
@@ -84,7 +84,7 @@ impl AnnotatedExpression {
 ast_enum!(
 	/// An identifier (quoted or normal)
 	Identifier,
-	"identifier" => UnquotedIdentifier,
+	"identifier" | "type_inst_id" | "type_inst_enum_id" => UnquotedIdentifier,
 	"quoted_identifier" => QuotedIdentifier,
 	"inversed_identifier" => InversedIdentifier
 );
@@ -262,7 +262,7 @@ ast_node!(
 );
 
 impl InfixOperator {
-	/// Get the left hand side
+	/// Get the operator
 	pub fn operator(&self) -> Operator {
 		child_with_field_name(self, "operator")
 	}
@@ -272,7 +272,7 @@ impl InfixOperator {
 		child_with_field_name(self, "left")
 	}
 
-	/// Get the left hand side
+	/// Get the right hand side
 	pub fn right(&self) -> Expression {
 		child_with_field_name(self, "right")
 	}

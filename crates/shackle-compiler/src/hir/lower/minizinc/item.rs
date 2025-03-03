@@ -55,6 +55,8 @@ impl ItemCollector<'_> {
 			minizinc::Item::Predicate(p) => self.collect_predicate(p),
 			minizinc::Item::Solve(s) => self.collect_solve(s),
 			minizinc::Item::TypeAlias(t) => self.collect_type_alias(t),
+			minizinc::Item::Dimension(d) => self.collect_dimension(d),
+			minizinc::Item::Unit(u) => self.collect_unit(u),
 		};
 		log::debug!("Produced HIR item {:?}", it);
 		self.source_map.insert(it.into(), Origin::new(&item));
@@ -350,12 +352,13 @@ impl ItemCollector<'_> {
 				}
 			})
 			.collect();
-		let type_inst_vars = tiids.into_vec().into_boxed_slice();
+		let (type_inst_vars, unit_vars) = tiids.finish();
 		let (data, source_map) = ctx.finish();
 		let index = self.model.functions.insert(Item::new(
 			Function {
 				annotations,
 				type_inst_vars,
+				unit_vars,
 				body,
 				pattern,
 				return_type,
@@ -401,6 +404,7 @@ impl ItemCollector<'_> {
 				},
 				opt: OptType::NonOpt,
 				primitive_type: PrimitiveType::Bool,
+				unit: None,
 			},
 		);
 		let mut tiids = TypeInstIdentifiers::default();
@@ -420,12 +424,13 @@ impl ItemCollector<'_> {
 				}
 			})
 			.collect();
-		let type_inst_vars = tiids.into_vec().into_boxed_slice();
+		let (type_inst_vars, unit_vars) = tiids.finish();
 		let (data, source_map) = ctx.finish();
-		let index = self.model.functions.insert(Item::new(
+		let index: ArenaIndex<Item<Function>> = self.model.functions.insert(Item::new(
 			Function {
 				annotations,
 				type_inst_vars,
+				unit_vars,
 				body,
 				parameters,
 				pattern,
@@ -483,6 +488,37 @@ impl ItemCollector<'_> {
 				name,
 				aliased_type,
 				annotations,
+			},
+			data,
+		));
+		self.model.items.push(index.into());
+		(ItemRef::new(self.db, self.owner, index), source_map)
+	}
+
+	fn collect_dimension(&mut self, d: minizinc::Dimension) -> (ItemRef, ItemDataSourceMap) {
+		let mut ctx = ExpressionCollector::new(self.db, self.identifiers, &mut self.diagnostics);
+		let name = ctx.collect_pattern(d.name().into());
+		let definition = d.definition().map(|e| ctx.collect_expression(e));
+		let (data, source_map) = ctx.finish();
+		let index = self
+			.model
+			.dimensions
+			.insert(Item::new(Dimension { name, definition }, data));
+		self.model.items.push(index.into());
+		(ItemRef::new(self.db, self.owner, index), source_map)
+	}
+
+	fn collect_unit(&mut self, u: minizinc::Unit) -> (ItemRef, ItemDataSourceMap) {
+		let mut ctx = ExpressionCollector::new(self.db, self.identifiers, &mut self.diagnostics);
+		let name = ctx.collect_pattern(u.name().into());
+		let dimension = ctx.collect_expression(u.dimension().into());
+		let definition = u.definition().map(|e| ctx.collect_expression(e));
+		let (data, source_map) = ctx.finish();
+		let index = self.model.units.insert(Item::new(
+			Unit {
+				name,
+				dimension,
+				definition,
 			},
 			data,
 		));

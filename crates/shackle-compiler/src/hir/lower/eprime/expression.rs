@@ -87,6 +87,7 @@ impl ExpressionCollector<'_> {
 				inst: var_type,
 				opt: OptType::NonOpt,
 				primitive_type: p,
+				unit: None,
 			},
 			CollectedDomain::Bounded(b) => Type::Bounded {
 				inst: Some(var_type),
@@ -151,6 +152,7 @@ impl ExpressionCollector<'_> {
 							inst: var_type,
 							opt: OptType::NonOpt,
 							primitive_type: p,
+							unit: None,
 						},
 						CollectedDomain::Bounded(b) => Type::Bounded {
 							inst: Some(var_type),

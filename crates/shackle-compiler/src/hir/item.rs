@@ -316,6 +316,8 @@ pub struct Function {
 	pub pattern: ArenaIndex<Pattern>,
 	/// Type-inst vars
 	pub type_inst_vars: Box<[TypeInstIdentifierDeclaration]>,
+	/// Unit variables
+	pub unit_vars: Box<[UnitTypeVariableDeclaration]>,
 	/// Function parameters
 	pub parameters: Box<[Parameter]>,
 	/// The body of this function
@@ -337,6 +339,13 @@ pub struct TypeInstIdentifierDeclaration {
 	pub is_varifiable: bool,
 	/// Whether this is indexable
 	pub is_indexable: bool,
+}
+
+/// Declaration of a unit identifier
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct UnitTypeVariableDeclaration {
+	/// The name of this identifier
+	pub name: ArenaIndex<Pattern>,
 }
 
 /// Function parameter
@@ -398,4 +407,24 @@ pub struct TypeAlias {
 	pub aliased_type: ArenaIndex<Type>,
 	/// Annotations
 	pub annotations: Box<[ArenaIndex<Expression>]>,
+}
+
+/// Dimension item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Dimension {
+	/// Name of this type alias
+	pub name: ArenaIndex<Pattern>,
+	/// The dimension this is derived from
+	pub definition: Option<ArenaIndex<Expression>>,
+}
+
+/// Unit item
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Unit {
+	/// Name of this unit
+	pub name: ArenaIndex<Pattern>,
+	/// The unit's dimension
+	pub dimension: ArenaIndex<Expression>,
+	/// The definition of this unit
+	pub definition: Option<ArenaIndex<Expression>>,
 }

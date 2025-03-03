@@ -20,6 +20,8 @@ ast_enum!(
 	"predicate" => Predicate,
 	"annotation" => Annotation,
 	"type_alias" => TypeAlias,
+	"dimension" => Dimension,
+	"unit_item" => Unit,
 );
 
 ast_node!(
@@ -461,6 +463,49 @@ impl TypeAlias {
 	}
 }
 
+ast_node!(
+	/// Dimension item
+	Dimension,
+	name,
+	definition
+);
+
+impl Dimension {
+	/// The name of this dimension
+	pub fn name(&self) -> Identifier {
+		child_with_field_name(self, "name")
+	}
+
+	/// The dimensions this is derived from
+	pub fn definition(&self) -> Option<Expression> {
+		optional_child_with_field_name(self, "definition")
+	}
+}
+
+ast_node!(
+	/// Dimension item
+	Unit,
+	name,
+	dimension,
+	definition
+);
+
+impl Unit {
+	/// The name of this unit
+	pub fn name(&self) -> Identifier {
+		child_with_field_name(self, "name")
+	}
+
+	/// The dimension of this unit
+	pub fn dimension(&self) -> Identifier {
+		child_with_field_name(self, "dimension")
+	}
+
+	/// The definition of the unit
+	pub fn definition(&self) -> Option<Expression> {
+		optional_child_with_field_name(self, "definition")
+	}
+}
 #[cfg(test)]
 mod test {
 	use expect_test::expect;

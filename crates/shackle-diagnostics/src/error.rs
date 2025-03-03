@@ -254,6 +254,21 @@ pub struct TypeMismatch {
 	pub span: SourceSpan,
 }
 
+/// A unit mismatch error
+#[derive(Error, Debug, Diagnostic, PartialEq, Eq, Clone)]
+#[error("Unit mismatch")]
+#[diagnostic(code(shackle::unit_mismatch))]
+pub struct UnitMismatch {
+	/// The source code
+	#[source_code]
+	pub src: SourceFile,
+	/// The error message
+	pub msg: String,
+	/// The span associated with the error
+	#[label("{msg}")]
+	pub span: SourceSpan,
+}
+
 /// A mismatch in branch/arm types
 #[derive(Error, Debug, Diagnostic, PartialEq, Eq, Clone)]
 #[error("Type mismatch")]
@@ -541,6 +556,10 @@ pub enum Error {
 	#[error(transparent)]
 	#[diagnostic(transparent)]
 	TypeMismatch(#[from] TypeMismatch),
+	/// Unit mismatch
+	#[error(transparent)]
+	#[diagnostic(transparent)]
+	UnitMismatch(#[from] UnitMismatch),
 	/// Branch mismatch
 	#[error(transparent)]
 	#[diagnostic(transparent)]

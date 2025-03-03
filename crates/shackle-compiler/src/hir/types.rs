@@ -18,6 +18,8 @@ pub enum Type {
 		opt: OptType,
 		/// The base type
 		primitive_type: PrimitiveType,
+		/// The unit associated with this type
+		unit: Option<ArenaIndex<Expression>>,
 	},
 	/// Bounded type or type-inst alias
 	Bounded {
@@ -152,12 +154,10 @@ impl Type {
 		t: ArenaIndex<Type>,
 		data: &ItemData,
 	) -> impl '_ + Iterator<Item = ArenaIndex<Expression>> {
-		Type::walk(t, data).filter_map(|t| {
-			if let Type::Bounded { domain, .. } = data[t] {
-				Some(domain)
-			} else {
-				None
-			}
+		Type::walk(t, data).filter_map(|t| match &data[t] {
+			Type::Bounded { domain, .. } => Some(*domain),
+			Type::Primitive { unit, .. } => *unit,
+			_ => None,
 		})
 	}
 

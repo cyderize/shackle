@@ -329,6 +329,23 @@ impl<'a> TopoSorter<'a> {
 				}
 				self.current.remove(&p);
 			}
+			LocalItemRef::Dimension(d) => {
+				let p = PatternRef::new(item, model[d].name);
+				self.current.insert(p);
+				if let Some(e) = model[d].definition {
+					self.visit_expression(ExpressionRef::new(item, e), None);
+				}
+				self.current.remove(&p);
+			}
+			LocalItemRef::Unit(u) => {
+				let p = PatternRef::new(item, model[u].name);
+				self.current.insert(p);
+				self.visit_expression(ExpressionRef::new(item, model[u].dimension), None);
+				if let Some(e) = model[u].definition {
+					self.visit_expression(ExpressionRef::new(item, e), None);
+				}
+				self.current.remove(&p);
+			}
 		}
 		self.sorted.push(item);
 	}

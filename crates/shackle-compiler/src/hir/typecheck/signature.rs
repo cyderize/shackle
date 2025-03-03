@@ -168,6 +168,12 @@ impl SignatureTypeContext {
 						ty_var
 					})
 					.collect::<Box<[_]>>();
+				for uv in it.unit_vars.iter() {
+					self.add_declaration(
+						PatternRef::new(item, uv.name),
+						PatternTy::Variable(db.type_registry().bottom),
+					);
+				}
 				let params = it
 					.parameters
 					.iter()
@@ -437,7 +443,42 @@ impl SignatureTypeContext {
 					},
 				);
 			}
-			_ => unreachable!("Item {:?} does not have signature", it),
+			LocalItemRef::Dimension(d) => {
+				let it = &model[d];
+				let pat = PatternRef::new(item, it.name);
+				self.add_declaration(pat, PatternTy::Computing);
+				self.add_declaration(pat, PatternTy::Variable(db.type_registry().bottom));
+			}
+			LocalItemRef::Unit(u) => {
+				let it = &model[u];
+				let pat = PatternRef::new(item, it.name);
+				self.add_declaration(pat, PatternTy::Computing);
+				let mut typer = Typer::new(db, self, item, data);
+				let types = db.type_registry();
+				typer.collect_expression(it.dimension);
+				if let Some(def) = it.definition {
+					let actual = typer.collect_expression(def);
+					if !actual.is_subtype_of(db.upcast(), types.par_float) {
+						let (src, span) =
+							NodeRef::from(EntityRef::new(db, item, def)).source_span(db);
+						self.add_diagnostic(
+							item,
+							TypeMismatch {
+								src,
+								span,
+								msg: format!(
+									"Expected unit definition, but got '{}'",
+									actual.pretty_print(db.upcast())
+								),
+							},
+						);
+					}
+				}
+				self.add_declaration(pat, PatternTy::Variable(types.bottom));
+			}
+			LocalItemRef::Assignment(_) | LocalItemRef::Constraint(_) | LocalItemRef::Output(_) => {
+				unreachable!("Item {:?} does not have signature", it)
+			}
 		}
 	}
 

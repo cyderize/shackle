@@ -29,6 +29,8 @@ impl Format for minizinc::Item {
 			minizinc::Item::Predicate(x) => x.format(formatter),
 			minizinc::Item::Solve(x) => x.format(formatter),
 			minizinc::Item::TypeAlias(x) => x.format(formatter),
+			minizinc::Item::Dimension(x) => x.format(formatter),
+			minizinc::Item::Unit(x) => x.format(formatter),
 		};
 		elements.push(element);
 		elements.push(Element::text(";"));
@@ -334,5 +336,35 @@ impl Format for minizinc::TypeAlias {
 			Element::text(" = "),
 			self.aliased_type().format(formatter),
 		])
+	}
+}
+
+impl Format for minizinc::Dimension {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		let mut elements = vec![
+			Element::text("unit type "),
+			minizinc::Expression::Identifier(self.name()).format(formatter),
+		];
+		if let Some(def) = self.definition() {
+			elements.push(Element::text(" = "));
+			elements.push(def.format(formatter));
+		}
+		Element::sequence(elements)
+	}
+}
+
+impl Format for minizinc::Unit {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		let mut elements = vec![
+			Element::text("unit "),
+			minizinc::Expression::Identifier(self.dimension()).format(formatter),
+			Element::text(": "),
+			minizinc::Expression::Identifier(self.name()).format(formatter),
+		];
+		if let Some(def) = self.definition() {
+			elements.push(Element::text(" = "));
+			elements.push(def.format(formatter));
+		}
+		Element::sequence(elements)
 	}
 }

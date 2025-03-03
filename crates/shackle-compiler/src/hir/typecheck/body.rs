@@ -178,6 +178,16 @@ impl BodyTypeContext {
 					typer.typecheck_expression(*ann, types.ann);
 				}
 			}
+			LocalItemRef::Dimension(d) => {
+				let it = &model[d];
+				if let Some(def) = it.definition {
+					// Collect type but ignore, since it will be checked later
+					typer.collect_expression(def);
+				}
+			}
+			LocalItemRef::Unit(_) => {
+				// Already done in signature
+			}
 		}
 	}
 

@@ -1,7 +1,10 @@
 //! AST representation for types
 
 use super::{Children, Expression, Identifier};
-use crate::ast::{ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode};
+use crate::ast::{
+	ast_enum, ast_node, child_with_field_name, children_with_field_name,
+	optional_child_with_field_name, AstNode,
+};
 
 ast_enum!(
 	/// Type from a declaration
@@ -268,13 +271,20 @@ ast_enum!(
 ast_node!(
 	/// Unbounded primitive type domain
 	UnboundedDomain,
-	primitive_type
+	primitive_type,
+	unit
 );
 
 impl UnboundedDomain {
 	/// Get the primitive type of this domain
 	pub fn primitive_type(&self) -> PrimitiveType {
-		match self.cst_text() {
+		match self
+			.cst_node()
+			.as_ref()
+			.child_by_field_name("primitive_type")
+			.unwrap()
+			.kind()
+		{
 			"ann" => PrimitiveType::Ann,
 			"bool" => PrimitiveType::Bool,
 			"float" => PrimitiveType::Float,
@@ -282,6 +292,11 @@ impl UnboundedDomain {
 			"string" => PrimitiveType::String,
 			_ => unreachable!(),
 		}
+	}
+
+	/// The unit (if any)
+	pub fn unit(&self) -> Option<PrimitiveUnit> {
+		optional_child_with_field_name(self, "unit")
 	}
 }
 
@@ -326,6 +341,14 @@ impl PrimitiveType {
 		matches!(*self, PrimitiveType::String)
 	}
 }
+
+ast_enum!(
+	/// Unit for a primitive type
+	PrimitiveUnit,
+	"type_inst_id" => TypeInstIdentifier,
+	"type_inst_enum_id" => TypeInstEnumIdentifier,
+	_ => Expression
+);
 
 ast_node!(
 	/// Type-inst identifier `$T`

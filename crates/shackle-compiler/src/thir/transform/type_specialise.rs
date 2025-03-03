@@ -281,8 +281,9 @@ impl<'a, Dst: Marker> TypeSpecialiser<'a, Dst> {
 			!model[f]
 				.annotations()
 				.has(model, self.ids.annotations.mzn_unreachable),
-			"Tried to instantiate unreachable internal function {}",
-			PrettyPrinter::new(db, model).pretty_print_signature(f.into())
+			"Tried to instantiate unreachable internal function {} with args {}",
+			PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
+			args.iter().map(|ty| ty.pretty_print(db.upcast())).collect::<Vec<_>>().join(", ")
 		);
 
 		let needs_instantiation = model[f].is_polymorphic()
@@ -1092,10 +1093,7 @@ mod test {
 			expect!([r#"
     array ['..<int, int>'(1, 3)] of tuple(int, int): x;
     var '..<int, int>'(1, 3): i;
-    tuple(var int, var int): v = let {
-      array [int] of tuple(int, int): _DECL_1 = x;
-      var int: _DECL_2 = i;
-    } in ('[]<array [int] of var int, var int>'(arrayXd(_DECL_1, [(_DECL_3).1 | _DECL_3 in _DECL_1]), _DECL_2), '[]<array [int] of var int, var int>'(arrayXd(_DECL_1, [(_DECL_4).2 | _DECL_4 in _DECL_1]), _DECL_2));
+    tuple(var int, var int): v = '[]<array [int] of tuple(var int, var int), var int>'(x, i);
 "#]),
 		)
 	}
@@ -1112,10 +1110,7 @@ mod test {
 			expect!([r#"
     array ['..<int, int>'(1, 3)] of record(int: foo, int: bar): x;
     var '..<int, int>'(1, 3): i;
-    record(var int: foo, var int: bar): v = let {
-      array [int] of record(int: foo, int: bar): _DECL_1 = x;
-      var int: _DECL_2 = i;
-    } in (foo: '[]<array [int] of var int, var int>'(arrayXd(_DECL_1, [(_DECL_3).foo | _DECL_3 in _DECL_1]), _DECL_2), bar: '[]<array [int] of var int, var int>'(arrayXd(_DECL_1, [(_DECL_4).bar | _DECL_4 in _DECL_1]), _DECL_2));
+    record(var int: foo, var int: bar): v = '[]<array [int] of record(var int: bar, var int: foo), var int>'(x, i);
 "#]),
 		)
 	}

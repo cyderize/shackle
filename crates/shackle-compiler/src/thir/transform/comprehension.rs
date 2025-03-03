@@ -97,12 +97,17 @@ impl<Dst: Marker> Folder<'_, Dst> for ComprehensionRewriter<Dst> {
 			if let ExpressionData::SetComprehension(c) = &**expression {
 				// Set comprehensions are turned into array comprehensions surrounded by array2set()
 				let array = self.rewrite_set_comprehension(db, model, c, SurroundingCall::Other);
-				return Expression::new(
+				eprintln!(
+					"{} at {}",
+					expression.ty().pretty_print(db.upcast()),
+					expression.origin().pretty_print(db)
+				);
+				let desugared = Expression::new(
 					db,
 					&self.result,
 					expression.origin(),
 					LookupCall {
-						function: self.ids.functions.array2set.into(),
+						function: self.ids.functions.mzn_array2set.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.result,
@@ -111,6 +116,15 @@ impl<Dst: Marker> Folder<'_, Dst> for ComprehensionRewriter<Dst> {
 						)],
 					},
 				);
+				assert_eq!(
+					expression.ty(),
+					desugared.ty(),
+					"Desugared type has changed from {} to {} at {}",
+					expression.ty().pretty_print(db.upcast()),
+					desugared.ty().pretty_print(db.upcast()),
+					expression.origin().pretty_print(db)
+				);
+				return desugared;
 			}
 			fold_expression(self, db, model, expression)
 		})
@@ -642,7 +656,7 @@ mod test {
 			expect!([r#"
     set of int: S;
     function var int: foo(int: x);
-    var set of int: x = array2set([foo(i) | i in S]);
+    var set of int: x = mzn_array2set([foo(i) | i in S]);
 "#]),
 		)
 	}
@@ -659,7 +673,7 @@ mod test {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var set of int: x = array2set([if _DECL_1 then let {
+    var set of int: x = mzn_array2set([if _DECL_1 then let {
       var opt int: _DECL_2 = foo(i);
     } in _DECL_2 else let {
       var opt int: _DECL_3 = <>;

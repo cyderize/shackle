@@ -298,7 +298,7 @@ impl EntityRef {
 		db.intern_entity_ref(EntityRefData(item, entity.into()))
 	}
 
-	/// Get the underlying item refernce
+	/// Get the underlying item reference
 	pub fn item(&self, db: &dyn Hir) -> ItemRef {
 		db.lookup_intern_entity_ref(*self).0
 	}

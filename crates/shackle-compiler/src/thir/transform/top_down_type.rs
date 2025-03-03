@@ -304,6 +304,9 @@ impl<'a, Src: Marker, Dst: Marker> TopDownTyper<'a, Dst, Src> {
 								.collect::<Vec<_>>()
 						}
 					}
+					Callable::Builtin => {
+						return true;
+					}
 				};
 				self.extend(c.arguments.iter().zip(params));
 				return false;

@@ -273,7 +273,8 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 						let is_root = model[f].name().is_root(db)
 							|| model[f]
 								.annotations()
-								.has(model, analyser.ids.annotations.promise_total);
+								.has(model, analyser.ids.annotations.promise_total)
+							|| model[f].return_type() == analyser.tys.ann;
 						analyser.update(b, if is_root { root } else { non_root }, false);
 					}
 				}
@@ -536,6 +537,7 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 					Callable::EnumConstructor(_) | Callable::EnumDestructor(_) => {
 						unreachable!()
 					}
+					Callable::Builtin => {}
 				}
 				for e in c.arguments.iter() {
 					if e.ty().is_bool(db.upcast()) {

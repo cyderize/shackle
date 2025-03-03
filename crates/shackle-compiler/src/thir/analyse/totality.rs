@@ -38,6 +38,7 @@ pub fn analyse_totality(
 	modes: &ModeAnalysis<'_>,
 ) -> ArenaMap<FunctionItem, Totality> {
 	let ids = db.identifier_registry();
+	let tys = db.type_registry();
 	let mut todo = Vec::new();
 	let mut result = ArenaMap::with_capacity(model.functions_len());
 	let mut reverse_dependencies: FxHashMap<FunctionId, FxHashMap<FunctionId, bool>> =
@@ -46,7 +47,8 @@ pub fn analyse_totality(
 		result.insert(idx, Totality::Total);
 		let already_total = f.annotations().has(model, ids.annotations.promise_total)
 			|| f.name().is_root(db)
-			|| f.body().is_none();
+			|| f.body().is_none()
+			|| f.return_type() == tys.ann;
 		if !already_total {
 			if let Some(body) = f.body() {
 				let mut v = TotalityVisitor {

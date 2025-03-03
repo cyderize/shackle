@@ -502,7 +502,7 @@ fn test_array() {
 		}
 	);
 	assert!(types.array_int_of_par_int.known_par(db));
-	assert!(!types.array_int_of_par_int.known_varifiable(db));
+	assert!(types.array_int_of_par_int.known_varifiable(db));
 	assert!(!types.array_int_of_par_int.known_enumerable(db));
 
 	assert_eq!(
@@ -514,7 +514,7 @@ fn test_array() {
 		}
 	);
 	assert!(!types.array_int_of_var_int.known_par(db));
-	assert!(!types.array_int_of_var_int.known_varifiable(db));
+	assert!(types.array_int_of_var_int.known_varifiable(db));
 	assert!(!types.array_int_of_var_int.known_enumerable(db));
 }
 

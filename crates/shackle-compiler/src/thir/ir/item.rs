@@ -270,7 +270,7 @@ impl<T: Marker> Declaration<T> {
 				ty.is_subtype_of(db.upcast(), self.ty()),
 				"RHS type {} ({}) does not match declaration LHS type {}",
 				ty.pretty_print(db.upcast()),
-				rhs.origin().debug_print(db),
+				rhs.origin().pretty_print(db),
 				self.ty().pretty_print(db.upcast())
 			);
 		}
@@ -420,10 +420,7 @@ impl FunctionName {
 	/// Get this name but with `_root` appended
 	pub fn root(&self, db: &dyn Thir) -> Self {
 		match *self {
-			FunctionName::Named(i) => FunctionName::Named(Identifier::new(
-				format!("{}_root", i.lookup(db.upcast())),
-				db.upcast(),
-			)),
+			FunctionName::Named(i) => FunctionName::Named(i.root(db.upcast())),
 			_ => Self::anonymous(),
 		}
 	}
@@ -431,7 +428,7 @@ impl FunctionName {
 	/// Whether or not this function name ends with `_root`
 	pub fn is_root(&self, db: &dyn Thir) -> bool {
 		match *self {
-			FunctionName::Named(i) => i.lookup(db.upcast()).ends_with("_root"),
+			FunctionName::Named(i) => i.is_root(db.upcast()),
 			_ => false,
 		}
 	}
@@ -659,7 +656,7 @@ impl<T: Marker> Function<T> {
 				ty.pretty_print(db.upcast()),
 				self.return_type().pretty_print(db.upcast()),
 				self.name().pretty_print(db),
-				body.origin().debug_print(db)
+				body.origin().pretty_print(db)
 			);
 		}
 	}

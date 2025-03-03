@@ -13,6 +13,7 @@ use shackle_diagnostics::{CyclicDefinition, Error};
 
 use super::PatternTy;
 use crate::{
+	constants::IdentifierRegistry,
 	hir::{
 		db::Hir,
 		ids::{ExpressionRef, ItemRef, LocalItemRef, NodeRef, PatternRef},
@@ -61,6 +62,7 @@ pub fn topological_sort(db: &dyn Hir) -> (Arc<Vec<ItemRef>>, Arc<Vec<Error>>) {
 /// Topological sorter
 pub struct TopoSorter<'a> {
 	db: &'a dyn Hir,
+	ids: Arc<IdentifierRegistry>,
 	sorted: Vec<ItemRef>,
 	visited: FxHashSet<ItemRef>,
 	current: FxHashSet<PatternRef>,
@@ -73,6 +75,7 @@ impl<'a> TopoSorter<'a> {
 	pub fn new(db: &'a dyn Hir, assignments: FxHashMap<ItemRef, ItemRef>) -> Self {
 		Self {
 			db,
+			ids: db.identifier_registry(),
 			sorted: Vec::new(),
 			visited: FxHashSet::default(),
 			current: FxHashSet::default(),
@@ -227,9 +230,32 @@ impl<'a> TopoSorter<'a> {
 							// Ignore this function since it has been subsumed by another
 							return;
 						}
+
+						if !name.is_root(self.db) {
+							// Make sure root versions of this function appear first
+							let ps = self.db.lookup_global_function(name.root(self.db));
+							for p in ps.iter() {
+								let signature = self.db.lookup_item_signature(p.item());
+								let matches = match &signature.patterns[p] {
+									PatternTy::Function(fe) => {
+										fe.overload.params().len() == f.overload.params().len()
+									}
+									// .instantiate_ty_params(
+									// 	self.db.upcast(),
+									// 	f.overload.params(),
+									// )
+									// .is_ok(),
+									_ => false,
+								};
+								if matches {
+									self.run(p.item());
+								}
+							}
+						}
 					}
 					_ => unreachable!(),
 				}
+
 				self.current.insert(p);
 				let data = local_item.data(&model);
 				for p in model[f].parameters.iter() {
@@ -247,9 +273,22 @@ impl<'a> TopoSorter<'a> {
 					self.visit_expression(ExpressionRef::new(item, *ann), None);
 				}
 				if let Some(body) = model[f].body {
-					// Inside this expression, don't visit function items for calls, instead visit the body since we
-					// only care about globals and recursive functions are allowed.
-					self.visit_expression(ExpressionRef::new(item, body), Some(p));
+					if model[f]
+						.annotations
+						.iter()
+						.any(|e| match model[f].data[*e] {
+							Expression::Identifier(ident) => {
+								ident == self.ids.annotations.mzn_inline
+									|| ident == self.ids.annotations.mzn_inline_call_by_name
+							}
+							_ => false,
+						}) {
+						self.visit_expression(ExpressionRef::new(item, body), None);
+					} else {
+						// Inside this expression, don't visit function items for calls, instead visit the body since we
+						// only care about globals and recursive functions are allowed.
+						self.visit_expression(ExpressionRef::new(item, body), Some(p));
+					}
 				}
 				self.current.remove(&p);
 			}

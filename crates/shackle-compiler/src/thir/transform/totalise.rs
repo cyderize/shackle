@@ -1099,7 +1099,8 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				},
 			);
 
-			if value.ty().is_bool(db.upcast()) {
+			if value.ty() == self.tys.par_bool || value.ty() == self.tys.var_bool {
+				// Capture partiality in boolean
 				return Expression::new(
 					db,
 					&self.totalised_model,
@@ -1453,7 +1454,8 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 				}
 				fold_function_id(self, db, model, *f)
 			})()),
-			_ => unreachable!(),
+			Callable::Builtin => Callable::Builtin,
+			e => unreachable!("Unexpected {:?}", e),
 		};
 		let arguments = c
 			.arguments
@@ -1556,7 +1558,7 @@ impl<'a, Dst: Marker> Totaliser<'a, Dst> {
 			return val;
 		}
 
-		if val.ty().is_bool(db.upcast()) {
+		if val.ty() == self.tys.par_bool || val.ty() == self.tys.var_bool {
 			// Capture partiality in boolean
 			definedness.push(val);
 			return Expression::new(

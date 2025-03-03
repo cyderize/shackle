@@ -279,7 +279,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 						_ => unreachable!(),
 					}
 				}
-			} else if function.name() == ids.functions.erase_enum {
+			} else if function.name() == ids.functions.enum2int {
 				// For compatibility with old minizinc, we can just directly coerce
 				let d = function.parameter(0);
 				let ident = self.model[d]
@@ -561,6 +561,7 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 						})()
 					}
 					Callable::Expression(e) => format!("({})", self.pretty_print_expression(e)),
+					Callable::Builtin => "mzn_builtin".to_owned(),
 				};
 				let args = c
 					.arguments

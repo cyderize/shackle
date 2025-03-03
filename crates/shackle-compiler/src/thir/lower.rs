@@ -847,26 +847,43 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 			}
 			hir::Expression::BooleanLiteral(b) => alloc_expression(*b, self, origin),
 			hir::Expression::Call(c) => {
-				let function = if let hir::Expression::Identifier(_) = self.data[c.function] {
-					let res = self.types.name_resolution(c.function).unwrap();
-					let ident = self.parent.resolutions.get(&res).unwrap_or_else(|| {
-						panic!(
-							"Did not lower {:?} at {:?} used by {:?} at {:?}",
-							res,
-							NodeRef::from(res.into_entity(self.parent.db.upcast()))
+				let function = if let hir::Expression::Identifier(name) = self.data[c.function] {
+					if name == self.parent.ids.functions.mzn_builtin {
+						Callable::Builtin
+					} else {
+						let res = self.types.name_resolution(c.function).unwrap_or_else(|| {
+							panic!(
+								"No name resolution in types for {:?} at {:?}",
+								c.function,
+								NodeRef::from(EntityRef::new(
+									self.parent.db.upcast(),
+									self.item,
+									c.function
+								))
+								.source_span(self.parent.db.upcast())
+							);
+						});
+						let ident = self.parent.resolutions.get(&res).unwrap_or_else(|| {
+							panic!(
+								"Did not lower {:?} at {:?} used by {:?} at {:?}",
+								res,
+								NodeRef::from(res.into_entity(self.parent.db.upcast()))
+									.source_span(self.parent.db.upcast()),
+								ExpressionRef::new(self.item, c.function),
+								NodeRef::from(EntityRef::new(
+									self.parent.db.upcast(),
+									self.item,
+									c.function
+								))
 								.source_span(self.parent.db.upcast()),
-							ExpressionRef::new(self.item, c.function),
-							NodeRef::from(EntityRef::new(
-								self.parent.db.upcast(),
-								self.item,
-								c.function
-							))
-							.source_span(self.parent.db.upcast()),
-						)
-					});
-					match ident {
-						LoweredIdentifier::Callable(c) => c.clone(),
-						_ => Callable::Expression(Box::new(self.collect_expression(c.function))),
+							)
+						});
+						match ident {
+							LoweredIdentifier::Callable(c) => c.clone(),
+							_ => {
+								Callable::Expression(Box::new(self.collect_expression(c.function)))
+							}
+						}
 					}
 				} else {
 					Callable::Expression(Box::new(self.collect_expression(c.function)))
@@ -1611,7 +1628,7 @@ impl<'a, 'b> ExpressionCollector<'a, 'b> {
 			})
 			.chain([alloc_expression(
 				LookupCall {
-					function: self.parent.ids.functions.array_access.into(),
+					function: self.parent.ids.functions.mzn_slice.into(),
 					arguments: vec![collection_ident, slice_tuple],
 				},
 				self,

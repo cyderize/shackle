@@ -59,9 +59,9 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 	}
 
 	fn add_function(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.functions.erase_enum
-			|| model[f].name() == self.ids.functions.mzn_to_enum
-			|| model[f].name() == self.ids.functions.mzn_erase_index_sets
+		if model[f].name() == self.ids.functions.enum2int
+			|| model[f].name() == self.ids.functions.to_enum_internal
+			|| model[f].name() == self.ids.functions.index2int
 			|| model[f].name() == self.ids.functions.enum_of
 		{
 			// Remove unnecessary functions
@@ -71,9 +71,9 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 	}
 
 	fn fold_function_body(&mut self, db: &dyn Thir, model: &Model<Src>, f: FunctionId<Src>) {
-		if model[f].name() == self.ids.functions.erase_enum
-			|| model[f].name() == self.ids.functions.mzn_to_enum
-			|| model[f].name() == self.ids.functions.mzn_erase_index_sets
+		if model[f].name() == self.ids.functions.enum2int
+			|| model[f].name() == self.ids.functions.to_enum_internal
+			|| model[f].name() == self.ids.functions.index2int
 			|| model[f].name() == self.ids.functions.enum_of
 		{
 			// Remove unnecessary functions
@@ -191,11 +191,11 @@ impl<Dst: Marker, Src: Marker> Folder<'_, Dst, Src> for EnumEraser<Dst, Src> {
 		maybe_grow_stack(|| {
 			if let ExpressionData::Call(c) = &**expression {
 				if let Callable::Function(f) = &c.function {
-					if model[*f].name() == self.ids.functions.erase_enum
-						|| model[*f].name() == self.ids.functions.mzn_erase_index_sets
+					if model[*f].name() == self.ids.functions.enum2int
+						|| model[*f].name() == self.ids.functions.index2int
 					{
 						return self.fold_expression(db, model, &c.arguments[0]);
-					} else if model[*f].name() == self.ids.functions.mzn_to_enum {
+					} else if model[*f].name() == self.ids.functions.to_enum_internal {
 						return self.fold_expression(db, model, &c.arguments[1]);
 					} else if model[*f].name() == self.ids.functions.enum_of {
 						if let Some(e) = c.arguments[0].ty().enum_ty(db.upcast()) {

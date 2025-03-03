@@ -2,6 +2,8 @@
 //!
 //! Tracks desugarings performed when lowering HIR to THIR.
 
+use std::fmt::Write;
+
 use miette::SourceSpan;
 use shackle_diagnostics::SourceFile;
 
@@ -54,9 +56,42 @@ impl Origin {
 		}
 	}
 
-	/// Debug print this origin
-	pub fn debug_print(&self, db: &dyn Thir) -> String {
+	/// Pretty print this origin
+	pub fn pretty_print(&self, db: &dyn Thir) -> String {
 		let (src, span) = self.source_span(db);
-		format!("{}[{}:{}]", src.name(), span.offset(), span.len(),)
+		let mut from_line = 0;
+		let mut from_char = 0;
+		let mut to_line = 0;
+		let mut to_char = 0;
+
+		let mut iter = src.contents()[0..span.offset() + span.len()]
+			.chars()
+			.enumerate()
+			.peekable();
+		while let Some((i, char)) = iter.next() {
+			if matches!(char, '\r' | '\n') {
+				if i < span.offset() {
+					from_line += 1;
+					from_char = 0;
+				}
+				to_line += 1;
+				to_char = 0;
+				if char == '\r' {
+					let _ = iter.next_if(|(_, c)| *c == '\n');
+				}
+			} else {
+				if i < span.offset() {
+					from_char += 1;
+				}
+				to_char += 1;
+			}
+		}
+		let mut s = format!("{}:{}.{}", src.name(), from_line + 1, from_char + 1);
+		if from_line != to_line {
+			write!(&mut s, "-{}.{}", to_line + 1, to_char + 1).unwrap();
+		} else if from_char != to_char {
+			write!(&mut s, "-{}", to_char + 1).unwrap();
+		}
+		s
 	}
 }

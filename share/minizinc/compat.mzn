@@ -190,11 +190,11 @@ function any $T: mzn_element_internal(
 	tuple(int, int, int, int, int, int): indices,
 ) = x[indices.1, indices.2, indices.3, indices.4, indices.5, indices.6];
 
-function var int: erase_enum(var $$E) :: mzn_internal_representation;
-function int: erase_enum($$E) :: mzn_internal_representation;
-function var opt int: erase_enum(var opt $$E) :: mzn_internal_representation;
-function opt int: erase_enum(opt $$E) :: mzn_internal_representation;
-function var set of int: erase_enum(var set of $$E: x) :: mzn_internal_representation;
+function var int: enum2int(var $$E) :: mzn_internal_representation;
+function int: enum2int($$E) :: mzn_internal_representation;
+function var opt int: enum2int(var opt $$E) :: mzn_internal_representation;
+function opt int: enum2int(opt $$E) :: mzn_internal_representation;
+function var set of int: enum2int(var set of $$E: x) :: mzn_internal_representation;
 
 function set of $$E: index_set(array [$$E] of any $U: x);
 function set of $$E: index_set_1of2(array [$$E, _] of any $U: x);

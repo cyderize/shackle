@@ -750,7 +750,7 @@ pub fn fold_declaration_id<'a, T: Marker, U: Marker, F: Folder<'a, U, T> + ?Size
 			panic!(
 				"Declaration {} at {} has not been added to destination model",
 				PrettyPrinter::new(db, model).pretty_print_signature(d.into()),
-				model[d].origin().debug_print(db)
+				model[d].origin().pretty_print(db)
 			)
 		})
 }
@@ -803,7 +803,7 @@ pub fn fold_enumeration_id<'a, T: Marker, U: Marker, F: Folder<'a, U, T> + ?Size
 			panic!(
 				"Enumeration {} at {} has not been added to destination model",
 				PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
-				model[a].origin().debug_print(db)
+				model[a].origin().pretty_print(db)
 			)
 		})
 }
@@ -895,7 +895,7 @@ pub fn fold_function_id<'a, T: Marker, U: Marker, F: Folder<'a, U, T> + ?Sized>(
 		panic!(
 			"Function {} at {} has not been added to destination model",
 			PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
-			model[f].origin().debug_print(db)
+			model[f].origin().pretty_print(db)
 		)
 	})
 }
@@ -958,7 +958,7 @@ pub fn fold_output_id<'a, T: Marker, U: Marker, F: Folder<'a, U, T> + ?Sized>(
 		panic!(
 			"Output item {} at {} has not been added to destination model",
 			PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
-			model[a].origin().debug_print(db)
+			model[a].origin().pretty_print(db)
 		)
 	})
 }
@@ -1044,6 +1044,7 @@ pub fn fold_callable<'a, T: Marker, U: Marker, F: Folder<'a, U, T> + ?Sized>(
 			Callable::Expression(Box::new(folder.fold_expression(db, model, e)))
 		}
 		Callable::Function(f) => Callable::Function(folder.fold_function_id(db, model, *f)),
+		Callable::Builtin => Callable::Builtin,
 	}
 }
 

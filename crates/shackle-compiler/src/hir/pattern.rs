@@ -148,6 +148,21 @@ impl Identifier {
 		Self::new(v, db)
 	}
 
+	/// Get this identifier but with `_root` appended
+	pub fn root(&self, db: &dyn Hir) -> Self {
+		let mut v = self.lookup(db);
+		if v.ends_with("_root") {
+			return *self;
+		}
+		v.push_str("_root");
+		Self::new(v, db)
+	}
+
+	/// Whether or not this identifier ends with `_root`
+	pub fn is_root(&self, db: &dyn Hir) -> bool {
+		self.lookup(db).ends_with("_root")
+	}
+
 	/// Whether this identifier matches a string
 	pub fn is<T: Into<InternedStringData>>(&self, db: &dyn Hir, v: T) -> bool {
 		db.intern_string(v.into()) == self.0

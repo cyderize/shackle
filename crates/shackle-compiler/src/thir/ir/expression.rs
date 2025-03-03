@@ -292,12 +292,24 @@ impl<T: Marker> ExpressionBuilder<T> for ArrayLiteral<T> {
 			db.type_registry().array_of_bottom
 		} else {
 			let tys = items.iter().map(|e| e.ty());
-			Ty::array(
-				db.upcast(),
-				db.type_registry().par_int,
-				Ty::most_specific_supertype(db.upcast(), tys).expect("Non uniform array literal"),
-			)
-			.expect("Invalid array type")
+			let elem_ty = Ty::most_specific_supertype(db.upcast(), tys).unwrap_or_else(|| {
+				panic!(
+					"Non uniform array literal [{}] at {}",
+					items
+						.iter()
+						.map(|e| e.ty().pretty_print(db.upcast()))
+						.collect::<Vec<_>>()
+						.join(", "),
+					origin.pretty_print(db)
+				)
+			});
+			Ty::array(db.upcast(), db.type_registry().par_int, elem_ty).unwrap_or_else(|| {
+				panic!(
+					"Invalid array type (array [int] of {}) at {}",
+					elem_ty.pretty_print(db.upcast()),
+					origin.pretty_print(db)
+				)
+			})
 		};
 		Expression::new_unchecked(ty, self, origin)
 	}
@@ -328,14 +340,36 @@ impl<T: Marker> ExpressionBuilder<T> for SetLiteral<T> {
 			return Expression::new_unchecked(db.type_registry().set_of_bottom, self, origin);
 		}
 		let elem_ty = Ty::most_specific_supertype(db.upcast(), items.iter().map(|e| e.ty()))
-			.expect("Non uniform set literal");
+			.unwrap_or_else(|| {
+				panic!(
+					"Non uniform set literal [{}] at {}",
+					items
+						.iter()
+						.map(|e| e.ty().pretty_print(db.upcast()))
+						.collect::<Vec<_>>()
+						.join(", "),
+					origin.pretty_print(db)
+				)
+			});
 		let ty = if let VarType::Var = elem_ty.inst(db.upcast()).expect("No inst for set literal") {
 			Ty::par_set(db.upcast(), elem_ty.make_par(db.upcast()))
 				.unwrap()
 				.make_var(db.upcast())
-				.expect("Cannot make set var")
+				.unwrap_or_else(|| {
+					panic!(
+						"Cannot make set of {} var at {}",
+						elem_ty.pretty_print(db.upcast()),
+						origin.pretty_print(db)
+					)
+				})
 		} else {
-			Ty::par_set(db.upcast(), elem_ty).expect("Invalid set type")
+			Ty::par_set(db.upcast(), elem_ty).unwrap_or_else(|| {
+				panic!(
+					"Invalid set type (set of {}) at {}",
+					elem_ty.pretty_print(db.upcast()),
+					origin.pretty_print(db)
+				)
+			})
 		};
 		Expression::new_unchecked(ty, self, origin)
 	}
@@ -555,7 +589,7 @@ impl<T: Marker> ExpressionBuilder<T> for TupleAccess<T> {
 			_ => unreachable!(
 				"Tried to perform tuple access on {} at {:?}",
 				self.tuple.ty().pretty_print(db.upcast()),
-				origin.debug_print(db)
+				origin.pretty_print(db)
 			),
 		};
 		Expression::new_unchecked(ty, self, origin)
@@ -633,7 +667,7 @@ impl<T: Marker> ExpressionBuilder<T> for IfThenElse<T> {
 					.map(|t| t.pretty_print(db.upcast()))
 					.collect::<Vec<_>>()
 					.join(", "),
-				origin.debug_print(db),
+				origin.pretty_print(db),
 			)
 		});
 		let make_var = self
@@ -693,6 +727,8 @@ pub enum Callable<T: Marker = ()> {
 	EnumDestructor(EnumMemberId<T>),
 	/// Call to a lambda expression
 	Expression(Box<Expression<T>>),
+	/// Call to an interpreter builtin
+	Builtin,
 }
 
 /// A function call
@@ -847,13 +883,29 @@ impl<T: Marker> Call<T> {
 					.instantiate_ty_params(db.upcast(), &arg_tys)
 					.unwrap_or_else(|e| {
 						panic!(
-							"Failed to instantiate function {} ({}): {}",
-							model[*f].name().pretty_print(db),
-							fe.overload.pretty_print(db.upcast()),
-							e.debug_print(db.upcast())
+							"Failed to instantiate function {} at {}{}: {}",
+							fe.overload
+								.pretty_print_item(db.upcast(), model[*f].name().as_identifier(db)),
+							e.debug_print(db.upcast()),
+							if self.arguments.is_empty() {
+								"".to_owned()
+							} else {
+								format!(
+									" with call at {}",
+									self.arguments[0].origin().pretty_print(db)
+								)
+							},
+							model[*f].origin().pretty_print(db)
 						);
 					});
 				ft
+			}
+			Callable::Builtin => {
+				let arg_tys = self.arguments.iter().map(|e| e.ty()).collect::<Vec<_>>();
+				FunctionType {
+					params: arg_tys.into_boxed_slice(),
+					return_type: Ty::bottom(db.upcast()),
+				}
 			}
 		}
 	}

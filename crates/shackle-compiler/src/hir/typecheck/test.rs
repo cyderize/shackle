@@ -141,7 +141,7 @@ fn test_type_expressions() {
             var bool: p;
         } in if p then [1] else [2] endif
         "#,
-		expect!("error"),
+		expect!("array [int] of var int"),
 	);
 	tester.check_expression("[1, 2, 3][1]", expect!("int"));
 	tester.check_expression(

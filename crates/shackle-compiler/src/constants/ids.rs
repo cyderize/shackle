@@ -244,7 +244,7 @@ id_registry!(
 	empty_string: "",
 	return_value: "<return value>",
 	default,
-	at: '@',
+	at: "@",
 	coord,
 );
 
@@ -267,6 +267,8 @@ id_registry!(
 	concat,
 	and: "/\\",
 	times: "*",
+	div,
+	float_div: "/",
 	lb,
 	ub,
 	implies: "->",

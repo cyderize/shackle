@@ -353,10 +353,10 @@ impl<'a> ExhaustivenessChecker<'a> {
 						}
 					}
 					SemanticPattern::Wildcard(ty) => {
-						let new_row = std::iter::repeat(SemanticPattern::Wildcard(*ty))
-							.take(arg_count)
-							.chain(iter.cloned())
-							.collect::<Vec<_>>();
+						let new_row =
+							std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
+								.chain(iter.cloned())
+								.collect::<Vec<_>>();
 						Some(new_row)
 					}
 				}
@@ -378,10 +378,11 @@ impl<'a> ExhaustivenessChecker<'a> {
 				assert_eq!(c, constructor);
 				ps.iter().cloned().chain(iter.cloned()).collect::<Vec<_>>()
 			}
-			SemanticPattern::Wildcard(ty) => std::iter::repeat(SemanticPattern::Wildcard(*ty))
-				.take(arg_count)
-				.chain(iter.cloned())
-				.collect::<Vec<_>>(),
+			SemanticPattern::Wildcard(ty) => {
+				std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
+					.chain(iter.cloned())
+					.collect::<Vec<_>>()
+			}
 		}
 	}
 

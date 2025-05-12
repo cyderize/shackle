@@ -504,12 +504,12 @@ impl Formatter {
 						self.column = 0;
 					} else {
 						if options.use_tabs {
-							output.extend(std::iter::repeat('\t').take(self.indent_level));
+							output.extend(std::iter::repeat_n('\t', self.indent_level));
 						} else {
-							output.extend(
-								std::iter::repeat(' ')
-									.take(options.indent_size * self.indent_level),
-							);
+							output.extend(std::iter::repeat_n(
+								' ',
+								options.indent_size * self.indent_level,
+							));
 						}
 						self.column = options.indent_size * self.indent_level;
 					}

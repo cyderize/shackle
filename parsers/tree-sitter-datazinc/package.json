@@ -33,7 +33,7 @@
 	},
 	"devDependencies": {
 		"prebuildify": "^6.0.1",
-		"tree-sitter-cli": "^0.25.1",
+		"tree-sitter-cli": "^0.25.4",
 		"tree-sitter-minizinc": "file:../tree-sitter-minizinc"
 	},
 	"peerDependencies": {
@@ -45,7 +45,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tree-sitter generate && node-gyp build",
+		"build": "tree-sitter generate && node-gyp-build",
 		"install": "node-gyp-build",
 		"node-test": "node --test bindings/node/*_test.js",
 		"prestart": "tree-sitter build --wasm",

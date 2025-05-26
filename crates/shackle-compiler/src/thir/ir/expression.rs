@@ -909,6 +909,18 @@ impl<T: Marker> Call<T> {
 			}
 		}
 	}
+
+	/// Whether or not this is a call to the given builtin
+	pub fn matches_builtin(&self, f: Identifier) -> bool {
+		let Callable::Builtin = &self.function else {
+			return false;
+		};
+		assert!(self.arguments.len() > 0);
+		let ExpressionData::StringLiteral(s) = &*self.arguments[0] else {
+			return false;
+		};
+		s.0 == f.0
+	}
 }
 
 impl<T: Marker> ExpressionBuilder<T> for Call<T> {

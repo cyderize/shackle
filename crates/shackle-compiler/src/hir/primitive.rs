@@ -40,7 +40,7 @@ impl fmt::Debug for FloatLiteral {
 
 /// A string literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct StringLiteral(InternedString);
+pub struct StringLiteral(pub InternedString);
 
 impl StringLiteral {
 	/// Create a new string literal

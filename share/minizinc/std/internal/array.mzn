@@ -1,21 +1,21 @@
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
-function tuple(set of $$E): index_sets(array [$$E] of any $U: x) = mzn_builtin("index_sets", x);
+function tuple(set of $$E): index_sets(array [$$E] of any $U: x) = mzn_builtin("mzn_index_sets", x);
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
 function tuple(set of $$E, set of $$F): index_sets(
 	array [$$E, $$F] of any $U: x,
-) = mzn_builtin("index_sets", x);
+) = mzn_builtin("mzn_index_sets", x);
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
 function tuple(set of $$E, set of $$F, set of $$G): index_sets(
 	array [$$E, $$F, $$G] of any $U: x,
-) = mzn_builtin("index_sets", x);
+) = mzn_builtin("mzn_index_sets", x);
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
 function tuple(set of $$E, set of $$F, set of $$G, set of $$H): index_sets(
 	array [$$E, $$F, $$G, $$H] of any $U: x,
-) = mzn_builtin("index_sets", x);
+) = mzn_builtin("mzn_index_sets", x);
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
 function tuple(
@@ -24,7 +24,7 @@ function tuple(
 	set of $$G,
 	set of $$H,
 	set of $$I,
-): index_sets(array [$$E, $$F, $$G, $$H, $$I] of any $U: x) = mzn_builtin("index_sets", x);
+): index_sets(array [$$E, $$F, $$G, $$H, $$I] of any $U: x) = mzn_builtin("mzn_index_sets", x);
 
 /** @group stdlib.builtins.array Return index sets of the array \a x */
 function tuple(
@@ -34,14 +34,14 @@ function tuple(
 	set of $$H,
 	set of $$I,
 	set of $$J,
-): index_sets(array [$$E, $$F, $$G, $$H, $$I, $$J] of any $U: x) = mzn_builtin("index_sets", x);
+): index_sets(array [$$E, $$F, $$G, $$H, $$I, $$J] of any $U: x) = mzn_builtin("mzn_index_sets", x);
 
-function array [$$E] of any $T: mzn_array_kd(tuple(set of $$E): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
-function array [$$E, $$F] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
-function array [$$E, $$F, $$G] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
-function array [$$E, $$F, $$G, $$H, ] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
-function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
-function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I, set of $$J): idx, array[$U] of any $T: x) = mzn_builtin("array_kd", idx, x);
+function array [$$E] of any $T: mzn_array_kd(tuple(set of $$E): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
+function array [$$E, $$F] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
+function array [$$E, $$F, $$G] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
+function array [$$E, $$F, $$G, $$H, ] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
+function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
+function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_array_kd(tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I, set of $$J): idx, array[$U] of any $T: x) = mzn_builtin("mzn_array_kd", idx, x);
 
 function var set of int: mzn_array2set(array [int] of var int: x) :: promise_total =
 	if length(x) = 0 then
@@ -76,7 +76,7 @@ function var set of int: mzn_array2set(array [int] of var opt int: x)
 		} in y
 	endif;
 
-function set of int: mzn_array2set(array [int] of int: x) = mzn_builtin("array2set", x);
+function set of int: mzn_array2set(array [int] of int: x) = mzn_builtin("mzn_array2set", x);
 
 function set of int: mzn_array2set(array [int] of opt int: x) = {
 	deopt(x[i]) |
@@ -97,6 +97,6 @@ function set of bool: mzn_array2set(array [int] of bool: x) =
 		{}
 	endif;
 
-function set of float: mzn_array2set(array [int] of float: x) = mzn_builtin("array2set", x);
+function set of float: mzn_array2set(array [int] of float: x) = mzn_builtin("mzn_array2set", x);
 
 function set of $$E: mzn_array2set(array [int] of $$E: x) :: mzn_unreachable;

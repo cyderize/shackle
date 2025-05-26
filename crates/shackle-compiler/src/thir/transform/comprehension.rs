@@ -107,7 +107,7 @@ impl<Dst: Marker> Folder<'_, Dst> for ComprehensionRewriter<Dst> {
 					&self.result,
 					expression.origin(),
 					LookupCall {
-						function: self.ids.functions.mzn_array2set.into(),
+						function: self.ids.builtins.mzn_array2set.into(),
 						arguments: vec![Expression::new(
 							db,
 							&self.result,

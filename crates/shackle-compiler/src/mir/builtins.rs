@@ -459,9 +459,15 @@ pub enum Builtin {
 		/// Value
 		value: Box<Value>,
 	},
-
-	/// Create range
-	SetRange {
+	/// Create integer range
+	SetRangeInt {
+		/// Min
+		min: Box<Value>,
+		/// Max
+		max: Box<Value>,
+	},
+	/// Create float range
+	SetRangeFloat {
 		/// Min
 		min: Box<Value>,
 		/// Max
@@ -810,7 +816,8 @@ impl Builtin {
 			Builtin::FormatJustifyString { .. } => ids.builtins.mzn_format_justify_string,
 			Builtin::OutputToSection { .. } => ids.builtins.mzn_output_to_section,
 			Builtin::OutputToJsonSection { .. } => ids.builtins.mzn_output_to_json_section,
-			Builtin::SetRange { .. } => ids.builtins.mzn_set_range,
+			Builtin::SetRangeInt { .. } => ids.builtins.mzn_set_range_int,
+			Builtin::SetRangeFloat { .. } => ids.builtins.mzn_set_range_float,
 			Builtin::SetInPar { .. } => ids.builtins.mzn_in_par,
 			Builtin::SetInVar { .. } => ids.builtins.mzn_in_var,
 			Builtin::SetSubsetPar { .. } => ids.builtins.mzn_subset_par,
@@ -1041,7 +1048,8 @@ impl Builtin {
 				section: v1,
 				value: v2,
 			}
-			| Builtin::SetRange { min: v1, max: v2 }
+			| Builtin::SetRangeInt { min: v1, max: v2 }
+			| Builtin::SetRangeFloat { min: v1, max: v2 }
 			| Builtin::SetInPar { value: v1, set: v2 }
 			| Builtin::SetInVar { value: v1, set: v2 }
 			| Builtin::SetSubsetPar {

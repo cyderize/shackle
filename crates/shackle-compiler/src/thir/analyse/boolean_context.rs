@@ -478,7 +478,15 @@ impl<'a, T: Marker> ModeAnalyser<'a, T> {
 			}
 			ExpressionData::Case(_) => todo!(),
 			ExpressionData::Call(c) => (|| {
+				if (c.matches_builtin(self.ids.builtins.mzn_not_par)
+					|| c.matches_builtin(self.ids.builtins.mzn_not_var))
+					&& c.arguments.len() == 3
+				{
+					self.update(&c.arguments[0], !it.mode, false);
+					return;
+				}
 				match &c.function {
+					Callable::Builtin => {}
 					Callable::Function(f) => {
 						if (self.model[*f].name() == self.ids.builtins.mzn_not_par
 							|| self.model[*f].name() == self.ids.builtins.mzn_not_var)
@@ -764,7 +772,7 @@ mod test {
 		db::{FileReader, Inputs},
 		file::InputFile,
 		hir::ids::NodeRef,
-		thir::{db::Thir, pretty_print::PrettyPrinter},
+		thir::{db::Thir, pretty_print::PrettyPrinter, transform::inlining::inline_functions},
 		CompilerDatabase,
 	};
 
@@ -776,7 +784,8 @@ mod test {
 			InputLang::MiniZinc,
 		)]));
 		let model_ref = db.input_models()[0];
-		let model = db.model_thir().take();
+		let mut model = db.model_thir().take();
+		model = inline_functions(&db, model).unwrap();
 		let result = ModeAnalysis::analyse(&db, &model);
 		let mut printer = PrettyPrinter::new(&db, &model);
 		printer.expression_annotator = Some(Box::new(|e| {
@@ -906,19 +915,19 @@ mod test {
 	#[test]
 	fn test_bool_ctx_abort() {
 		let program = r#"
-			test abort(string: msg);
+			test mzn_abort(string: msg);
 			test bar(int: x);
 			function int: foo(int: x) = let {
-				constraint if bar(x) then abort("foo") endif;
+				constraint if bar(x) then mzn_abort("foo") endif;
 			} in x;
 		"#;
 		check_bool_ctx(
 			program,
 			expect![[r#"
-    function bool: abort(string: msg);
+    function bool: mzn_abort(string: msg);
     function bool: bar(int: x);
     function int: foo(int: x) = let {
-      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
     } in x:: ctx_non_root:: ctx_non_root;
 "#]],
 			false,
@@ -926,10 +935,10 @@ mod test {
 		check_bool_ctx(
 			program,
 			expect![[r#"
-    function bool: abort(string: msg);
+    function bool: mzn_abort(string: msg);
     function bool: bar(int: x);
     function int: foo(int: x) = let {
-      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
     } in x:: ctx_root:: ctx_root;
 "#]],
 			true,

@@ -1,146 +1,132 @@
 use lsp_server::ResponseError;
 use lsp_types::{
-	request::SemanticTokensFullRequest, SemanticToken, SemanticTokenModifier, SemanticTokenType,
-	SemanticTokens, SemanticTokensParams, SemanticTokensResult,
+	SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensParams,
+	SemanticTokensResult, request::SemanticTokensFullRequest,
 };
 use miette::SourceCode;
-use shackle_compiler::{
+use shackle_hir::{
+	PatternTy,
 	db::CompilerDatabase,
-	file::ModelRef,
-	hir::{
-		db::Hir,
-		ids::{LocalEntityRef, NodeRef, PatternRef},
-		PatternTy,
-	},
-	syntax::db::SourceParser,
+	ids::{EntityId, PatternRef},
+	input::ModelFile,
+	source::model_leaves,
 };
-use streaming_iterator::StreamingIterator;
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::span_contents_to_range};
 
 #[derive(Debug)]
-pub struct SemanticTokensHandler;
+pub(crate) struct SemanticTokensHandler;
 
-impl RequestHandler<SemanticTokensFullRequest, ModelRef> for SemanticTokensHandler {
+impl RequestHandler<SemanticTokensFullRequest, ModelFile> for SemanticTokensHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: SemanticTokensParams,
-	) -> Result<ModelRef, ResponseError> {
+	) -> Result<ModelFile, ResponseError> {
 		db.set_active_file_from_document(&params.text_document)
 	}
 
 	fn execute(
 		db: &CompilerDatabase,
-		model_ref: ModelRef,
+		model_ref: ModelFile,
 	) -> Result<Option<SemanticTokensResult>, ResponseError> {
-		if let Ok(cst) = db.cst(*model_ref) {
-			let query = tree_sitter::Query::new(
-				&tree_sitter_minizinc::LANGUAGE.into(),
-				tree_sitter_minizinc::IDENTIFIERS_QUERY,
-			)
-			.expect("Failed to create query");
-			let mut cursor = tree_sitter::QueryCursor::new();
-			let mut nodes = cursor
-				.captures(&query, cst.root_node(), cst.text().as_bytes())
-				.map(|(c, _)| c.captures[0].node);
-			let source_map = db.lookup_source_map(model_ref);
-			let mut tokens = Vec::new();
-			let mut prev_line = 0;
-			let mut prev_char = 0;
-			while let Some(node) = nodes.next() {
-				if let Some(node_ref @ NodeRef::Entity(entity)) = source_map.find_node(*node) {
-					let item = entity.item(db);
-					let types = db.lookup_item_types(item);
-					let mut token_type = TokenType::Variable;
-					let mut is_par = false;
-					let pattern = match entity.entity(db) {
-						LocalEntityRef::Expression(e) => {
-							is_par = is_par
-								|| types
-									.get_expression(e)
-									.map(|ty| ty.known_par(db))
-									.unwrap_or_default();
-							types.name_resolution(e)
-						}
-						LocalEntityRef::Pattern(p) => Some(PatternRef::new(item, p)),
-						_ => None,
-					};
+		let mut tokens = Vec::new();
+		let mut prev_line = 0;
+		let mut prev_char = 0;
+		for entity in model_leaves(db, model_ref).iter().copied() {
+			let item = entity.item(db);
+			let types = item.types(db);
+			let mut token_type = TokenType::Variable;
+			let mut is_par = false;
+			let pattern = match entity.entity(db) {
+				EntityId::Expression(e) => {
+					is_par = is_par
+						|| types
+							.get_expression(e)
+							.map(|ty| ty.known_par(db))
+							.unwrap_or_default();
+					types.name_resolution(e)
+				}
+				EntityId::Pattern(p) => Some(PatternRef::new(db, item, p)),
+				EntityId::Type(_) => {
+					continue;
+				}
+			};
 
-					if let Some(p) = pattern {
-						let item = p.item();
-						let types = db.lookup_item_types(item);
-						match types.get_pattern(p.pattern()) {
-							Some(
-								PatternTy::AnnotationAtom
-								| PatternTy::AnnotationConstructor(_)
-								| PatternTy::AnnotationDestructure(_)
-								| PatternTy::AnonymousEnumConstructor(_)
-								| PatternTy::EnumAtom(_)
-								| PatternTy::EnumConstructor(_)
-								| PatternTy::EnumDestructure(_),
-							) => {
-								token_type = TokenType::EnumMember;
-							}
-							Some(PatternTy::Function(_) | PatternTy::DestructuringFn { .. }) => {
-								token_type = TokenType::Function
-							}
-							Some(PatternTy::TyVar(_)) => token_type = TokenType::TypeParameter,
-							Some(PatternTy::TypeAlias { .. }) => token_type = TokenType::Type,
-							Some(PatternTy::Variable(ty)) => {
-								is_par = is_par || ty.known_par(db);
-								if ty.is_function(db) {
-									token_type = TokenType::Function;
-								}
-							}
-							Some(PatternTy::Argument(ty)) => {
-								is_par = is_par || ty.known_par(db);
-								token_type = TokenType::Parameter
-							}
-							Some(PatternTy::Enum(_)) => token_type = TokenType::Enum,
-							_ => (),
+			if let Some(p) = pattern {
+				let item = p.item(db);
+				let types = item.types(db);
+				match types.get_pattern(p.pattern(db)) {
+					Some(
+						PatternTy::AnnotationAtom
+						| PatternTy::AnnotationConstructor(_)
+						| PatternTy::AnnotationDestructure(_)
+						| PatternTy::AnonymousEnumConstructor(_)
+						| PatternTy::EnumAtom(_)
+						| PatternTy::EnumConstructor(_)
+						| PatternTy::EnumDestructure(_),
+					) => {
+						token_type = TokenType::EnumMember;
+					}
+					Some(PatternTy::Function(_) | PatternTy::DestructuringFn { .. }) => {
+						token_type = TokenType::Function
+					}
+					Some(PatternTy::TyVar(_)) => token_type = TokenType::TypeParameter,
+					Some(PatternTy::TypeAlias { .. }) => token_type = TokenType::Type,
+					Some(PatternTy::Variable(ty)) => {
+						is_par = is_par || ty.known_par(db);
+						if ty.is_function(db) {
+							token_type = TokenType::Function;
 						}
 					}
-
-					let (src, span) = node_ref.source_span(db);
-					let span_contents = src.read_span(&span, 0, 0).unwrap();
-					let range = span_contents_to_range(&*span_contents);
-					if range.start.line != range.end.line {
-						continue;
+					Some(PatternTy::Argument(ty)) => {
+						is_par = is_par || ty.known_par(db);
+						token_type = TokenType::Parameter
 					}
-					tokens.push(SemanticToken {
-						delta_line: range.start.line - prev_line,
-						delta_start: if range.start.line == prev_line {
-							range.start.character - prev_char
-						} else {
-							range.start.character
-						},
-						length: range.end.character - range.start.character,
-						token_type: token_type as u32,
-						token_modifiers_bitset: u32::from(is_par),
-					});
-					prev_line = range.start.line;
-					prev_char = range.start.character;
+					Some(PatternTy::Enum(_)) => token_type = TokenType::Enum,
+					Some(PatternTy::RecordField(ty)) => {
+						is_par = is_par || ty.known_par(db);
+						token_type = TokenType::Field
+					}
+					_ => (),
 				}
 			}
 
-			return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
-				data: tokens,
-				..Default::default()
-			})));
+			let (src, span) = entity.source_span(db);
+			let span_contents = src.read_span(&span, 0, 0).unwrap();
+			let range = span_contents_to_range(&*span_contents);
+			if range.start.line != range.end.line {
+				continue;
+			}
+			tokens.push(SemanticToken {
+				delta_line: range.start.line - prev_line,
+				delta_start: if range.start.line == prev_line {
+					range.start.character - prev_char
+				} else {
+					range.start.character
+				},
+				length: range.end.character - range.start.character,
+				token_type: token_type as u32,
+				token_modifiers_bitset: (is_par as u32) << (TokenModifier::ReadOnly as u32),
+			});
+			prev_line = range.start.line;
+			prev_char = range.start.character;
 		}
-		Ok(None)
+
+		Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+			data: tokens,
+			..Default::default()
+		})))
 	}
 }
 
 macro_rules! legend {
     ($name:ident<$type:ty> {$($tn:ident: $te:expr),* $(,)?}) => {
-        pub enum $name {
-			#[allow(dead_code)]
+        pub(crate) enum $name {
             $($tn),*
         }
 
         impl $name {
-            pub fn legend() -> Vec<$type> {
+            pub(crate) fn legend() -> Vec<$type> {
                 vec![
                     $($te),*
                 ]
@@ -158,6 +144,7 @@ legend!(
 		EnumMember: SemanticTokenType::ENUM_MEMBER,
 		Function: SemanticTokenType::FUNCTION,
 		Variable: SemanticTokenType::VARIABLE,
+		Field: SemanticTokenType::PROPERTY,
 	}
 );
 
@@ -168,14 +155,14 @@ legend!(
 );
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::SemanticTokensHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_semantic_tokens() {
@@ -228,7 +215,22 @@ any: z = x + y;
           6,
           1,
           1,
-          10,
+          4,
+          1,
+          6,
+          1,
+          0,
+          1,
+          2,
+          5,
+          1,
+          0,
+          2,
+          1,
+          6,
+          1,
+          0,
+          3,
           1,
           6,
           0,
@@ -243,7 +245,12 @@ any: z = x + y;
           6,
           1,
           0,
-          4,
+          2,
+          1,
+          5,
+          1,
+          0,
+          2,
           1,
           6,
           0

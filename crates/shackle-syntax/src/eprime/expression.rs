@@ -2,8 +2,8 @@
 
 use super::{BooleanLiteral, Domain, Infinity, IntegerLiteral, MatrixLiteral, StringLiteral};
 use crate::ast::{
-	ast_enum, ast_node, child_with_field_name, children_with_field_name,
-	optional_child_with_field_name, AstNode, Children,
+	AstNode, Children, ast_enum, ast_node, child_with_field_name, children_with_field_name,
+	optional_child_with_field_name,
 };
 
 ast_enum!(
@@ -34,28 +34,27 @@ ast_node!(
 	arguments
 );
 
-impl Call {
+impl<'tree> Call<'tree> {
 	/// Get the name of this call
-	pub fn function(&self) -> Identifier {
+	pub fn function(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "function")
 	}
 
 	/// Get the arguments of this call
-	pub fn arguments(&self) -> Children<'_, Expression> {
+	pub fn arguments(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "argument")
 	}
 }
 
 ast_node!(
 	/// Identifier
-	Identifier,
-	name
+	Identifier
 );
 
-impl Identifier {
+impl<'tree> Identifier<'tree> {
 	/// Get the name of this identifier
-	pub fn name(&self) -> &str {
-		self.cst_text()
+	pub fn name<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 
@@ -66,14 +65,14 @@ ast_node!(
 	indices
 );
 
-impl ArrayAccess {
+impl<'tree> ArrayAccess<'tree> {
 	/// Get the collection of this indexed access
-	pub fn collection(&self) -> Expression {
+	pub fn collection(&self) -> Expression<'tree> {
 		child_with_field_name(self, "collection")
 	}
 
 	/// Get the index of this indexed access
-	pub fn indices(&self) -> Children<'_, ArrayIndex> {
+	pub fn indices(&self) -> Children<'tree, ArrayIndex<'tree>> {
 		children_with_field_name(self, "index")
 	}
 }
@@ -85,12 +84,16 @@ ast_enum!(
 	_ => Expression,
 );
 
-ast_node!(IndexSlice, operator,);
+ast_node!(
+	/// Slicing operator for indexed array access
+	IndexSlice,
+	operator,
+);
 
-impl IndexSlice {
+impl<'tree> IndexSlice<'tree> {
 	/// Get the name of this array slice
 	pub fn operator(&self) -> &str {
-		self.cst_text()
+		self.cst_kind()
 	}
 }
 
@@ -102,19 +105,19 @@ ast_node!(
 	right
 );
 
-impl InfixOperator {
+impl<'tree> InfixOperator<'tree> {
 	/// Get the operator of this infix operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the left expression of this infix operator
-	pub fn left(&self) -> Expression {
+	pub fn left(&self) -> Expression<'tree> {
 		child_with_field_name(self, "left")
 	}
 
 	/// Get the right expression of this infix operator
-	pub fn right(&self) -> Expression {
+	pub fn right(&self) -> Expression<'tree> {
 		child_with_field_name(self, "right")
 	}
 }
@@ -126,14 +129,14 @@ ast_node!(
 	operand
 );
 
-impl PrefixOperator {
+impl<'tree> PrefixOperator<'tree> {
 	/// Get the operator of this prefix operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the operand of this prefix operator
-	pub fn operand(&self) -> Expression {
+	pub fn operand(&self) -> Expression<'tree> {
 		child_with_field_name(self, "operand")
 	}
 }
@@ -145,14 +148,14 @@ ast_node!(
 	operand
 );
 
-impl UnarySetConstructor {
+impl<'tree> UnarySetConstructor<'tree> {
 	/// Get the operator of this unary operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the operand of this unary operator
-	pub fn operand(&self) -> Expression {
+	pub fn operand(&self) -> Expression<'tree> {
 		child_with_field_name(self, "operand")
 	}
 }
@@ -163,7 +166,7 @@ ast_node!(
 	name,
 );
 
-impl Operator {
+impl<'tree> Operator<'tree> {
 	/// The name of the operator
 	pub fn name(&self) -> &str {
 		self.cst_kind()
@@ -178,19 +181,19 @@ ast_node!(
 	template,
 );
 
-impl Quantification {
+impl<'tree> Quantification<'tree> {
 	/// Get the function of this quantification
-	pub fn function(&self) -> Identifier {
+	pub fn function(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "function")
 	}
 
 	/// Get the generator of this quantification
-	pub fn generator(&self) -> Generator {
+	pub fn generator(&self) -> Generator<'tree> {
 		child_with_field_name(self, "generator")
 	}
 
 	/// Get the template of this quantification
-	pub fn template(&self) -> Expression {
+	pub fn template(&self) -> Expression<'tree> {
 		child_with_field_name(self, "template")
 	}
 }
@@ -202,14 +205,14 @@ ast_node!(
 	collection,
 );
 
-impl Generator {
+impl<'tree> Generator<'tree> {
 	/// Get the name of this generator
-	pub fn names(&self) -> Children<'_, Identifier> {
+	pub fn names(&self) -> Children<'tree, Identifier<'tree>> {
 		children_with_field_name(self, "name")
 	}
 
 	/// Get the collection of this generator
-	pub fn collection(&self) -> Domain {
+	pub fn collection(&self) -> Domain<'tree> {
 		child_with_field_name(self, "collection")
 	}
 }
@@ -223,24 +226,24 @@ ast_node!(
 	indices
 );
 
-impl MatrixComprehension {
+impl<'tree> MatrixComprehension<'tree> {
 	/// Get the template of this matrix comprehension
-	pub fn template(&self) -> Expression {
+	pub fn template(&self) -> Expression<'tree> {
 		child_with_field_name(self, "template")
 	}
 
 	/// Get the generators of this matrix comprehension
-	pub fn generators(&self) -> Children<'_, Generator> {
+	pub fn generators(&self) -> Children<'tree, Generator<'tree>> {
 		children_with_field_name(self, "generator")
 	}
 
 	/// Get the conditions of this matrix comprehension
-	pub fn conditions(&self) -> Children<'_, Expression> {
+	pub fn conditions(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "condition")
 	}
 
 	/// Get the index of this matrix comprehension
-	pub fn indices(&self) -> Option<Domain> {
+	pub fn indices(&self) -> Option<Domain<'tree>> {
 		optional_child_with_field_name(self, "index")
 	}
 }
@@ -251,9 +254,9 @@ ast_node!(
 	operand,
 );
 
-impl AbsoluteOperator {
+impl<'tree> AbsoluteOperator<'tree> {
 	/// Get the operand of this absolute operator
-	pub fn operand(&self) -> Expression {
+	pub fn operand(&self) -> Expression<'tree> {
 		child_with_field_name(self, "operand")
 	}
 }
@@ -266,76 +269,72 @@ ast_node!(
 	right
 );
 
-impl SetConstructor {
+impl<'tree> SetConstructor<'tree> {
 	/// Get the operator of this set operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the left expression of this set operator
-	pub fn left(&self) -> Expression {
+	pub fn left(&self) -> Expression<'tree> {
 		child_with_field_name(self, "left")
 	}
 
 	/// Get the right expression of this set operator
-	pub fn right(&self) -> Expression {
+	pub fn right(&self) -> Expression<'tree> {
 		child_with_field_name(self, "right")
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use crate::ast::test::check_ast_eprime;
+	use crate::ast::tests::check_ast_eprime;
 
 	#[test]
 	fn test_call() {
 		check_ast_eprime(
 			"letting simple = toVec(X,Y)",
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: Call(
+                            Call {
+                                cst_kind: "call",
+                                function: Identifier {
+                                    cst_kind: "identifier",
+                                },
+                                arguments: [
+                                    Identifier(
                                         Identifier {
                                             cst_kind: "identifier",
-                                            name: "simple",
                                         },
                                     ),
-                                    definition: Call(
-                                        Call {
-                                            cst_kind: "call",
-                                            function: Identifier {
-                                                cst_kind: "identifier",
-                                                name: "toVec",
-                                            },
-                                            arguments: [
-                                                Identifier(
-                                                    Identifier {
-                                                        cst_kind: "identifier",
-                                                        name: "X",
-                                                    },
-                                                ),
-                                                Identifier(
-                                                    Identifier {
-                                                        cst_kind: "identifier",
-                                                        name: "Y",
-                                                    },
-                                                ),
-                                            ],
+                                    Identifier(
+                                        Identifier {
+                                            cst_kind: "identifier",
                                         },
                                     ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+                                ],
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -347,77 +346,72 @@ mod test {
             letting slice = Ms[..]
             "#,
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "single",
-                                        },
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: ArrayAccess(
+                            ArrayAccess {
+                                cst_kind: "indexed_access",
+                                collection: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                indices: [
+                                    Expression(
+                                        Identifier(
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
                                     ),
-                                    definition: ArrayAccess(
-                                        ArrayAccess {
-                                            cst_kind: "indexed_access",
-                                            collection: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "M",
-                                                },
-                                            ),
-                                            indices: [
-                                                Expression(
-                                                    Identifier(
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "i",
-                                                        },
-                                                    ),
-                                                ),
-                                            ],
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "slice",
-                                        },
-                                    ),
-                                    definition: ArrayAccess(
-                                        ArrayAccess {
-                                            cst_kind: "indexed_access",
-                                            collection: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "Ms",
-                                                },
-                                            ),
-                                            indices: [
-                                                IndexSlice(
-                                                    IndexSlice {
-                                                        cst_kind: "..",
-                                                        operator: "..",
-                                                    },
-                                                ),
-                                            ],
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+                                ],
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: ArrayAccess(
+                            ArrayAccess {
+                                cst_kind: "indexed_access",
+                                collection: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                indices: [
+                                    IndexSlice(
+                                        IndexSlice {
+                                            cst_kind: "..",
+                                            operator: "..",
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -432,178 +426,163 @@ mod test {
             letting exponent = x ** y
             "#,
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "different",
-                                        },
-                                    ),
-                                    definition: InfixOperator(
-                                        InfixOperator {
-                                            cst_kind: "infix_operator",
-                                            operator: Operator {
-                                                cst_kind: "!=",
-                                                name: "!=",
-                                            },
-                                            left: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                            right: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "y",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                operator: Operator {
+                                    cst_kind: "!=",
+                                    name: "!=",
                                 },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "smallerlex",
-                                        },
-                                    ),
-                                    definition: InfixOperator(
-                                        InfixOperator {
-                                            cst_kind: "infix_operator",
-                                            operator: Operator {
-                                                cst_kind: "<lex",
-                                                name: "<lex",
-                                            },
-                                            left: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                            right: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "y",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "and",
-                                        },
-                                    ),
-                                    definition: InfixOperator(
-                                        InfixOperator {
-                                            cst_kind: "infix_operator",
-                                            operator: Operator {
-                                                cst_kind: "/\\",
-                                                name: "/\\",
-                                            },
-                                            left: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                            right: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "y",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "equiv",
-                                        },
-                                    ),
-                                    definition: InfixOperator(
-                                        InfixOperator {
-                                            cst_kind: "infix_operator",
-                                            operator: Operator {
-                                                cst_kind: "<=>",
-                                                name: "<=>",
-                                            },
-                                            left: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                            right: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "y",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "exponent",
-                                        },
-                                    ),
-                                    definition: InfixOperator(
-                                        InfixOperator {
-                                            cst_kind: "infix_operator",
-                                            operator: Operator {
-                                                cst_kind: "**",
-                                                name: "**",
-                                            },
-                                            left: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                            right: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "y",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+                                left: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                right: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                operator: Operator {
+                                    cst_kind: "<lex",
+                                    name: "<lex",
+                                },
+                                left: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                right: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                operator: Operator {
+                                    cst_kind: "/\\",
+                                    name: "/\\",
+                                },
+                                left: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                right: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                operator: Operator {
+                                    cst_kind: "<=>",
+                                    name: "<=>",
+                                },
+                                left: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                right: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                operator: Operator {
+                                    cst_kind: "**",
+                                    name: "**",
+                                },
+                                left: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                                right: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -615,67 +594,64 @@ mod test {
             letting negated_bool = !true
             "#,
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "negative_ident",
-                                        },
-                                    ),
-                                    definition: PrefixOperator(
-                                        PrefixOperator {
-                                            cst_kind: "prefix_operator",
-                                            operator: Operator {
-                                                cst_kind: "-",
-                                                name: "-",
-                                            },
-                                            operand: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: PrefixOperator(
+                            PrefixOperator {
+                                cst_kind: "prefix_operator",
+                                operator: Operator {
+                                    cst_kind: "-",
+                                    name: "-",
                                 },
-                            ),
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "negated_bool",
-                                        },
-                                    ),
-                                    definition: PrefixOperator(
-                                        PrefixOperator {
-                                            cst_kind: "prefix_operator",
-                                            operator: Operator {
-                                                cst_kind: "!",
-                                                name: "!",
-                                            },
-                                            operand: BooleanLiteral(
-                                                BooleanLiteral {
-                                                    cst_kind: "boolean_literal",
-                                                    value: true,
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+                                operand: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: PrefixOperator(
+                            PrefixOperator {
+                                cst_kind: "prefix_operator",
+                                operator: Operator {
+                                    cst_kind: "!",
+                                    name: "!",
+                                },
+                                operand: BooleanLiteral(
+                                    BooleanLiteral {
+                                        cst_kind: "boolean_literal",
+                                        value: true,
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
+                    },
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -684,111 +660,102 @@ mod test {
 		check_ast_eprime(
 			"letting expr = exists i,j : int(1..3) . x[i] = i",
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: Quantification(
+                            Quantification {
+                                cst_kind: "quantification",
+                                function: Identifier {
+                                    cst_kind: "identifier",
+                                },
+                                generator: Generator {
+                                    cst_kind: "generator",
+                                    names: [
                                         Identifier {
                                             cst_kind: "identifier",
-                                            name: "expr",
                                         },
-                                    ),
-                                    definition: Quantification(
-                                        Quantification {
-                                            cst_kind: "quantification",
-                                            function: Identifier {
-                                                cst_kind: "identifier",
-                                                name: "exists",
-                                            },
-                                            generator: Generator {
-                                                cst_kind: "generator",
-                                                names: [
-                                                    Identifier {
-                                                        cst_kind: "identifier",
-                                                        name: "i",
-                                                    },
-                                                    Identifier {
-                                                        cst_kind: "identifier",
-                                                        name: "j",
-                                                    },
-                                                ],
-                                                collection: IntegerDomain(
-                                                    IntegerDomain {
-                                                        cst_kind: "integer_domain",
-                                                        domain: [
-                                                            SetConstructor(
-                                                                SetConstructor {
-                                                                    cst_kind: "set_constructor",
-                                                                    operator: Operator {
-                                                                        cst_kind: "..",
-                                                                        name: "..",
-                                                                    },
-                                                                    left: IntegerLiteral(
-                                                                        IntegerLiteral {
-                                                                            cst_kind: "integer_literal",
-                                                                            value: 1,
-                                                                        },
-                                                                    ),
-                                                                    right: IntegerLiteral(
-                                                                        IntegerLiteral {
-                                                                            cst_kind: "integer_literal",
-                                                                            value: 3,
-                                                                        },
-                                                                    ),
-                                                                },
-                                                            ),
-                                                        ],
+                                        Identifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ],
+                                    collection: IntegerDomain(
+                                        IntegerDomain {
+                                            cst_kind: "integer_domain",
+                                            domain: [
+                                                SetConstructor(
+                                                    SetConstructor {
+                                                        cst_kind: "set_constructor",
+                                                        operator: Operator {
+                                                            cst_kind: "..",
+                                                            name: "..",
+                                                        },
+                                                        left: IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                        right: IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
                                                     },
                                                 ),
-                                            },
-                                            template: InfixOperator(
-                                                InfixOperator {
-                                                    cst_kind: "infix_operator",
-                                                    operator: Operator {
-                                                        cst_kind: "=",
-                                                        name: "=",
-                                                    },
-                                                    left: ArrayAccess(
-                                                        ArrayAccess {
-                                                            cst_kind: "indexed_access",
-                                                            collection: Identifier(
-                                                                Identifier {
-                                                                    cst_kind: "identifier",
-                                                                    name: "x",
-                                                                },
-                                                            ),
-                                                            indices: [
-                                                                Expression(
-                                                                    Identifier(
-                                                                        Identifier {
-                                                                            cst_kind: "identifier",
-                                                                            name: "i",
-                                                                        },
-                                                                    ),
-                                                                ),
-                                                            ],
-                                                        },
-                                                    ),
-                                                    right: Identifier(
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "i",
-                                                        },
-                                                    ),
-                                                },
-                                            ),
+                                            ],
                                         },
                                     ),
-                                    domain: None,
                                 },
-                            ),
-                        ],
+                                template: InfixOperator(
+                                    InfixOperator {
+                                        cst_kind: "infix_operator",
+                                        operator: Operator {
+                                            cst_kind: "=",
+                                            name: "=",
+                                        },
+                                        left: ArrayAccess(
+                                            ArrayAccess {
+                                                cst_kind: "indexed_access",
+                                                collection: Identifier(
+                                                    Identifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
+                                                indices: [
+                                                    Expression(
+                                                        Identifier(
+                                                            Identifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                    ),
+                                                ],
+                                            },
+                                        ),
+                                        right: Identifier(
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -797,174 +764,162 @@ mod test {
 		check_ast_eprime(
 			"letting indexed = [ i+j | i: int(1..3), j : int(1..3), i<j ; int(7..) ]",
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "indexed",
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: MatrixComprehension(
+                            MatrixComprehension {
+                                cst_kind: "matrix_comprehension",
+                                template: InfixOperator(
+                                    InfixOperator {
+                                        cst_kind: "infix_operator",
+                                        operator: Operator {
+                                            cst_kind: "+",
+                                            name: "+",
                                         },
-                                    ),
-                                    definition: MatrixComprehension(
-                                        MatrixComprehension {
-                                            cst_kind: "matrix_comprehension",
-                                            template: InfixOperator(
-                                                InfixOperator {
-                                                    cst_kind: "infix_operator",
-                                                    operator: Operator {
-                                                        cst_kind: "+",
-                                                        name: "+",
-                                                    },
-                                                    left: Identifier(
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "i",
-                                                        },
-                                                    ),
-                                                    right: Identifier(
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "j",
-                                                        },
-                                                    ),
-                                                },
-                                            ),
-                                            generators: [
-                                                Generator {
-                                                    cst_kind: "generator",
-                                                    names: [
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "i",
-                                                        },
-                                                    ],
-                                                    collection: IntegerDomain(
-                                                        IntegerDomain {
-                                                            cst_kind: "integer_domain",
-                                                            domain: [
-                                                                SetConstructor(
-                                                                    SetConstructor {
-                                                                        cst_kind: "set_constructor",
-                                                                        operator: Operator {
-                                                                            cst_kind: "..",
-                                                                            name: "..",
-                                                                        },
-                                                                        left: IntegerLiteral(
-                                                                            IntegerLiteral {
-                                                                                cst_kind: "integer_literal",
-                                                                                value: 1,
-                                                                            },
-                                                                        ),
-                                                                        right: IntegerLiteral(
-                                                                            IntegerLiteral {
-                                                                                cst_kind: "integer_literal",
-                                                                                value: 3,
-                                                                            },
-                                                                        ),
-                                                                    },
-                                                                ),
-                                                            ],
-                                                        },
-                                                    ),
-                                                },
-                                                Generator {
-                                                    cst_kind: "generator",
-                                                    names: [
-                                                        Identifier {
-                                                            cst_kind: "identifier",
-                                                            name: "j",
-                                                        },
-                                                    ],
-                                                    collection: IntegerDomain(
-                                                        IntegerDomain {
-                                                            cst_kind: "integer_domain",
-                                                            domain: [
-                                                                SetConstructor(
-                                                                    SetConstructor {
-                                                                        cst_kind: "set_constructor",
-                                                                        operator: Operator {
-                                                                            cst_kind: "..",
-                                                                            name: "..",
-                                                                        },
-                                                                        left: IntegerLiteral(
-                                                                            IntegerLiteral {
-                                                                                cst_kind: "integer_literal",
-                                                                                value: 1,
-                                                                            },
-                                                                        ),
-                                                                        right: IntegerLiteral(
-                                                                            IntegerLiteral {
-                                                                                cst_kind: "integer_literal",
-                                                                                value: 3,
-                                                                            },
-                                                                        ),
-                                                                    },
-                                                                ),
-                                                            ],
-                                                        },
-                                                    ),
-                                                },
-                                            ],
-                                            conditions: [
-                                                InfixOperator(
-                                                    InfixOperator {
-                                                        cst_kind: "infix_operator",
-                                                        operator: Operator {
-                                                            cst_kind: "<",
-                                                            name: "<",
-                                                        },
-                                                        left: Identifier(
-                                                            Identifier {
-                                                                cst_kind: "identifier",
-                                                                name: "i",
+                                        left: Identifier(
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                        right: Identifier(
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    },
+                                ),
+                                generators: [
+                                    Generator {
+                                        cst_kind: "generator",
+                                        names: [
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ],
+                                        collection: IntegerDomain(
+                                            IntegerDomain {
+                                                cst_kind: "integer_domain",
+                                                domain: [
+                                                    SetConstructor(
+                                                        SetConstructor {
+                                                            cst_kind: "set_constructor",
+                                                            operator: Operator {
+                                                                cst_kind: "..",
+                                                                name: "..",
                                                             },
-                                                        ),
-                                                        right: Identifier(
-                                                            Identifier {
-                                                                cst_kind: "identifier",
-                                                                name: "j",
-                                                            },
-                                                        ),
-                                                    },
-                                                ),
-                                            ],
-                                            indices: Some(
-                                                IntegerDomain(
-                                                    IntegerDomain {
-                                                        cst_kind: "integer_domain",
-                                                        domain: [
-                                                            UnarySetConstructor(
-                                                                UnarySetConstructor {
-                                                                    cst_kind: "unary_set_constructor",
-                                                                    operator: Operator {
-                                                                        cst_kind: "..o",
-                                                                        name: "..o",
-                                                                    },
-                                                                    operand: IntegerLiteral(
-                                                                        IntegerLiteral {
-                                                                            cst_kind: "integer_literal",
-                                                                            value: 7,
-                                                                        },
-                                                                    ),
+                                                            left: IntegerLiteral(
+                                                                IntegerLiteral {
+                                                                    cst_kind: "integer_literal",
                                                                 },
                                                             ),
-                                                        ],
-                                                    },
-                                                ),
+                                                            right: IntegerLiteral(
+                                                                IntegerLiteral {
+                                                                    cst_kind: "integer_literal",
+                                                                },
+                                                            ),
+                                                        },
+                                                    ),
+                                                ],
+                                            },
+                                        ),
+                                    },
+                                    Generator {
+                                        cst_kind: "generator",
+                                        names: [
+                                            Identifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ],
+                                        collection: IntegerDomain(
+                                            IntegerDomain {
+                                                cst_kind: "integer_domain",
+                                                domain: [
+                                                    SetConstructor(
+                                                        SetConstructor {
+                                                            cst_kind: "set_constructor",
+                                                            operator: Operator {
+                                                                cst_kind: "..",
+                                                                name: "..",
+                                                            },
+                                                            left: IntegerLiteral(
+                                                                IntegerLiteral {
+                                                                    cst_kind: "integer_literal",
+                                                                },
+                                                            ),
+                                                            right: IntegerLiteral(
+                                                                IntegerLiteral {
+                                                                    cst_kind: "integer_literal",
+                                                                },
+                                                            ),
+                                                        },
+                                                    ),
+                                                ],
+                                            },
+                                        ),
+                                    },
+                                ],
+                                conditions: [
+                                    InfixOperator(
+                                        InfixOperator {
+                                            cst_kind: "infix_operator",
+                                            operator: Operator {
+                                                cst_kind: "<",
+                                                name: "<",
+                                            },
+                                            left: Identifier(
+                                                Identifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                            right: Identifier(
+                                                Identifier {
+                                                    cst_kind: "identifier",
+                                                },
                                             ),
                                         },
                                     ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+                                ],
+                                indices: Some(
+                                    IntegerDomain(
+                                        IntegerDomain {
+                                            cst_kind: "integer_domain",
+                                            domain: [
+                                                UnarySetConstructor(
+                                                    UnarySetConstructor {
+                                                        cst_kind: "unary_set_constructor",
+                                                        operator: Operator {
+                                                            cst_kind: "..o",
+                                                            name: "..o",
+                                                        },
+                                                        operand: IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                    },
+                                                ),
+                                            ],
+                                        },
+                                    ),
+                                ),
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -973,36 +928,34 @@ mod test {
 		check_ast_eprime(
 			"letting absolute = | x |",
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "absolute",
-                                        },
-                                    ),
-                                    definition: AbsoluteOperator(
-                                        AbsoluteOperator {
-                                            cst_kind: "absolute_operator",
-                                            operand: Identifier(
-                                                Identifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: AbsoluteOperator(
+                            AbsoluteOperator {
+                                cst_kind: "absolute_operator",
+                                operand: Identifier(
+                                    Identifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+            ],
+        },
+    )
+"#]],
 		);
 	}
 
@@ -1011,31 +964,29 @@ mod test {
 		check_ast_eprime(
 			"letting x = ( y )",
 			expect![[r#"
-                EPrimeModel(
-                    Model {
-                        items: [
-                            ConstDefinition(
-                                ConstDefinition {
-                                    cst_kind: "const_def",
-                                    name: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "x",
-                                        },
-                                    ),
-                                    definition: Identifier(
-                                        Identifier {
-                                            cst_kind: "identifier",
-                                            name: "y",
-                                        },
-                                    ),
-                                    domain: None,
-                                },
-                            ),
-                        ],
+    EPrimeModel(
+        Model {
+            items: [
+                ConstDefinition(
+                    ConstDefinition {
+                        cst_kind: "const_def",
+                        name: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        definition: Identifier(
+                            Identifier {
+                                cst_kind: "identifier",
+                            },
+                        ),
+                        domain: None,
                     },
-                )
-            "#]],
+                ),
+            ],
+        },
+    )
+"#]],
 		)
 	}
 }

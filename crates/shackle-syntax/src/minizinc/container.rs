@@ -2,8 +2,8 @@
 
 use super::{Children, Expression, Identifier, Pattern};
 use crate::ast::{
-	ast_enum, ast_node, child_with_field_name, children_with_field_name,
-	optional_child_with_field_name, AstNode,
+	AstNode, ast_enum, ast_node, child_with_field_name, children_with_field_name,
+	optional_child_with_field_name,
 };
 
 ast_node!(
@@ -12,9 +12,9 @@ ast_node!(
 	members,
 );
 
-impl TupleLiteral {
+impl<'tree> TupleLiteral<'tree> {
 	/// Get the values in this tuple literal
-	pub fn members(&self) -> Children<'_, Expression> {
+	pub fn members(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -25,9 +25,9 @@ ast_node!(
 	members,
 );
 
-impl RecordLiteral {
+impl<'tree> RecordLiteral<'tree> {
 	/// Get the values in this record literal
-	pub fn members(&self) -> Children<'_, RecordLiteralMember> {
+	pub fn members(&self) -> Children<'tree, RecordLiteralMember<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -39,14 +39,14 @@ ast_node!(
 	value
 );
 
-impl RecordLiteralMember {
+impl<'tree> RecordLiteralMember<'tree> {
 	/// Get the name of this member
-	pub fn name(&self) -> Identifier {
+	pub fn name(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the value of this member
-	pub fn value(&self) -> Expression {
+	pub fn value(&self) -> Expression<'tree> {
 		child_with_field_name(self, "value")
 	}
 }
@@ -57,9 +57,9 @@ ast_node!(
 	members
 );
 
-impl SetLiteral {
+impl<'tree> SetLiteral<'tree> {
 	/// Get the values in this set literal
-	pub fn members(&self) -> Children<'_, Expression> {
+	pub fn members(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -70,9 +70,9 @@ ast_node!(
 	members
 );
 
-impl ArrayLiteral {
+impl<'tree> ArrayLiteral<'tree> {
 	/// Get the members of this array literal
-	pub fn members(&self) -> Children<'_, ArrayLiteralMember> {
+	pub fn members(&self) -> Children<'tree, ArrayLiteralMember<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -84,14 +84,14 @@ ast_node!(
 	value
 );
 
-impl ArrayLiteralMember {
+impl<'tree> ArrayLiteralMember<'tree> {
 	/// Get the indices for this member
-	pub fn indices(&self) -> Option<Expression> {
+	pub fn indices(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "index")
 	}
 
 	/// Get the value of this member
-	pub fn value(&self) -> Expression {
+	pub fn value(&self) -> Expression<'tree> {
 		child_with_field_name(self, "value")
 	}
 }
@@ -103,14 +103,14 @@ ast_node!(
 	rows
 );
 
-impl ArrayLiteral2D {
+impl<'tree> ArrayLiteral2D<'tree> {
 	/// Get the column indices if any
-	pub fn column_indices(&self) -> Children<'_, Expression> {
+	pub fn column_indices(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "column_index")
 	}
 
 	/// Get the rows in this 2D array literal
-	pub fn rows(&self) -> Children<'_, ArrayLiteral2DRow> {
+	pub fn rows(&self) -> Children<'tree, ArrayLiteral2DRow<'tree>> {
 		children_with_field_name(self, "row")
 	}
 }
@@ -122,14 +122,14 @@ ast_node!(
 	members
 );
 
-impl ArrayLiteral2DRow {
+impl<'tree> ArrayLiteral2DRow<'tree> {
 	/// Get the row index if present
-	pub fn index(&self) -> Option<Expression> {
+	pub fn index(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "index")
 	}
 
 	/// Get the values in this 2D array literal row
-	pub fn members(&self) -> Children<'_, Expression> {
+	pub fn members(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -141,14 +141,14 @@ ast_node!(
 	indices
 );
 
-impl ArrayAccess {
+impl<'tree> ArrayAccess<'tree> {
 	/// The array being indexed
-	pub fn collection(&self) -> Expression {
+	pub fn collection(&self) -> Expression<'tree> {
 		child_with_field_name(self, "collection")
 	}
 
 	/// Get the indices
-	pub fn indices(&self) -> Children<'_, ArrayIndex> {
+	pub fn indices(&self) -> Children<'tree, ArrayIndex<'tree>> {
 		children_with_field_name(self, "index")
 	}
 }
@@ -166,11 +166,10 @@ ast_node!(
 	operator,
 );
 
-impl IndexSlice {
+impl<'tree> IndexSlice<'tree> {
 	/// Get the operator
 	pub fn operator(&self) -> &str {
-		let node = self.cst_node().as_ref();
-		node.kind()
+		self.cst_node().kind()
 	}
 }
 
@@ -182,19 +181,19 @@ ast_node!(
 	generators
 );
 
-impl ArrayComprehension {
+impl<'tree> ArrayComprehension<'tree> {
 	/// The indices for the body of this comprehension
-	pub fn indices(&self) -> Option<Expression> {
+	pub fn indices(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "index")
 	}
 
 	/// The body of this comprehension
-	pub fn template(&self) -> Expression {
+	pub fn template(&self) -> Expression<'tree> {
 		child_with_field_name(self, "template")
 	}
 
 	/// The generators for this comprehension
-	pub fn generators(&self) -> Children<'_, Generator> {
+	pub fn generators(&self) -> Children<'tree, Generator<'tree>> {
 		children_with_field_name(self, "generator")
 	}
 }
@@ -206,14 +205,14 @@ ast_node!(
 	generators
 );
 
-impl SetComprehension {
+impl<'tree> SetComprehension<'tree> {
 	/// The body of this comprehension
-	pub fn template(&self) -> Expression {
+	pub fn template(&self) -> Expression<'tree> {
 		child_with_field_name(self, "template")
 	}
 
 	/// The generators for this comprehension
-	pub fn generators(&self) -> Children<'_, Generator> {
+	pub fn generators(&self) -> Children<'tree, Generator<'tree>> {
 		children_with_field_name(self, "generator")
 	}
 }
@@ -233,19 +232,19 @@ ast_node!(
 	where_clause
 );
 
-impl IteratorGenerator {
+impl<'tree> IteratorGenerator<'tree> {
 	/// Patterns (variable names)
-	pub fn patterns(&self) -> Children<'_, Pattern> {
+	pub fn patterns(&self) -> Children<'tree, Pattern<'tree>> {
 		children_with_field_name(self, "name")
 	}
 
 	/// Expression being iterated over
-	pub fn collection(&self) -> Expression {
+	pub fn collection(&self) -> Expression<'tree> {
 		child_with_field_name(self, "collection")
 	}
 
 	/// Where clause constraining iteration
-	pub fn where_clause(&self) -> Option<Expression> {
+	pub fn where_clause(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "where")
 	}
 }
@@ -258,28 +257,28 @@ ast_node!(
 	where_clause
 );
 
-impl AssignmentGenerator {
+impl<'tree> AssignmentGenerator<'tree> {
 	/// Pattern (variable name)
-	pub fn pattern(&self) -> Pattern {
+	pub fn pattern(&self) -> Pattern<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Expression being iterated over
-	pub fn value(&self) -> Expression {
+	pub fn value(&self) -> Expression<'tree> {
 		child_with_field_name(self, "value")
 	}
 
 	/// Where clause constraining iteration
-	pub fn where_clause(&self) -> Option<Expression> {
+	pub fn where_clause(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "where")
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use crate::ast::test::*;
+	use crate::ast::tests::*;
 
 	#[test]
 	fn test_tuple_literal() {
@@ -289,99 +288,82 @@ mod test {
 		y = (1, (2, 3));
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: TupleLiteral(
+                            TupleLiteral {
+                                cst_kind: "tuple_literal",
+                                members: [
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                ],
                             },
                         ),
-                    ),
-                    definition: TupleLiteral(
-                        TupleLiteral {
-                            cst_kind: "tuple_literal",
-                            members: [
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
-                                    },
-                                ),
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            2,
-                                        ),
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: TupleLiteral(
+                            TupleLiteral {
+                                cst_kind: "tuple_literal",
+                                members: [
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                    TupleLiteral(
+                                        TupleLiteral {
+                                            cst_kind: "tuple_literal",
+                                            members: [
+                                                IntegerLiteral(
+                                                    IntegerLiteral {
+                                                        cst_kind: "integer_literal",
+                                                    },
+                                                ),
+                                                IntegerLiteral(
+                                                    IntegerLiteral {
+                                                        cst_kind: "integer_literal",
+                                                    },
+                                                ),
+                                            ],
+                                        },
+                                    ),
+                                ],
                             },
                         ),
-                    ),
-                    definition: TupleLiteral(
-                        TupleLiteral {
-                            cst_kind: "tuple_literal",
-                            members: [
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
-                                    },
-                                ),
-                                TupleLiteral(
-                                    TupleLiteral {
-                                        cst_kind: "tuple_literal",
-                                        members: [
-                                            IntegerLiteral(
-                                                IntegerLiteral {
-                                                    cst_kind: "integer_literal",
-                                                    value: Ok(
-                                                        2,
-                                                    ),
-                                                },
-                                            ),
-                                            IntegerLiteral(
-                                                IntegerLiteral {
-                                                    cst_kind: "integer_literal",
-                                                    value: Ok(
-                                                        3,
-                                                    ),
-                                                },
-                                            ),
-                                        ],
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -394,153 +376,130 @@ MznModel(
 		y = (a: 1, b: (c: 2, d: 3));
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: RecordLiteral(
+                            RecordLiteral {
+                                cst_kind: "record_literal",
+                                members: [
+                                    RecordLiteralMember {
+                                        cst_kind: "record_member",
+                                        name: UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                    RecordLiteralMember {
+                                        cst_kind: "record_member",
+                                        name: UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: RecordLiteral(
-                        RecordLiteral {
-                            cst_kind: "record_literal",
-                            members: [
-                                RecordLiteralMember {
-                                    cst_kind: "record_member",
-                                    name: UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "a",
-                                        },
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
-                                RecordLiteralMember {
-                                    cst_kind: "record_member",
-                                    name: UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "b",
-                                        },
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                2,
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
+                            ),
+                        ),
+                        definition: RecordLiteral(
+                            RecordLiteral {
+                                cst_kind: "record_literal",
+                                members: [
+                                    RecordLiteralMember {
+                                        cst_kind: "record_member",
+                                        name: UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                    RecordLiteralMember {
+                                        cst_kind: "record_member",
+                                        name: UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                        value: RecordLiteral(
+                                            RecordLiteral {
+                                                cst_kind: "record_literal",
+                                                members: [
+                                                    RecordLiteralMember {
+                                                        cst_kind: "record_member",
+                                                        name: UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                        value: IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                    },
+                                                    RecordLiteralMember {
+                                                        cst_kind: "record_member",
+                                                        name: UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                        value: IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                    },
+                                                ],
+                                            },
+                                        ),
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: RecordLiteral(
-                        RecordLiteral {
-                            cst_kind: "record_literal",
-                            members: [
-                                RecordLiteralMember {
-                                    cst_kind: "record_member",
-                                    name: UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "a",
-                                        },
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                },
-                                RecordLiteralMember {
-                                    cst_kind: "record_member",
-                                    name: UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "b",
-                                        },
-                                    ),
-                                    value: RecordLiteral(
-                                        RecordLiteral {
-                                            cst_kind: "record_literal",
-                                            members: [
-                                                RecordLiteralMember {
-                                                    cst_kind: "record_member",
-                                                    name: UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "c",
-                                                        },
-                                                    ),
-                                                    value: IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                2,
-                                                            ),
-                                                        },
-                                                    ),
-                                                },
-                                                RecordLiteralMember {
-                                                    cst_kind: "record_member",
-                                                    name: UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "d",
-                                                        },
-                                                    ),
-                                                    value: IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                3,
-                                                            ),
-                                                        },
-                                                    ),
-                                                },
-                                            ],
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -550,48 +509,41 @@ MznModel(
 		check_ast(
 			"x = {1, 2};",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: SetLiteral(
+                            SetLiteral {
+                                cst_kind: "set_literal",
+                                members: [
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                ],
                             },
                         ),
-                    ),
-                    definition: SetLiteral(
-                        SetLiteral {
-                            cst_kind: "set_literal",
-                            members: [
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
-                                    },
-                                ),
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            2,
-                                        ),
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		)
 	}
@@ -606,263 +558,214 @@ MznModel(
 		w = [(1, 1): 1, (1, 2): 3];
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: ArrayLiteral(
-                        ArrayLiteral {
-                            cst_kind: "array_literal",
-                            members: [
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: None,
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: None,
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                3,
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
+                            ),
                         ),
-                    ),
-                    definition: ArrayLiteral(
-                        ArrayLiteral {
-                            cst_kind: "array_literal",
-                            members: [
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: Some(
-                                        IntegerLiteral(
+                        definition: ArrayLiteral(
+                            ArrayLiteral {
+                                cst_kind: "array_literal",
+                                members: [
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: None,
+                                        value: IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    2,
-                                                ),
                                             },
                                         ),
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                },
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: None,
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                3,
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: ArrayLiteral(
-                        ArrayLiteral {
-                            cst_kind: "array_literal",
-                            members: [
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: Some(
-                                        IntegerLiteral(
+                                    },
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: None,
+                                        value: IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    0,
-                                                ),
                                             },
                                         ),
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                },
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: Some(
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                3,
-                                            ),
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "w",
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: ArrayLiteral(
-                        ArrayLiteral {
-                            cst_kind: "array_literal",
-                            members: [
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: Some(
-                                        TupleLiteral(
-                                            TupleLiteral {
-                                                cst_kind: "tuple_literal",
-                                                members: [
-                                                    IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                1,
-                                                            ),
-                                                        },
-                                                    ),
-                                                    IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                1,
-                                                            ),
-                                                        },
-                                                    ),
-                                                ],
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayLiteral(
+                            ArrayLiteral {
+                                cst_kind: "array_literal",
+                                members: [
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: Some(
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
                                             },
                                         ),
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                },
-                                ArrayLiteralMember {
-                                    cst_kind: "array_literal_member",
-                                    indices: Some(
-                                        TupleLiteral(
-                                            TupleLiteral {
-                                                cst_kind: "tuple_literal",
-                                                members: [
-                                                    IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                1,
-                                                            ),
-                                                        },
-                                                    ),
-                                                    IntegerLiteral(
-                                                        IntegerLiteral {
-                                                            cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                2,
-                                                            ),
-                                                        },
-                                                    ),
-                                                ],
+                                    },
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: None,
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
                                             },
                                         ),
-                                    ),
-                                    value: IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                3,
-                                            ),
-                                        },
-                                    ),
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                            ),
+                        ),
+                        definition: ArrayLiteral(
+                            ArrayLiteral {
+                                cst_kind: "array_literal",
+                                members: [
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: Some(
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: Some(
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayLiteral(
+                            ArrayLiteral {
+                                cst_kind: "array_literal",
+                                members: [
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: Some(
+                                            TupleLiteral(
+                                                TupleLiteral {
+                                                    cst_kind: "tuple_literal",
+                                                    members: [
+                                                        IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                        IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                    ArrayLiteralMember {
+                                        cst_kind: "array_literal_member",
+                                        indices: Some(
+                                            TupleLiteral(
+                                                TupleLiteral {
+                                                    cst_kind: "tuple_literal",
+                                                    members: [
+                                                        IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                        IntegerLiteral(
+                                                            IntegerLiteral {
+                                                                cst_kind: "integer_literal",
+                                                            },
+                                                        ),
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        value: IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -880,258 +783,206 @@ MznModel(
 		w = [| 1: 1, 2 |];
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayLiteral2D(
+                            ArrayLiteral2D {
+                                cst_kind: "array_literal_2d",
+                                column_indices: [],
+                                rows: [
+                                    ArrayLiteral2DRow {
+                                        cst_kind: "array_literal_2d_row",
+                                        index: None,
+                                        members: [
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                    ArrayLiteral2DRow {
+                                        cst_kind: "array_literal_2d_row",
+                                        index: None,
+                                        members: [
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: ArrayLiteral2D(
-                        ArrayLiteral2D {
-                            cst_kind: "array_literal_2d",
-                            column_indices: [],
-                            rows: [
-                                ArrayLiteral2DRow {
-                                    cst_kind: "array_literal_2d_row",
-                                    index: None,
-                                    members: [
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    2,
-                                                ),
-                                            },
-                                        ),
-                                    ],
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
-                                ArrayLiteral2DRow {
-                                    cst_kind: "array_literal_2d_row",
-                                    index: None,
-                                    members: [
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    3,
-                                                ),
-                                            },
-                                        ),
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    4,
-                                                ),
-                                            },
-                                        ),
-                                    ],
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
+                            ),
                         ),
-                    ),
-                    definition: ArrayLiteral2D(
-                        ArrayLiteral2D {
-                            cst_kind: "array_literal_2d",
-                            column_indices: [
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
-                                    },
-                                ),
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            2,
-                                        ),
-                                    },
-                                ),
-                            ],
-                            rows: [
-                                ArrayLiteral2DRow {
-                                    cst_kind: "array_literal_2d_row",
-                                    index: None,
-                                    members: [
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    2,
-                                                ),
-                                            },
-                                        ),
-                                    ],
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: ArrayLiteral2D(
-                        ArrayLiteral2D {
-                            cst_kind: "array_literal_2d",
-                            column_indices: [
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
-                                    },
-                                ),
-                                IntegerLiteral(
-                                    IntegerLiteral {
-                                        cst_kind: "integer_literal",
-                                        value: Ok(
-                                            2,
-                                        ),
-                                    },
-                                ),
-                            ],
-                            rows: [
-                                ArrayLiteral2DRow {
-                                    cst_kind: "array_literal_2d_row",
-                                    index: Some(
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
+                        definition: ArrayLiteral2D(
+                            ArrayLiteral2D {
+                                cst_kind: "array_literal_2d",
+                                column_indices: [
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
                                     ),
-                                    members: [
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    2,
-                                                ),
-                                            },
-                                        ),
-                                    ],
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "w",
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                ],
+                                rows: [
+                                    ArrayLiteral2DRow {
+                                        cst_kind: "array_literal_2d_row",
+                                        index: None,
+                                        members: [
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: ArrayLiteral2D(
-                        ArrayLiteral2D {
-                            cst_kind: "array_literal_2d",
-                            column_indices: [],
-                            rows: [
-                                ArrayLiteral2DRow {
-                                    cst_kind: "array_literal_2d_row",
-                                    index: Some(
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                    ),
-                                    members: [
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
-                                            },
-                                        ),
-                                        IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    2,
-                                                ),
-                                            },
-                                        ),
-                                    ],
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                            ),
+                        ),
+                        definition: ArrayLiteral2D(
+                            ArrayLiteral2D {
+                                cst_kind: "array_literal_2d",
+                                column_indices: [
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                    IntegerLiteral(
+                                        IntegerLiteral {
+                                            cst_kind: "integer_literal",
+                                        },
+                                    ),
+                                ],
+                                rows: [
+                                    ArrayLiteral2DRow {
+                                        cst_kind: "array_literal_2d_row",
+                                        index: Some(
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ),
+                                        members: [
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayLiteral2D(
+                            ArrayLiteral2D {
+                                cst_kind: "array_literal_2d",
+                                column_indices: [],
+                                rows: [
+                                    ArrayLiteral2DRow {
+                                        cst_kind: "array_literal_2d_row",
+                                        index: Some(
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ),
+                                        members: [
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1145,161 +996,140 @@ MznModel(
 		z = foo[1, .., 3..];
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: ArrayAccess(
-                        ArrayAccess {
-                            cst_kind: "indexed_access",
-                            collection: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
                             ),
-                            indices: [
-                                Expression(
-                                    IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
                         ),
-                    ),
-                    definition: ArrayAccess(
-                        ArrayAccess {
-                            cst_kind: "indexed_access",
-                            collection: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
-                            ),
-                            indices: [
-                                Expression(
-                                    IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
+                        definition: ArrayAccess(
+                            ArrayAccess {
+                                cst_kind: "indexed_access",
+                                collection: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
                                         },
                                     ),
                                 ),
-                                Expression(
-                                    IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                2,
-                                            ),
-                                        },
-                                    ),
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: ArrayAccess(
-                        ArrayAccess {
-                            cst_kind: "indexed_access",
-                            collection: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
-                            ),
-                            indices: [
-                                Expression(
-                                    IntegerLiteral(
-                                        IntegerLiteral {
-                                            cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
-                                        },
-                                    ),
-                                ),
-                                IndexSlice(
-                                    IndexSlice {
-                                        cst_kind: "..",
-                                        operator: "..",
-                                    },
-                                ),
-                                Expression(
-                                    PostfixOperator(
-                                        PostfixOperator {
-                                            cst_kind: "postfix_operator",
-                                            operand: IntegerLiteral(
-                                                IntegerLiteral {
-                                                    cst_kind: "integer_literal",
-                                                    value: Ok(
-                                                        3,
-                                                    ),
-                                                },
-                                            ),
-                                            operator: Operator {
-                                                cst_kind: "..",
-                                                name: "..",
+                                indices: [
+                                    Expression(
+                                        IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
                                             },
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayAccess(
+                            ArrayAccess {
+                                cst_kind: "indexed_access",
+                                collection: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
                                         },
                                     ),
                                 ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                                indices: [
+                                    Expression(
+                                        IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    ),
+                                    Expression(
+                                        IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayAccess(
+                            ArrayAccess {
+                                cst_kind: "indexed_access",
+                                collection: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                indices: [
+                                    Expression(
+                                        IntegerLiteral(
+                                            IntegerLiteral {
+                                                cst_kind: "integer_literal",
+                                            },
+                                        ),
+                                    ),
+                                    IndexSlice(
+                                        IndexSlice {
+                                            cst_kind: "..",
+                                            operator: "..",
+                                        },
+                                    ),
+                                    Expression(
+                                        PostfixOperator(
+                                            PostfixOperator {
+                                                cst_kind: "postfix_operator",
+                                                operand: IntegerLiteral(
+                                                    IntegerLiteral {
+                                                        cst_kind: "integer_literal",
+                                                    },
+                                                ),
+                                                operator: Operator {
+                                                    cst_kind: "..",
+                                                    name: "..",
+                                                },
+                                            },
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1314,367 +1144,332 @@ MznModel(
 		a = [j | i in s, j = i + 1];
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: ArrayComprehension(
-                        ArrayComprehension {
-                            cst_kind: "array_comprehension",
-                            indices: None,
-                            template: IntegerLiteral(
-                                IntegerLiteral {
-                                    cst_kind: "integer_literal",
-                                    value: Ok(
-                                        1,
-                                    ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
                             ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                        ),
+                        definition: ArrayComprehension(
+                            ArrayComprehension {
+                                cst_kind: "array_comprehension",
+                                indices: None,
+                                template: IntegerLiteral(
+                                    IntegerLiteral {
+                                        cst_kind: "integer_literal",
+                                    },
+                                ),
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "i",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
+                                            where_clause: None,
+                                        },
+                                    ),
+                                ],
                             },
                         ),
-                    ),
-                    definition: ArrayComprehension(
-                        ArrayComprehension {
-                            cst_kind: "array_comprehension",
-                            indices: Some(
-                                Identifier(
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: ArrayComprehension(
+                            ArrayComprehension {
+                                cst_kind: "array_comprehension",
+                                indices: Some(
+                                    Identifier(
+                                        UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    ),
+                                ),
+                                template: Identifier(
                                     UnquotedIdentifier(
                                         UnquotedIdentifier {
                                             cst_kind: "identifier",
-                                            name: "i",
                                         },
                                     ),
                                 ),
-                            ),
-                            template: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "v",
-                                    },
-                                ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "i",
-                                                    },
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
                                                 ),
-                                            ),
-                                        ],
-                                        collection: InfixOperator(
-                                            InfixOperator {
-                                                cst_kind: "infix_operator",
-                                                left: IntegerLiteral(
-                                                    IntegerLiteral {
-                                                        cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            1,
-                                                        ),
-                                                    },
-                                                ),
-                                                operator: Operator {
-                                                    cst_kind: "..",
-                                                    name: "..",
-                                                },
-                                                right: IntegerLiteral(
-                                                    IntegerLiteral {
-                                                        cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            3,
-                                                        ),
-                                                    },
-                                                ),
-                                            },
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "j",
-                                                    },
-                                                ),
-                                            ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: Some(
-                                            InfixOperator(
+                                            ],
+                                            collection: InfixOperator(
                                                 InfixOperator {
                                                     cst_kind: "infix_operator",
-                                                    left: Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "i",
-                                                            },
-                                                        ),
+                                                    left: IntegerLiteral(
+                                                        IntegerLiteral {
+                                                            cst_kind: "integer_literal",
+                                                        },
                                                     ),
                                                     operator: Operator {
-                                                        cst_kind: "<",
-                                                        name: "<",
+                                                        cst_kind: "..",
+                                                        name: "..",
                                                     },
-                                                    right: Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "j",
-                                                            },
-                                                        ),
+                                                    right: IntegerLiteral(
+                                                        IntegerLiteral {
+                                                            cst_kind: "integer_literal",
+                                                        },
                                                     ),
                                                 },
                                             ),
-                                        ),
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: InfixOperator(
-                        InfixOperator {
-                            cst_kind: "infix_operator",
-                            left: ArrayComprehension(
-                                ArrayComprehension {
-                                    cst_kind: "array_comprehension",
-                                    indices: Some(
-                                        TupleLiteral(
-                                            TupleLiteral {
-                                                cst_kind: "tuple_literal",
-                                                members: [
-                                                    Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "i",
-                                                            },
-                                                        ),
-                                                    ),
-                                                    Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "j",
-                                                            },
-                                                        ),
-                                                    ),
-                                                ],
-                                            },
-                                        ),
+                                            where_clause: None,
+                                        },
                                     ),
-                                    template: Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "v",
-                                            },
-                                        ),
-                                    ),
-                                    generators: [
-                                        IteratorGenerator(
-                                            IteratorGenerator {
-                                                cst_kind: "generator",
-                                                patterns: [
-                                                    Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "i",
-                                                            },
-                                                        ),
-                                                    ),
-                                                    Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "j",
-                                                            },
-                                                        ),
-                                                    ),
-                                                ],
-                                                collection: Identifier(
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
                                                     UnquotedIdentifier(
                                                         UnquotedIdentifier {
                                                             cst_kind: "identifier",
-                                                            name: "s",
                                                         },
                                                     ),
                                                 ),
-                                                where_clause: None,
-                                            },
-                                        ),
-                                    ],
-                                },
-                            ),
-                            operator: Operator {
-                                cst_kind: "=",
-                                name: "=",
-                            },
-                            right: ArrayComprehension(
-                                ArrayComprehension {
-                                    cst_kind: "array_comprehension",
-                                    indices: None,
-                                    template: Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "j",
-                                            },
-                                        ),
-                                    ),
-                                    generators: [
-                                        IteratorGenerator(
-                                            IteratorGenerator {
-                                                cst_kind: "generator",
-                                                patterns: [
-                                                    Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "i",
-                                                            },
-                                                        ),
-                                                    ),
-                                                ],
-                                                collection: Identifier(
-                                                    UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "s",
-                                                        },
-                                                    ),
+                                            ],
+                                            collection: Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
                                                 ),
-                                                where_clause: None,
-                                            },
-                                        ),
-                                        AssignmentGenerator(
-                                            AssignmentGenerator {
-                                                cst_kind: "assignment_generator",
-                                                pattern: Identifier(
-                                                    UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "j",
-                                                        },
-                                                    ),
-                                                ),
-                                                value: InfixOperator(
+                                            ),
+                                            where_clause: Some(
+                                                InfixOperator(
                                                     InfixOperator {
                                                         cst_kind: "infix_operator",
                                                         left: Identifier(
                                                             UnquotedIdentifier(
                                                                 UnquotedIdentifier {
                                                                     cst_kind: "identifier",
-                                                                    name: "i",
                                                                 },
                                                             ),
                                                         ),
                                                         operator: Operator {
-                                                            cst_kind: "+",
-                                                            name: "+",
+                                                            cst_kind: "<",
+                                                            name: "<",
                                                         },
-                                                        right: IntegerLiteral(
-                                                            IntegerLiteral {
-                                                                cst_kind: "integer_literal",
-                                                                value: Ok(
-                                                                    1,
-                                                                ),
-                                                            },
+                                                        right: Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
                                                         ),
                                                     },
                                                 ),
-                                                where_clause: None,
-                                            },
-                                        ),
-                                    ],
+                                            ),
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
                             ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                left: ArrayComprehension(
+                                    ArrayComprehension {
+                                        cst_kind: "array_comprehension",
+                                        indices: Some(
+                                            TupleLiteral(
+                                                TupleLiteral {
+                                                    cst_kind: "tuple_literal",
+                                                    members: [
+                                                        Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                        Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                    ],
+                                                },
+                                            ),
+                                        ),
+                                        template: Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                        generators: [
+                                            IteratorGenerator(
+                                                IteratorGenerator {
+                                                    cst_kind: "generator",
+                                                    patterns: [
+                                                        Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                        Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                    ],
+                                                    collection: Identifier(
+                                                        UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                    ),
+                                                    where_clause: None,
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                operator: Operator {
+                                    cst_kind: "=",
+                                    name: "=",
+                                },
+                                right: ArrayComprehension(
+                                    ArrayComprehension {
+                                        cst_kind: "array_comprehension",
+                                        indices: None,
+                                        template: Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                        generators: [
+                                            IteratorGenerator(
+                                                IteratorGenerator {
+                                                    cst_kind: "generator",
+                                                    patterns: [
+                                                        Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                    ],
+                                                    collection: Identifier(
+                                                        UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                    ),
+                                                    where_clause: None,
+                                                },
+                                            ),
+                                            AssignmentGenerator(
+                                                AssignmentGenerator {
+                                                    cst_kind: "assignment_generator",
+                                                    pattern: Identifier(
+                                                        UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                    ),
+                                                    value: InfixOperator(
+                                                        InfixOperator {
+                                                            cst_kind: "infix_operator",
+                                                            left: Identifier(
+                                                                UnquotedIdentifier(
+                                                                    UnquotedIdentifier {
+                                                                        cst_kind: "identifier",
+                                                                    },
+                                                                ),
+                                                            ),
+                                                            operator: Operator {
+                                                                cst_kind: "+",
+                                                                name: "+",
+                                                            },
+                                                            right: IntegerLiteral(
+                                                                IntegerLiteral {
+                                                                    cst_kind: "integer_literal",
+                                                                },
+                                                            ),
+                                                        },
+                                                    ),
+                                                    where_clause: None,
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1689,334 +1484,303 @@ MznModel(
 		a = {j | i in s, j = i + 1};
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: SetComprehension(
-                        SetComprehension {
-                            cst_kind: "set_comprehension",
-                            template: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "v",
-                                    },
-                                ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
                             ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                        ),
+                        definition: SetComprehension(
+                            SetComprehension {
+                                cst_kind: "set_comprehension",
+                                template: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "i",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
+                                            where_clause: None,
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: SetComprehension(
+                            SetComprehension {
+                                cst_kind: "set_comprehension",
+                                template: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: InfixOperator(
+                                                InfixOperator {
+                                                    cst_kind: "infix_operator",
+                                                    left: IntegerLiteral(
+                                                        IntegerLiteral {
+                                                            cst_kind: "integer_literal",
+                                                        },
+                                                    ),
+                                                    operator: Operator {
+                                                        cst_kind: "..",
+                                                        name: "..",
+                                                    },
+                                                    right: IntegerLiteral(
+                                                        IntegerLiteral {
+                                                            cst_kind: "integer_literal",
+                                                        },
+                                                    ),
                                                 },
                                             ),
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
-                        ),
-                    ),
-                    definition: SetComprehension(
-                        SetComprehension {
-                            cst_kind: "set_comprehension",
-                            template: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "v",
-                                    },
-                                ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                                            where_clause: None,
+                                        },
+                                    ),
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "i",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: InfixOperator(
-                                            InfixOperator {
-                                                cst_kind: "infix_operator",
-                                                left: IntegerLiteral(
-                                                    IntegerLiteral {
-                                                        cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            1,
+                                            where_clause: Some(
+                                                InfixOperator(
+                                                    InfixOperator {
+                                                        cst_kind: "infix_operator",
+                                                        left: Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
+                                                        ),
+                                                        operator: Operator {
+                                                            cst_kind: "<",
+                                                            name: "<",
+                                                        },
+                                                        right: Identifier(
+                                                            UnquotedIdentifier(
+                                                                UnquotedIdentifier {
+                                                                    cst_kind: "identifier",
+                                                                },
+                                                            ),
                                                         ),
                                                     },
                                                 ),
-                                                operator: Operator {
-                                                    cst_kind: "..",
-                                                    name: "..",
-                                                },
-                                                right: IntegerLiteral(
-                                                    IntegerLiteral {
-                                                        cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            3,
-                                                        ),
-                                                    },
-                                                ),
-                                            },
-                                        ),
-                                        where_clause: None,
-                                    },
+                                            ),
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: SetComprehension(
+                            SetComprehension {
+                                cst_kind: "set_comprehension",
+                                template: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
                                 ),
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "j",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
+                                            where_clause: None,
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: SetComprehension(
+                            SetComprehension {
+                                cst_kind: "set_comprehension",
+                                template: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
                                             ),
-                                        ),
-                                        where_clause: Some(
-                                            InfixOperator(
+                                            where_clause: None,
+                                        },
+                                    ),
+                                    AssignmentGenerator(
+                                        AssignmentGenerator {
+                                            cst_kind: "assignment_generator",
+                                            pattern: Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
+                                            ),
+                                            value: InfixOperator(
                                                 InfixOperator {
                                                     cst_kind: "infix_operator",
                                                     left: Identifier(
                                                         UnquotedIdentifier(
                                                             UnquotedIdentifier {
                                                                 cst_kind: "identifier",
-                                                                name: "i",
                                                             },
                                                         ),
                                                     ),
                                                     operator: Operator {
-                                                        cst_kind: "<",
-                                                        name: "<",
+                                                        cst_kind: "+",
+                                                        name: "+",
                                                     },
-                                                    right: Identifier(
-                                                        UnquotedIdentifier(
-                                                            UnquotedIdentifier {
-                                                                cst_kind: "identifier",
-                                                                name: "j",
-                                                            },
-                                                        ),
-                                                    ),
-                                                },
-                                            ),
-                                        ),
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: SetComprehension(
-                        SetComprehension {
-                            cst_kind: "set_comprehension",
-                            template: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "v",
-                                    },
-                                ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "i",
-                                                    },
-                                                ),
-                                            ),
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "j",
-                                                    },
-                                                ),
-                                            ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "a",
-                            },
-                        ),
-                    ),
-                    definition: SetComprehension(
-                        SetComprehension {
-                            cst_kind: "set_comprehension",
-                            template: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "j",
-                                    },
-                                ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "i",
-                                                    },
-                                                ),
-                                            ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                                AssignmentGenerator(
-                                    AssignmentGenerator {
-                                        cst_kind: "assignment_generator",
-                                        pattern: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "j",
-                                                },
-                                            ),
-                                        ),
-                                        value: InfixOperator(
-                                            InfixOperator {
-                                                cst_kind: "infix_operator",
-                                                left: Identifier(
-                                                    UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "i",
+                                                    right: IntegerLiteral(
+                                                        IntegerLiteral {
+                                                            cst_kind: "integer_literal",
                                                         },
                                                     ),
-                                                ),
-                                                operator: Operator {
-                                                    cst_kind: "+",
-                                                    name: "+",
                                                 },
-                                                right: IntegerLiteral(
-                                                    IntegerLiteral {
-                                                        cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            1,
-                                                        ),
-                                                    },
-                                                ),
-                                            },
-                                        ),
-                                        where_clause: None,
-                                    },
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                                            ),
+                                            where_clause: None,
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}

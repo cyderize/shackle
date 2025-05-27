@@ -660,9 +660,7 @@ module.exports = grammar({
 		record_member: ($) =>
 			seq(field("name", $._identifier), ":", field("value", $._expression)),
 
-		identifier: ($) => {
-			return new RegExp(`[^"'\\s\\.\\-\\[\\]\\^\\/${OPERATOR_CHARACTERS}]+`)
-		},
+		identifier: ($) => /[\p{L}_][\p{L}\p{N}_]*/u,
 		quoted_identifier: ($) => /'[^']*'/,
 		inversed_identifier: ($) => seq(field("identifier", $._identifier), "^-1"),
 		_identifier: ($) => choice($.identifier, $.quoted_identifier),

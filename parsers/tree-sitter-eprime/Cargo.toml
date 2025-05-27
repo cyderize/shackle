@@ -1,15 +1,15 @@
 [package]
-name = "tree-sitter-eprime"
-description = "Essence Prime grammar for tree-sitter"
-version = "0.1.0"
 authors = ["Jip J. Dekker <jip.dekker@monash.edu>"]
-license = "MPL-2.0"
-readme = "README.md"
-keywords = ["incremental", "parsing", "tree-sitter", "eprime"]
-categories = ["parser-implementations", "parsing", "text-editors"]
-repository = "git+https://github.com/shackle-rs/shackle.git"
-edition = "2021"
 autoexamples = false
+categories = ["parser-implementations", "parsing", "text-editors"]
+description = "Essence Prime grammar for tree-sitter"
+edition = "2021"
+keywords = ["incremental", "parsing", "tree-sitter", "eprime"]
+license = "MPL-2.0"
+name = "tree-sitter-eprime"
+readme = "README.md"
+repository = "git+https://github.com/shackle-rs/shackle.git"
+version = "0.1.0"
 
 build = "bindings/rust/build.rs"
 include = [
@@ -25,10 +25,10 @@ include = [
 path = "bindings/rust/lib.rs"
 
 [dependencies]
-tree-sitter-language = "0.1"
+tree-sitter-language = {workspace = true}
 
 [build-dependencies]
 cc = "1.2"
 
 [dev-dependencies]
-tree-sitter = "0.26.3"
+tree-sitter = {workspace = true}

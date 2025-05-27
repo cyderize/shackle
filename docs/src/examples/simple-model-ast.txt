@@ -8,7 +8,6 @@ MznModel(
                     id: UnquotedIdentifier(
                         UnquotedIdentifier {
                             cst_kind: "identifier",
-                            name: "foo",
                         },
                     ),
                     parameters: [],
@@ -43,7 +42,6 @@ MznModel(
                     id: UnquotedIdentifier(
                         UnquotedIdentifier {
                             cst_kind: "identifier",
-                            name: "bar",
                         },
                     ),
                     parameters: [],
@@ -65,7 +63,6 @@ MznModel(
                         UnquotedIdentifier(
                             UnquotedIdentifier {
                                 cst_kind: "identifier",
-                                name: "x",
                             },
                         ),
                     ),
@@ -84,9 +81,6 @@ MznModel(
                                         left: IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    1,
-                                                ),
                                             },
                                         ),
                                         operator: Operator {
@@ -96,9 +90,6 @@ MznModel(
                                         right: IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
-                                                value: Ok(
-                                                    3,
-                                                ),
                                             },
                                         ),
                                     },

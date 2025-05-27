@@ -1,12 +1,10 @@
 % Optional array access
-function opt $T: '[]'(array [$$E] of $T: x, tuple(opt $$E): idx)
-	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
+function opt $T: '[]'(array [$$E] of $T: x, tuple(opt $$E): idx) :: mzn_inline_call_by_name =
+	shackle_element_opt_dispatch(x, idx.1);
 function opt $T: '[]'(array [$$E, $$F] of $T: x, tuple(opt $$E, opt $$F): idx)
 	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
-function opt $T: '[]'(
-	array [$$E, $$F, $$G] of $T: x,
-	tuple(opt $$E, opt $$F, opt $$G): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function opt $T: '[]'(array [$$E, $$F, $$G] of $T: x, tuple(opt $$E, opt $$F, opt $$G): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function opt $T: '[]'(
 	array [$$E, $$F, $$G, $$H] of $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
@@ -20,16 +18,12 @@ function opt $T: '[]'(
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 
-function opt $T: '[]'(array [$$E] of opt $T: x, tuple(opt $$E): idx)
-	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
-function opt $T: '[]'(
-	array [$$E, $$F] of opt $T: x,
-	tuple(opt $$E, opt $$F): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
-function opt $T: '[]'(
-	array [$$E, $$F, $$G] of opt $T: x,
-	tuple(opt $$E, opt $$F, opt $$G): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function opt $T: '[]'(array [$$E] of opt $T: x, tuple(opt $$E): idx) :: mzn_inline_call_by_name =
+	shackle_element_opt_dispatch(x, idx.1);
+function opt $T: '[]'(array [$$E, $$F] of opt $T: x, tuple(opt $$E, opt $$F): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function opt $T: '[]'(array [$$E, $$F, $$G] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function opt $T: '[]'(
 	array [$$E, $$F, $$G, $$H] of opt $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
@@ -43,18 +37,14 @@ function opt $T: '[]'(
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 
-function var opt $T: '[]'(array [$$E] of var $T: x, opt $$E: idx)
-	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function var opt $T: '[]'(array [$$E] of var $T: x, opt $$E: idx) :: mzn_inline_call_by_name =
+	shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(array [$$E] of var $T: x, tuple(opt $$E): idx)
-	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
-function var opt $T: '[]'(
-	array [$$E, $$F] of var $T: x,
-	tuple(opt $$E, opt $$F): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
-function var opt $T: '[]'(
-	array [$$E, $$F, $$G] of var $T: x,
-	tuple(opt $$E, opt $$F, opt $$G): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+	 :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
+function var opt $T: '[]'(array [$$E, $$F] of var $T: x, tuple(opt $$E, opt $$F): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function var opt $T: '[]'(array [$$E, $$F, $$G] of var $T: x, tuple(opt $$E, opt $$F, opt $$G): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(
 	array [$$E, $$F, $$G, $$H] of var $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
@@ -68,14 +58,12 @@ function var opt $T: '[]'(
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 
-function var opt $T: '[]'(array [$$E] of var $T: x, var opt $$E: idx)
-	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function var opt $T: '[]'(array [$$E] of var $T: x, var opt $$E: idx) :: mzn_inline_call_by_name =
+	shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(array [$$E] of var $T: x, tuple(var opt $$E): idx)
 	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
-function var opt $T: '[]'(
-	array [$$E, $$F] of var $T: x,
-	tuple(var opt $$E, var opt $$F): idx,
-) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
+function var opt $T: '[]'(array [$$E, $$F] of var $T: x, tuple(var opt $$E, var opt $$F): idx)
+	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(
 	array [$$E, $$F, $$G] of var $T: x,
 	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
@@ -86,48 +74,27 @@ function var opt $T: '[]'(
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(
 	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 
-
-
-
 % Par optional array access
-function opt $T: shackle_element_opt_dispatch(array [$$E] of $T: x, opt $$E: idx)
-	:: mzn_inline =
+function opt $T: shackle_element_opt_dispatch(array [$$E] of $T: x, opt $$E: idx) :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$E] of $T: x, $F: idx)
-	:: mzn_inline =
+function opt $T: shackle_element_opt_dispatch(array [$E] of $T: x, $F: idx) :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 function opt $T: shackle_element_opt_dispatch(array [$$E] of opt $T: x, opt $$E: idx)
-	:: mzn_inline =
+	 :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$E] of opt $T: x, $F: idx)
-	:: mzn_inline =
+function opt $T: shackle_element_opt_dispatch(array [$E] of opt $T: x, $F: idx) :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 
 % Var optional array access
-function var opt $T: shackle_element_opt_dispatch(
-	array [$$E] of var $T: x,
-	var opt $$E: idx,
-) :: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(array [$$E] of var $T: x, var opt $$E: idx)
+	:: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
@@ -140,25 +107,20 @@ function var opt $T: shackle_element_opt_dispatch(array [$E] of var $T: x, var $
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(
-	array [$$E] of var opt $T: x,
-	var opt $$E: idx,
-) :: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(array [$$E] of var opt $T: x, var opt $$E: idx)
+	:: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(
-	array [$E] of var opt $T: x,
-	var $F: idx,
-) :: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(array [$E] of var opt $T: x, var $F: idx)
+	:: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-
 
 % Helper to test whether indices all occur
 test mzn_all_occurs($E) :: mzn_unreachable;
@@ -171,48 +133,22 @@ test mzn_all_occurs(tuple(opt $$E, opt $$F, opt $$G, opt $$H): i) =
 	forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4)]);
 test mzn_all_occurs(tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): i) =
 	forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4), occurs(i.5)]);
-test mzn_all_occurs(
-	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): i,
-) =
-	forall([
-		occurs(i.1),
-		occurs(i.2),
-		occurs(i.3),
-		occurs(i.4),
-		occurs(i.5),
-		occurs(i.6),
-	]);
+test mzn_all_occurs(tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): i) =
+	forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4), occurs(i.5), occurs(i.6)]);
 predicate mzn_all_occurs(var $E) :: mzn_unreachable;
 predicate mzn_all_occurs(var opt $$E: i) = occurs(i);
 predicate mzn_all_occurs(tuple(var opt $$E): i) = occurs(i.1);
-predicate mzn_all_occurs(tuple(var opt $$E, var opt $$F): i) =
-	occurs(i.1) /\ occurs(i.2);
+predicate mzn_all_occurs(tuple(var opt $$E, var opt $$F): i) = occurs(i.1) /\ occurs(i.2);
 predicate mzn_all_occurs(tuple(var opt $$E, var opt $$F, var opt $$G): i) =
 	forall([occurs(i.1), occurs(i.2), occurs(i.3)]);
-predicate mzn_all_occurs(
-	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): i,
-) = forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4)]);
+predicate mzn_all_occurs(tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): i) =
+	forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4)]);
 predicate mzn_all_occurs(
 	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): i,
 ) = forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4), occurs(i.5)]);
 predicate mzn_all_occurs(
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): i,
-) =
-	forall([
-		occurs(i.1),
-		occurs(i.2),
-		occurs(i.3),
-		occurs(i.4),
-		occurs(i.5),
-		occurs(i.6),
-	]);
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): i,
+) = forall([occurs(i.1), occurs(i.2), occurs(i.3), occurs(i.4), occurs(i.5), occurs(i.6)]);
 
 % Helper to test whether indices are all absent
 test mzn_all_absent($E) :: mzn_unreachable;
@@ -225,54 +161,26 @@ test mzn_all_absent(tuple(opt $$E, opt $$F, opt $$G, opt $$H): i) =
 	forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4)]);
 test mzn_all_absent(tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): i) =
 	forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4), absent(i.5)]);
-test mzn_all_absent(
-	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): i,
-) =
-	forall([
-		absent(i.1),
-		absent(i.2),
-		absent(i.3),
-		absent(i.4),
-		absent(i.5),
-		absent(i.6),
-	]);
+test mzn_all_absent(tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): i) =
+	forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4), absent(i.5), absent(i.6)]);
 predicate mzn_all_absent(var $E) :: mzn_unreachable;
 predicate mzn_all_absent(var opt $$E: i) = absent(i);
 predicate mzn_all_absent(tuple(var opt $$E): i) = absent(i.1);
-predicate mzn_all_absent(tuple(var opt $$E, var opt $$F): i) =
-	absent(i.1) /\ absent(i.2);
+predicate mzn_all_absent(tuple(var opt $$E, var opt $$F): i) = absent(i.1) /\ absent(i.2);
 predicate mzn_all_absent(tuple(var opt $$E, var opt $$F, var opt $$G): i) =
 	forall([absent(i.1), absent(i.2), absent(i.3)]);
-predicate mzn_all_absent(
-	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): i,
-) = forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4)]);
+predicate mzn_all_absent(tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): i) =
+	forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4)]);
 predicate mzn_all_absent(
 	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): i,
 ) = forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4), absent(i.5)]);
 predicate mzn_all_absent(
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): i,
-) =
-	forall([
-		absent(i.1),
-		absent(i.2),
-		absent(i.3),
-		absent(i.4),
-		absent(i.5),
-		absent(i.6),
-	]);
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): i,
+) = forall([absent(i.1), absent(i.2), absent(i.3), absent(i.4), absent(i.5), absent(i.6)]);
 
 % Helper to deopt indices
-function $E: mzn_deopt_index(array [$E] of any $T: x, $F: idx)
-	:: mzn_unreachable;
-function $$E: mzn_deopt_index(array [$$E] of any $T: x, opt $$E: idx) =
-	mzn_destruct_opt(idx).2;
+function $E: mzn_deopt_index(array [$E] of any $T: x, $F: idx) :: mzn_unreachable;
+function $$E: mzn_deopt_index(array [$$E] of any $T: x, opt $$E: idx) = mzn_destruct_opt(idx).2;
 function tuple($$E, $$F): mzn_deopt_index(
 	array [$$E, $$F] of any $T: x,
 	tuple(opt $$E, opt $$F): idx,
@@ -284,11 +192,22 @@ function tuple($$E, $$F, $$G): mzn_deopt_index(
 function tuple($$E, $$F, $$G, $$H): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H] of any $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
-) = (mzn_destruct_opt(idx.1).2, mzn_destruct_opt(idx.2).2, mzn_destruct_opt(idx.3).2, mzn_destruct_opt(idx.4).2);
+) = (
+	mzn_destruct_opt(idx.1).2,
+	mzn_destruct_opt(idx.2).2,
+	mzn_destruct_opt(idx.3).2,
+	mzn_destruct_opt(idx.4).2,
+);
 function tuple($$E, $$F, $$G, $$H, $$I): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H, $$I] of any $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
-) = (mzn_destruct_opt(idx.1).2, mzn_destruct_opt(idx.2).2, mzn_destruct_opt(idx.3).2, mzn_destruct_opt(idx.4).2, mzn_destruct_opt(idx.5).2);
+) = (
+	mzn_destruct_opt(idx.1).2,
+	mzn_destruct_opt(idx.2).2,
+	mzn_destruct_opt(idx.3).2,
+	mzn_destruct_opt(idx.4).2,
+	mzn_destruct_opt(idx.5).2,
+);
 function tuple($$E, $$F, $$G, $$H, $$I, $$J): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
 	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
@@ -300,10 +219,8 @@ function tuple($$E, $$F, $$G, $$H, $$I, $$J): mzn_deopt_index(
 	mzn_destruct_opt(idx.5).2,
 	mzn_destruct_opt(idx.6).2,
 );
-function var $E: mzn_deopt_index(array [$E] of any $T: x, var $F: idx)
-	:: mzn_unreachable;
-function var $$E: mzn_deopt_index(array [$$E] of any $T: x, var opt $$E: idx) =
-	deopt(idx);
+function var $E: mzn_deopt_index(array [$E] of any $T: x, var $F: idx) :: mzn_unreachable;
+function var $$E: mzn_deopt_index(array [$$E] of any $T: x, var opt $$E: idx) = deopt(idx);
 function tuple(var $$E, var $$F): mzn_deopt_index(
 	array [$$E, $$F] of any $T: x,
 	tuple(var opt $$E, var opt $$F): idx,
@@ -315,28 +232,25 @@ function tuple(var $$E, var $$F, var $$G): mzn_deopt_index(
 function tuple(var $$E, var $$F, var $$G, var $$H): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H] of any $T: x,
 	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
-) = (mzn_destruct_opt(idx.1).2, mzn_destruct_opt(idx.2).2, mzn_destruct_opt(idx.3).2, mzn_destruct_opt(idx.4).2);
+) = (
+	mzn_destruct_opt(idx.1).2,
+	mzn_destruct_opt(idx.2).2,
+	mzn_destruct_opt(idx.3).2,
+	mzn_destruct_opt(idx.4).2,
+);
 function tuple(var $$E, var $$F, var $$G, var $$H, var $$I): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H, $$I] of any $T: x,
 	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
-) = (mzn_destruct_opt(idx.1).2, mzn_destruct_opt(idx.2).2, mzn_destruct_opt(idx.3).2, mzn_destruct_opt(idx.4).2, mzn_destruct_opt(idx.5).2);
-function tuple(
-	var $$E,
-	var $$F,
-	var $$G,
-	var $$H,
-	var $$I,
-	var $$J,
-): mzn_deopt_index(
+) = (
+	mzn_destruct_opt(idx.1).2,
+	mzn_destruct_opt(idx.2).2,
+	mzn_destruct_opt(idx.3).2,
+	mzn_destruct_opt(idx.4).2,
+	mzn_destruct_opt(idx.5).2,
+);
+function tuple(var $$E, var $$F, var $$G, var $$H, var $$I, var $$J): mzn_deopt_index(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
 ) = (
 	mzn_destruct_opt(idx.1).2,
 	mzn_destruct_opt(idx.2).2,
@@ -346,29 +260,17 @@ function tuple(
 	mzn_destruct_opt(idx.6).2,
 );
 
-
 function opt $T: shackle_element_opt(array [$$E] of $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
 function opt $T: shackle_element_opt(array [$E] of $T: x, $F: idx) =
-	if mzn_all_occurs(idx) then
-		mzn_element_internal(x, mzn_deopt_index(x, idx))
-	else
-		<>
-	endif;
+	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 function opt $T: shackle_element_opt(array [$$E] of opt $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
 function opt $T: shackle_element_opt(array [$E] of opt $T: x, $F: idx) =
-	if mzn_all_occurs(idx) then
-		mzn_element_internal(x, mzn_deopt_index(x, idx))
-	else
-		<>
-	endif;
+	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 
-
-function var opt $T: shackle_element_opt_root(
-	array [$$E] of var $T: x,
-	var opt $$E: idx,
-) = if occurs(idx) then shackle_element(x, deopt(idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(array [$$E] of var $T: x, var opt $$E: idx) =
+	if occurs(idx) then shackle_element(x, deopt(idx)) else <> endif;
 function var opt $T: shackle_element_opt(array [$$E] of var $T: x, var opt $$E: idx) =
 	if length(x) = 0 then
 		let { constraint absent(idx) } in <>
@@ -385,10 +287,7 @@ function var opt $T: shackle_element_opt(array [$E] of var $T: x, var $F: idx) =
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(
-	array [$$E] of var opt $T: x,
-	var opt $$E: idx,
-) =
+function var opt $T: shackle_element_opt(array [$$E] of var opt $T: x, var opt $$E: idx) =
 	if length(x) = 0 then
 		let { constraint absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -416,33 +315,18 @@ function var opt $T: shackle_element_opt(array [$E] of var opt $T: x, var $F: id
 		<>
 	endif;
 function var opt $T: shackle_element_opt_root(array [$E] of var $T: x, var $F: idx) =
-	if mzn_all_occurs(idx) then
-		shackle_element_root(x, mzn_deopt_index(x, idx))
-	else
-		<>
-	endif;
-function var opt $T: shackle_element_opt_root(
-	array [$$E] of var opt $T: x,
-	var opt $$E: idx,
-) =
+	if mzn_all_occurs(idx) then shackle_element_root(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(array [$$E] of var opt $T: x, var opt $$E: idx) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(
-				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
-				deopt(idx),
-			),
+			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), deopt(idx)),
 		)
 	elseif occurs(idx) then
-		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)),
-		)
+		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(
-	array [$E] of var opt $T: x,
-	var $F: idx,
-) =
+function var opt $T: shackle_element_opt_root(array [$E] of var opt $T: x, var $F: idx) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
 			shackle_element_root(
@@ -451,31 +335,23 @@ function var opt $T: shackle_element_opt_root(
 			),
 		)
 	elseif mzn_all_occurs(idx) then
-		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)),
-		)
+		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
 
 % Helper to test if it is cheap to extend the array to handle absent indices
-test mzn_can_extend_array_opt(array [$E] of any $T: x, var $F: idx)
-	:: mzn_unreachable;
+test mzn_can_extend_array_opt(array [$E] of any $T: x, var $F: idx) :: mzn_unreachable;
 test mzn_can_extend_array_opt(array [$$E] of any $T: x, var opt $$E: idx) =
 	enum2int(min(index_set(x))) = 1 /\ not had_zero(idx);
-test mzn_can_extend_array_opt(
-	array [$$E, $$F] of any $T: x,
-	tuple(var opt $$E, var opt $$F): idx,
-) =
+test mzn_can_extend_array_opt(array [$$E, $$F] of any $T: x, tuple(var opt $$E, var opt $$F): idx) =
 	let {
 		any: idx_set = index_sets(x);
 	} in forall([
 		enum2int(min(idx_set.1)) = 1,
 		enum2int(min(idx_set.2)) = 1,
-		not
-		had_zero(idx.1),
-		not
-		had_zero(idx.2),
+		not had_zero(idx.1),
+		not had_zero(idx.2),
 	]);
 test mzn_can_extend_array_opt(
 	array [$$E, $$F, $$G] of any $T: x,
@@ -487,12 +363,9 @@ test mzn_can_extend_array_opt(
 		enum2int(min(idx_set.1)) = 1,
 		enum2int(min(idx_set.2)) = 1,
 		enum2int(min(idx_set.3)) = 1,
-		not
-		had_zero(idx.1),
-		not
-		had_zero(idx.2),
-		not
-		had_zero(idx.3),
+		not had_zero(idx.1),
+		not had_zero(idx.2),
+		not had_zero(idx.3),
 	]);
 test mzn_can_extend_array_opt(
 	array [$$E, $$F, $$G, $$H] of any $T: x,
@@ -505,24 +378,14 @@ test mzn_can_extend_array_opt(
 		enum2int(min(idx_set.2)) = 1,
 		enum2int(min(idx_set.3)) = 1,
 		enum2int(min(idx_set.4)) = 1,
-		not
-		had_zero(idx.1),
-		not
-		had_zero(idx.2),
-		not
-		had_zero(idx.3),
-		not
-		had_zero(idx.4),
+		not had_zero(idx.1),
+		not had_zero(idx.2),
+		not had_zero(idx.3),
+		not had_zero(idx.4),
 	]);
 test mzn_can_extend_array_opt(
 	array [$$E, $$F, $$G, $$H, $$I] of any $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
 ) =
 	let {
 		any: idx_set = index_sets(x);
@@ -532,27 +395,15 @@ test mzn_can_extend_array_opt(
 		enum2int(min(idx_set.3)) = 1,
 		enum2int(min(idx_set.4)) = 1,
 		enum2int(min(idx_set.5)) = 1,
-		not
-		had_zero(idx.1),
-		not
-		had_zero(idx.2),
-		not
-		had_zero(idx.3),
-		not
-		had_zero(idx.4),
-		not
-		had_zero(idx.5),
+		not had_zero(idx.1),
+		not had_zero(idx.2),
+		not had_zero(idx.3),
+		not had_zero(idx.4),
+		not had_zero(idx.5),
 	]);
 test mzn_can_extend_array_opt(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
 ) =
 	let {
 		any: idx_set = index_sets(x);
@@ -563,23 +414,16 @@ test mzn_can_extend_array_opt(
 		enum2int(min(idx_set.4)) = 1,
 		enum2int(min(idx_set.5)) = 1,
 		enum2int(min(idx_set.6)) = 1,
-		not
-		had_zero(idx.1),
-		not
-		had_zero(idx.2),
-		not
-		had_zero(idx.3),
-		not
-		had_zero(idx.4),
-		not
-		had_zero(idx.5),
-		not
-		had_zero(idx.6),
+		not had_zero(idx.1),
+		not had_zero(idx.2),
+		not had_zero(idx.3),
+		not had_zero(idx.4),
+		not had_zero(idx.5),
+		not had_zero(idx.6),
 	]);
 
 % Helper to extend arrays to include <> at index zero
-function array [$E] of any $T: mzn_extend_array_opt(array [$E] of any $T: x)
-	:: mzn_unreachable;
+function array [$E] of any $T: mzn_extend_array_opt(array [$E] of any $T: x) :: mzn_unreachable;
 function array [$$E] of any $T: mzn_extend_array_opt(array [$$E] of any $T: x) =
 	array1d(
 		to_enum_internal(enum_of(index_set(x)), 0)..max(index_set(x)),
@@ -588,9 +432,7 @@ function array [$$E] of any $T: mzn_extend_array_opt(array [$$E] of any $T: x) =
 				i in 0..enum2int(max(index_set(x))),
 		],
 	);
-function array [$$E, $$F] of any $T: mzn_extend_array_opt(
-	array [$$E, $$F] of any $T: x,
-) =
+function array [$$E, $$F] of any $T: mzn_extend_array_opt(array [$$E, $$F] of any $T: x) =
 	let {
 		any: idx_set = index_sets(x);
 	} in array2d(
@@ -602,9 +444,7 @@ function array [$$E, $$F] of any $T: mzn_extend_array_opt(
 				j in 0..enum2int(max(idx_set.2)),
 		],
 	);
-function array [$$E, $$F, $$G] of any $T: mzn_extend_array_opt(
-	array [$$E, $$F, $$G] of any $T: x,
-) =
+function array [$$E, $$F, $$G] of any $T: mzn_extend_array_opt(array [$$E, $$F, $$G] of any $T: x) =
 	let {
 		any: idx_set = index_sets(x);
 	} in array3d(
@@ -612,11 +452,7 @@ function array [$$E, $$F, $$G] of any $T: mzn_extend_array_opt(
 		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
 		to_enum_internal(enum_of(idx_set.3), 0)..max(idx_set.3),
 		[
-			if i = 0 \/ j = 0 \/ k = 0 then
-				<>
-			else
-				mzn_element_internal(x, (i, j, k))
-			endif |
+			if i = 0 \/ j = 0 \/ k = 0 then <> else mzn_element_internal(x, (i, j, k)) endif |
 				i in 0..enum2int(max(idx_set.1)),
 				j in 0..enum2int(max(idx_set.2)),
 				k in 0..enum2int(max(idx_set.3)),
@@ -695,16 +531,12 @@ function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_extend_array_opt(
 		],
 	);
 
-
 % Par optional index validity check
 test mzn_array_access_valid(array [$$E] of any $T: x, opt $$E: idx) =
 	absent(idx) \/ mzn_array_access_valid(deopt(idx), index_set(x), 0);
 test mzn_array_access_valid(array [$$E] of any $T: x, tuple(opt $$E): idx) =
 	mzn_array_access_valid(x, idx.1);
-test mzn_array_access_valid(
-	array [$$E, $$F] of any $T: x,
-	tuple(opt $$E, opt $$F): idx,
-) =
+test mzn_array_access_valid(array [$$E, $$F] of any $T: x, tuple(opt $$E, opt $$F): idx) =
 	let {
 		any: idx_set = index_sets(x);
 	} in forall([
@@ -762,13 +594,10 @@ test mzn_array_access_valid(
 		absent(idx.6) \/ mzn_array_access_valid(mzn_destruct_opt(idx.6).2, idx_set.6, 6),
 	]);
 
-
 test mzn_array_access_known_valid(array [$$E] of any $T: x, var opt $$E: idx) =
 	has_bounds(idx) /\ lb(idx)..ub(idx) subset index_set(x);
-test mzn_array_access_known_valid(
-	array [$$E] of any $T: x,
-	tuple(var opt $$E): idx,
-) = mzn_array_access_known_valid(x, idx.1);
+test mzn_array_access_known_valid(array [$$E] of any $T: x, tuple(var opt $$E): idx) =
+	mzn_array_access_known_valid(x, idx.1);
 test mzn_array_access_known_valid(
 	array [$$E, $$F] of any $T: x,
 	tuple(var opt $$E, var opt $$F): idx,
@@ -813,13 +642,7 @@ test mzn_array_access_known_valid(
 	]);
 test mzn_array_access_known_valid(
 	array [$$E, $$F, $$G, $$H, $$I] of any $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
 ) =
 	let {
 		any: idx_set = index_sets(x);
@@ -837,14 +660,7 @@ test mzn_array_access_known_valid(
 	]);
 test mzn_array_access_known_valid(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
-	tuple(
-		var opt $$E,
-		var opt $$F,
-		var opt $$G,
-		var opt $$H,
-		var opt $$I,
-		var opt $$J,
-	): idx,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
 ) =
 	let {
 		any: idx_set = index_sets(x);

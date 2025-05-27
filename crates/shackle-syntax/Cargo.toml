@@ -1,16 +1,21 @@
 [package]
 name = "shackle-syntax"
 version = "0.1.0"
-license = "MPL-2.0"
-
-edition = "2021"
+authors = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
-miette = "7.0.0"
+derive_more = { workspace = true, features = ["as_ref", "from"] }
+miette = { workspace = true }
 shackle-diagnostics = { path = "../shackle-diagnostics" }
-tree-sitter = "0.24.2"
-
-[dev-dependencies]
-expect-test = "1.4.1"
+tree-sitter = { workspace = true }
+tree-sitter-datazinc = { path = "../../parsers/tree-sitter-datazinc" }
 tree-sitter-eprime = { path = "../../parsers/tree-sitter-eprime" }
 tree-sitter-minizinc = { path = "../../parsers/tree-sitter-minizinc" }
+
+[dev-dependencies]
+expect-test = { workspace = true }
+
+[lints]
+workspace = true

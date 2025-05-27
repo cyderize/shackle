@@ -2,8 +2,8 @@
 
 use super::{Anonymous, Children, Expression, Identifier, Pattern, StringLiteral, Type};
 use crate::ast::{
-	ast_enum, ast_node, child_with_field_name, children_with_field_name,
-	optional_child_with_field_name, AstNode,
+	AstNode, ast_enum, ast_node, child_with_field_name, children_with_field_name,
+	optional_child_with_field_name,
 };
 
 ast_enum!(
@@ -28,9 +28,9 @@ ast_node!(
 	file
 );
 
-impl Include {
+impl<'tree> Include<'tree> {
 	/// Get the included file
-	pub fn file(&self) -> StringLiteral {
+	pub fn file(&self) -> StringLiteral<'tree> {
 		child_with_field_name(self, "file")
 	}
 }
@@ -44,24 +44,24 @@ ast_node!(
 	annotations
 );
 
-impl Declaration {
+impl<'tree> Declaration<'tree> {
 	/// Get the pattern of the declaration
-	pub fn pattern(&self) -> Pattern {
+	pub fn pattern(&self) -> Pattern<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// The type of the declaration
-	pub fn declared_type(&self) -> Type {
+	pub fn declared_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 
 	/// Get the right hand side of this declaration if there is one
-	pub fn definition(&self) -> Option<Expression> {
+	pub fn definition(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "definition")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -74,19 +74,19 @@ ast_node!(
 	annotations
 );
 
-impl Enumeration {
+impl<'tree> Enumeration<'tree> {
 	/// Get the variable being declared
-	pub fn id(&self) -> Identifier {
+	pub fn id(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the definition of this enumeration
-	pub fn cases(&self) -> Children<'_, EnumerationCase> {
+	pub fn cases(&self) -> Children<'tree, EnumerationCase<'tree>> {
 		children_with_field_name(self, "case")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -105,9 +105,9 @@ ast_node!(
 	members
 );
 
-impl EnumerationMembers {
+impl<'tree> EnumerationMembers<'tree> {
 	/// Get the members of this enum case
-	pub fn members(&self) -> Children<'_, Identifier> {
+	pub fn members(&self) -> Children<'tree, Identifier<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
@@ -118,14 +118,14 @@ ast_node!(
 	parameters
 );
 
-impl AnonymousEnumeration {
+impl<'tree> AnonymousEnumeration<'tree> {
 	/// Get the callee (will be _)
-	pub fn anonymous(&self) -> Anonymous {
+	pub fn anonymous(&self) -> Anonymous<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the parameter types
-	pub fn parameters(&self) -> Children<'_, Type> {
+	pub fn parameters(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 }
@@ -137,14 +137,14 @@ ast_node!(
 	parameters
 );
 
-impl EnumerationConstructor {
+impl<'tree> EnumerationConstructor<'tree> {
 	/// Get the id of the call
-	pub fn id(&self) -> Identifier {
+	pub fn id(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the parameter types
-	pub fn parameters(&self) -> Children<'_, Type> {
+	pub fn parameters(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 }
@@ -156,14 +156,14 @@ ast_node!(
 	definition
 );
 
-impl Assignment {
+impl<'tree> Assignment<'tree> {
 	/// Get the variable being assigned to
-	pub fn assignee(&self) -> Expression {
+	pub fn assignee(&self) -> Expression<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the right hand side of this assignment
-	pub fn definition(&self) -> Expression {
+	pub fn definition(&self) -> Expression<'tree> {
 		child_with_field_name(self, "definition")
 	}
 }
@@ -175,14 +175,14 @@ ast_node!(
 	annotations
 );
 
-impl Constraint {
+impl<'tree> Constraint<'tree> {
 	/// Get the value of the constraint
-	pub fn expression(&self) -> Expression {
+	pub fn expression(&self) -> Expression<'tree> {
 		child_with_field_name(self, "expression")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -194,41 +194,39 @@ ast_node!(
 	annotations
 );
 
-impl Solve {
+impl<'tree> Solve<'tree> {
 	/// Get the goal of the solve item
-	pub fn goal(&self) -> Goal {
-		let tree = self.cst_node().cst();
-		let node = self.cst_node().as_ref();
-		match node.child_by_field_name("strategy").unwrap().kind() {
+	pub fn goal(&self) -> Goal<'tree> {
+		match self.cst_node().child_with_field_name("strategy").kind() {
 			"satisfy" => Goal::Satisfy,
 			"maximize" => Goal::Maximize(Expression::new(
-				tree.node(node.child_by_field_name("objective").unwrap()),
+				self.cst_node().child_with_field_name("objective"),
 			)),
 			"minimize" => Goal::Minimize(Expression::new(
-				tree.node(node.child_by_field_name("objective").unwrap()),
+				self.cst_node().child_with_field_name("objective"),
 			)),
 			_ => unreachable!(),
 		}
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
 
 /// Solve goal
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Goal {
+pub enum Goal<'tree> {
 	/// Satisfaction problem
 	Satisfy,
 	/// Maximize the given objective
-	Maximize(Expression),
+	Maximize(Expression<'tree>),
 	/// Minimize the given objective
-	Minimize(Expression),
+	Minimize(Expression<'tree>),
 }
 
-impl Goal {
+impl<'tree> Goal<'tree> {
 	/// Return whether the solve goal is satisfaction
 	pub fn is_satisfy(&self) -> bool {
 		matches!(*self, Goal::Satisfy)
@@ -245,7 +243,7 @@ impl Goal {
 	}
 
 	/// Get the objective value if there is one
-	pub fn objective(&self) -> Option<&Expression> {
+	pub fn objective(&self) -> Option<&Expression<'tree>> {
 		match *self {
 			Goal::Maximize(ref obj) => Some(obj),
 			Goal::Minimize(ref obj) => Some(obj),
@@ -261,14 +259,14 @@ ast_node!(
 	section
 );
 
-impl Output {
+impl<'tree> Output<'tree> {
 	/// Get the value of the output item
-	pub fn expression(&self) -> Expression {
+	pub fn expression(&self) -> Expression<'tree> {
 		child_with_field_name(self, "expression")
 	}
 
 	/// The output section (from the annotation)
-	pub fn section(&self) -> Option<StringLiteral> {
+	pub fn section(&self) -> Option<StringLiteral<'tree>> {
 		optional_child_with_field_name(self, "section")
 	}
 }
@@ -283,29 +281,29 @@ ast_node!(
 	annotations
 );
 
-impl Function {
+impl<'tree> Function<'tree> {
 	/// Get the declared return type of this function
-	pub fn return_type(&self) -> Type {
+	pub fn return_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 
 	/// Get the name of this function
-	pub fn id(&self) -> Identifier {
+	pub fn id(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the parameters of this function
-	pub fn parameters(&self) -> Children<'_, Parameter> {
+	pub fn parameters(&self) -> Children<'tree, Parameter<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 
 	/// Get the body of this function if there is one
-	pub fn body(&self) -> Option<Expression> {
+	pub fn body(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "body")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -320,16 +318,10 @@ ast_node!(
 	annotations
 );
 
-impl Predicate {
+impl<'tree> Predicate<'tree> {
 	/// Get the type of this predicate
 	pub fn declared_type(&self) -> PredicateType {
-		match self
-			.cst_node()
-			.as_ref()
-			.child_by_field_name("type")
-			.unwrap()
-			.kind()
-		{
+		match self.cst_node().child_with_field_name("type").kind() {
 			"predicate" => PredicateType::Predicate,
 			"test" => PredicateType::Test,
 			_ => unreachable!(),
@@ -337,22 +329,22 @@ impl Predicate {
 	}
 
 	/// Get the name of this predicate
-	pub fn id(&self) -> Identifier {
+	pub fn id(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the parameters of this predicate
-	pub fn parameters(&self) -> Children<'_, Parameter> {
+	pub fn parameters(&self) -> Children<'tree, Parameter<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 
 	/// Get the body of this predicate if there is one
-	pub fn body(&self) -> Option<Expression> {
+	pub fn body(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "body")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -385,20 +377,20 @@ ast_node!(
 	parameters
 );
 
-impl Annotation {
+impl<'tree> Annotation<'tree> {
 	/// Get the name of this annotation
-	pub fn id(&self) -> Identifier {
+	pub fn id(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// Get the parameters if this is an annotation constructor, or return `None`
 	/// if this is an atomic annotation.
-	pub fn parameters(&self) -> Option<AnnotationParameters> {
+	pub fn parameters(&self) -> Option<AnnotationParameters<'tree>> {
 		optional_child_with_field_name(self, "parameters")
 	}
 
 	/// Body of annotation item (not supported, rejected during lowering)
-	pub fn body(&self) -> Option<Expression> {
+	pub fn body(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "body")
 	}
 }
@@ -409,9 +401,9 @@ ast_node!(
 	iter
 );
 
-impl AnnotationParameters {
+impl<'tree> AnnotationParameters<'tree> {
 	/// Get the parameters
-	pub fn iter(&self) -> Children<'_, Parameter> {
+	pub fn iter(&self) -> Children<'tree, Parameter<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 }
@@ -424,19 +416,19 @@ ast_node!(
 	annotations
 );
 
-impl Parameter {
+impl<'tree> Parameter<'tree> {
 	/// Get the type of this parameter
-	pub fn declared_type(&self) -> Type {
+	pub fn declared_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 
 	/// Get the pattern of this parameter if there is one
-	pub fn pattern(&self) -> Option<Pattern> {
+	pub fn pattern(&self) -> Option<Pattern<'tree>> {
 		optional_child_with_field_name(self, "name")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
@@ -449,28 +441,28 @@ ast_node!(
 	annotations
 );
 
-impl TypeAlias {
+impl<'tree> TypeAlias<'tree> {
 	/// The name of this type alias
-	pub fn name(&self) -> Identifier {
+	pub fn name(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// The type this is an alias for
-	pub fn aliased_type(&self) -> Type {
+	pub fn aliased_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use crate::ast::test::*;
+	use crate::ast::tests::*;
 
 	#[test]
 	fn test_include() {
@@ -485,7 +477,6 @@ mod test {
                         cst_kind: "include",
                         file: StringLiteral {
                             cst_kind: "string_literal",
-                            value: "foo.mzn",
                         },
                     },
                 ),
@@ -511,7 +502,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -533,9 +523,6 @@ mod test {
                             IntegerLiteral(
                                 IntegerLiteral {
                                     cst_kind: "integer_literal",
-                                    value: Ok(
-                                        3,
-                                    ),
                                 },
                             ),
                         ),
@@ -563,7 +550,6 @@ mod test {
                         id: UnquotedIdentifier(
                             UnquotedIdentifier {
                                 cst_kind: "identifier",
-                                name: "Foo",
                             },
                         ),
                         cases: [
@@ -574,19 +560,16 @@ mod test {
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "A",
                                             },
                                         ),
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "B",
                                             },
                                         ),
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "C",
                                             },
                                         ),
                                     ],
@@ -618,16 +601,12 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
                         definition: IntegerLiteral(
                             IntegerLiteral {
                                 cst_kind: "integer_literal",
-                                value: Ok(
-                                    1,
-                                ),
                             },
                         ),
                     },
@@ -657,7 +636,6 @@ mod test {
                                     UnquotedIdentifier(
                                         UnquotedIdentifier {
                                             cst_kind: "identifier",
-                                            name: "x",
                                         },
                                     ),
                                 ),
@@ -668,9 +646,6 @@ mod test {
                                 right: IntegerLiteral(
                                     IntegerLiteral {
                                         cst_kind: "integer_literal",
-                                        value: Ok(
-                                            1,
-                                        ),
                                     },
                                 ),
                             },
@@ -701,7 +676,6 @@ mod test {
                                 UnquotedIdentifier(
                                     UnquotedIdentifier {
                                         cst_kind: "identifier",
-                                        name: "x",
                                     },
                                 ),
                             ),
@@ -737,7 +711,6 @@ mod test {
                                         value: StringLiteral(
                                             StringLiteral {
                                                 cst_kind: "string_literal",
-                                                value: "foo",
                                             },
                                         ),
                                     },
@@ -782,7 +755,6 @@ mod test {
                         id: UnquotedIdentifier(
                             UnquotedIdentifier {
                                 cst_kind: "identifier",
-                                name: "foo",
                             },
                         ),
                         parameters: [
@@ -807,7 +779,6 @@ mod test {
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "x",
                                             },
                                         ),
                                     ),
@@ -823,7 +794,6 @@ mod test {
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "x",
                                             },
                                         ),
                                     ),
@@ -834,9 +804,6 @@ mod test {
                                     right: IntegerLiteral(
                                         IntegerLiteral {
                                             cst_kind: "integer_literal",
-                                            value: Ok(
-                                                1,
-                                            ),
                                         },
                                     ),
                                 },
@@ -866,7 +833,6 @@ mod test {
                         name: UnquotedIdentifier(
                             UnquotedIdentifier {
                                 cst_kind: "identifier",
-                                name: "Foo",
                             },
                         ),
                         aliased_type: SetType(

@@ -1,6 +1,9 @@
 //! Error handling
 
-#![allow(unused_assignments)] // TODO: Workaround for https://github.com/rust-lang/rust/issues/147648
+#![allow(
+	unused_assignments,
+	reason = "Workaround for https://github.com/rust-lang/rust/issues/147648"
+)]
 
 use std::{
 	fmt::{Display, Formatter},
@@ -11,7 +14,7 @@ use std::{
 use miette::{Diagnostic, SourceOffset, SourceSpan};
 use thiserror::Error;
 
-use crate::{Diagnostics, SourceFile};
+use crate::SourceFile;
 
 /// An error internal to Shackle.
 ///
@@ -31,8 +34,8 @@ impl InternalError {
 	pub fn new(msg: impl AsRef<str>) -> InternalError {
 		let loc = Location::caller();
 		InternalError {
-			msg: msg.as_ref().to_string(),
-			loc: Some((loc.file().to_string(), loc.line(), loc.column())),
+			msg: msg.as_ref().to_owned(),
+			loc: Some((loc.file().to_owned(), loc.line(), loc.column())),
 		}
 	}
 }
@@ -610,21 +613,6 @@ impl TryFrom<Vec<Error>> for Error {
 			0 => Err(EmptyErrorVec),
 			1 => Ok(value.last().unwrap().clone()),
 			_ => Ok(MultipleErrors { errors: value }.into()),
-		}
-	}
-}
-
-impl TryFrom<Diagnostics<Error>> for Error {
-	type Error = EmptyErrorVec;
-
-	fn try_from(value: Diagnostics<Error>) -> Result<Self, Self::Error> {
-		match value.len() {
-			0 => Err(EmptyErrorVec),
-			1 => Ok(value.iter().next().unwrap().clone()),
-			_ => Ok(MultipleErrors {
-				errors: value.iter().cloned().collect(),
-			}
-			.into()),
 		}
 	}
 }

@@ -1,52 +1,80 @@
 //! Wrappers around the tree-sitter tree to allow for usage with salsa.
 
 use std::{
-	fmt::Debug,
 	hash::{Hash, Hasher},
-	mem,
-	ops::Deref,
-	sync::Arc,
+	num::NonZeroU16,
 };
 
+use derive_more::{AsRef, From};
 use miette::SourceSpan;
-use shackle_diagnostics::{Error, MultipleErrors, SourceFile, SyntaxError};
-use tree_sitter::{Node, Tree};
+use shackle_diagnostics::{MultipleErrors, Result, SourceFile, SyntaxError};
+pub use tree_sitter::Point;
+use tree_sitter::{Node, Parser, Tree, TreeCursor};
 
+use crate::InputLang;
 /// Wrapper for a tree sitter tree.
-///
-/// The underlying `Tree` can be accessed through dereferencing.
-#[derive(Debug, Clone)]
-pub struct Cst {
-	inner: Arc<CstInner>,
-}
-
-#[derive(Debug, Clone)]
-struct CstInner {
-	tree: Tree,
-	source: SourceFile,
-}
+#[derive(AsRef, Clone, From)]
+pub struct Cst(Tree);
 
 impl Cst {
-	/// Create a CST from a tree sitter tree and source buffer.
-	pub fn new(tree: Tree, source: SourceFile) -> Self {
-		Cst {
-			inner: Arc::new(CstInner { tree, source }),
+	/// Parse a file
+	pub fn new(text: &str, lang: InputLang) -> Self {
+		let mut parser = Parser::new();
+		let tree_sitter_lang = match lang {
+			InputLang::DataZinc => tree_sitter_datazinc::LANGUAGE,
+			InputLang::MiniZinc => tree_sitter_minizinc::LANGUAGE,
+			InputLang::EPrime => tree_sitter_eprime::LANGUAGE,
+			InputLang::Json => unreachable!("Unsupported language"),
+		};
+		parser
+			.set_language(&tree_sitter_lang.into())
+			.expect("Failed to set tree sitter language");
+		let tree = parser.parse(text, None).expect("Failed to run parser");
+		tree.into()
+	}
+
+	/// Get the root node
+	pub fn root(&self) -> CstNode<'_> {
+		self.0.root_node().into()
+	}
+
+	/// Find the node at the given position
+	pub fn find(&self, start: Point, end: Point) -> Option<CstNode<'_>> {
+		let result = self.root().0.descendant_for_point_range(start, end);
+		if start == end && start.column > 0 {
+			// Find when we're looking just after a node
+			let prev_column = Point {
+				row: start.row,
+				column: start.column - 1,
+			};
+			let prev = self
+				.root()
+				.0
+				.descendant_for_point_range(prev_column, prev_column);
+			match (prev, result) {
+				(Some(p), Some(r)) => {
+					if r.byte_range().contains(&p.byte_range().start) {
+						return Some(p.into());
+					}
+					return Some(r.into());
+				}
+				(Some(n), None) | (None, Some(n)) => {
+					return Some(n.into());
+				}
+				_ => return None,
+			}
 		}
+		Some(result?.into())
 	}
 
-	/// Get the underlying source text.
-	pub fn text(&self) -> &str {
-		self.inner.source.contents()
-	}
-
-	/// Get the source file
-	pub fn source(&self) -> SourceFile {
-		self.inner.source.clone()
+	/// Whether this CST has any syntax errors
+	pub fn has_errors(&self) -> bool {
+		self.error_nodes().next().is_some()
 	}
 
 	/// Get the error/missing nodes if any
-	fn error_nodes(&self) -> impl Iterator<Item = CstNode> + '_ {
-		let mut cursor = self.walk();
+	fn error_nodes(&self) -> impl Iterator<Item = CstNode<'_>> + '_ {
+		let mut cursor = self.0.walk();
 		let mut done = false;
 		std::iter::from_fn(move || {
 			while !done {
@@ -57,14 +85,14 @@ impl Cst {
 							done = true;
 							let node = cursor.node();
 							if node.is_error() || node.is_missing() {
-								return Some(self.node(node));
+								return Some(CstNode::from(node));
 							}
 							return None;
 						}
 					}
 				}
 				if node.is_error() || node.is_missing() {
-					return Some(self.node(node));
+					return Some(CstNode::from(node));
 				}
 			}
 			None
@@ -72,9 +100,9 @@ impl Cst {
 	}
 
 	/// Get the syntax error(s) if any
-	pub fn errors(&self) -> impl Iterator<Item = SyntaxError> + '_ {
-		self.error_nodes().map(|cst_node| {
-			let mut node = *cst_node.as_ref();
+	pub fn errors<'a>(&'a self, src: &'a SourceFile) -> impl Iterator<Item = SyntaxError> + 'a {
+		self.error_nodes().map(move |cst_node| {
+			let mut node = cst_node.0;
 			if node.is_error() {
 				if node.parent().is_none() {
 					// Root node is ERROR
@@ -107,23 +135,27 @@ impl Cst {
 					node = child;
 				}
 			}
+
+			let cst_node = CstNode::from(node);
 			let msg = if node.is_missing() {
 				format!("Missing {}", node.kind())
 			} else if node.is_error() {
-				let c = self.node(node);
-				let text = c.text();
+				let text = cst_node.text(src.contents());
 				format!("Unexpected {}", text.chars().next().unwrap())
 			} else {
 				format!("Unexpected {}", node.kind())
 			};
-			let (src, span) = self.node(node).source_span();
-			SyntaxError { src, span, msg }
+			SyntaxError {
+				src: src.clone(),
+				span: cst_node.span(),
+				msg,
+			}
 		})
 	}
 
 	/// Check for syntax errors
-	pub fn check(&self) -> Result<(), Error> {
-		let mut errors = self.errors().map(|e| e.into()).collect::<Vec<_>>();
+	pub fn check(&self, src: &SourceFile) -> Result<()> {
+		let mut errors = self.errors(src).map(|e| e.into()).collect::<Vec<_>>();
 		if errors.is_empty() {
 			Ok(())
 		} else if errors.len() == 1 {
@@ -132,24 +164,13 @@ impl Cst {
 			Err(MultipleErrors { errors }.into())
 		}
 	}
-
-	/// Create a [`CstNode`] from the given raw node from the same tree.
-	pub fn node<'a>(&'a self, node: Node<'a>) -> CstNode {
-		let tree = self.clone();
-		unsafe { CstNode::new(tree, node) }
-	}
-
-	/// Print this tree for debugging purposes.
-	pub fn debug_print<W: std::fmt::Write>(&self, buf: &mut W) {
-		self.node(self.root_node()).debug_print(buf)
-	}
 }
 
 impl PartialEq for Cst {
 	fn eq(&self, other: &Self) -> bool {
 		// Fake equality using pointers, instead of actually comparing trees
 		// TODO: replace with real comparison
-		std::ptr::eq(self.inner.as_ref(), other.inner.as_ref())
+		std::ptr::eq(&self.0, &other.0)
 	}
 }
 
@@ -159,161 +180,177 @@ impl Hash for Cst {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		// Fake hash using pointers, instead of actually hashing tree
 		// TODO: replace with real hash
-		std::ptr::hash(self.inner.as_ref(), state)
+		std::ptr::hash(&self.0, state)
 	}
 }
 
-impl Deref for Cst {
-	type Target = Tree;
-
-	fn deref(&self) -> &Self::Target {
-		&self.inner.tree
+impl std::fmt::Debug for Cst {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.root().fmt(f)
 	}
 }
 
 /// Reference to tree sitter node.
-///
-/// Works around the lifetime parameter for `Node` so that it can be used in salsa queries.
-/// Access the underlying `Node` through the `as_ref()` and `as_mut()` methods.
-/// Raw `Node`s can be converted to `CstNode`s using `Cst::node()`.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct CstNode {
-	tree: Cst, // Keeps the Tree alive
-	node: Node<'static>,
+#[derive(AsRef, Clone, From, Eq, PartialEq, Hash)]
+pub struct CstNode<'tree>(Node<'tree>);
+
+impl<'tree> CstNode<'tree> {
+	/// THe unique node ID
+	pub fn id(&self) -> usize {
+		self.0.id()
+	}
+
+	/// The kind of this CST node
+	pub fn kind(&self) -> &'static str {
+		self.0.kind()
+	}
+
+	/// Whether this node is missing
+	pub fn is_missing(&self) -> bool {
+		self.0.is_missing()
+	}
+
+	/// Whether this node is an error
+	pub fn is_error(&self) -> bool {
+		self.0.is_error()
+	}
+
+	/// Whether this node has an error
+	pub fn has_error(&self) -> bool {
+		self.0.has_error()
+	}
+
+	/// Get the text of this node.
+	pub fn text<'a>(&self, source: &'a str) -> &'a str {
+		self.0.utf8_text(source.as_bytes()).unwrap()
+	}
+
+	/// Get the parent of this node if there is one
+	pub fn parent(&self) -> Option<Self> {
+		self.0.parent().map(Self::from)
+	}
+
+	/// Get the given child by index (if present)
+	pub fn child(&self, idx: u32) -> Option<Self> {
+		self.0.child(idx).map(CstNode::from)
+	}
+
+	/// Get the children of this node
+	pub fn children(&self) -> impl Iterator<Item = Self> {
+		let mut cursor = self.0.walk();
+		let mut done = !cursor.goto_first_child();
+		std::iter::from_fn(move || {
+			if done {
+				None
+			} else {
+				let child = CstNode::from(cursor.node());
+				done = !cursor.goto_next_sibling();
+				Some(child)
+			}
+		})
+	}
+
+	/// Retrieve a child node by its field name
+	pub fn child_with_field_name(&self, field: &str) -> Self {
+		self.optional_child_with_field_name(field)
+			.unwrap_or_else(|| panic!("Expected child node with field name {}", field))
+	}
+
+	/// Optionally retrieve a child node by its field name
+	pub fn optional_child_with_field_name(&self, field: &str) -> Option<Self> {
+		self.0.child_by_field_name(field).map(Self::from)
+	}
+
+	/// Retrieve children by field name
+	pub fn children_with_field_name(&self, field: &str) -> ChildrenWithFieldName<'tree> {
+		let id = self.0.language().field_id_for_name(field).unwrap();
+		let mut cursor = self.0.walk();
+		let done = !cursor.goto_first_child();
+		ChildrenWithFieldName {
+			field: id,
+			cursor,
+			done,
+		}
+	}
+
+	/// Get the span of this node
+	pub fn span(&self) -> SourceSpan {
+		self.0.byte_range().into()
+	}
 }
 
-impl Debug for CstNode {
+impl<'a> std::fmt::Debug for CstNode<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let cursor = self.0.walk();
+		let field_name = cursor.field_name();
 		f.debug_struct("CstNode")
-			.field("kind", &self.as_ref().kind())
-			.field("text", &self.text())
+			.field("kind", &self.0.kind())
+			.field("start", &self.0.start_position())
+			.field("end", &self.0.end_position())
+			.field("is_named", &self.0.is_named())
+			.field("has_error", &self.0.has_error())
+			.field("is_error", &self.0.is_error())
+			.field("is_missing", &self.0.is_missing())
+			.field("is_extra", &self.0.is_extra())
+			.field("field", &field_name)
+			.field("children", &self.children().collect::<Vec<_>>())
 			.finish()
 	}
 }
 
-impl CstNode {
-	unsafe fn new<'tree>(tree: Cst, node: Node<'tree>) -> Self {
-		// Unsafe because we can't guarantee that `tree` is actually the tree for `node`.
-		CstNode {
-			tree,
-			node: mem::transmute::<tree_sitter::Node<'tree>, tree_sitter::Node<'static>>(node),
+/// Iterator over child nodes with a particular field name
+#[derive(Clone)]
+pub struct ChildrenWithFieldName<'tree> {
+	field: NonZeroU16,
+	cursor: TreeCursor<'tree>,
+	done: bool,
+}
+
+impl<'tree> ChildrenWithFieldName<'tree> {
+	pub(crate) fn reset(&mut self) {
+		if self.cursor.goto_parent() {
+			let _ = self.cursor.goto_first_child();
 		}
+		self.done = false;
 	}
+}
 
-	/// Get the text of this node.
-	pub fn text(&self) -> &str {
-		self.node.utf8_text(self.tree.text().as_bytes()).unwrap()
-	}
+impl<'tree> Iterator for ChildrenWithFieldName<'tree> {
+	type Item = CstNode<'tree>;
 
-	/// Get the source and span for this node (convenience function for producing errors)
-	pub fn source_span(&self) -> (SourceFile, SourceSpan) {
-		(
-			self.cst().inner.source.clone(),
-			self.as_ref().byte_range().into(),
-		)
-	}
-
-	/// Get the concrete syntax tree containing this node.
-	pub fn cst(&self) -> &Cst {
-		&self.tree
-	}
-
-	/// Get the location of this node
-	pub fn debug_location(&self) -> String {
-		let file = self.cst().inner.source.name();
-		let start = self.node.start_position();
-		let end = self.node.end_position();
-		format!(
-			"{:?}:{}.{}-{}.{}",
-			file,
-			start.row + 1,
-			start.column + 1,
-			end.row + 1,
-			end.column + 1
-		)
-	}
-
-	/// Print this concrete syntax node and its descendants for debugging purposes.
-	pub fn debug_print<W: std::fmt::Write>(&self, buf: &mut W) {
-		let mut level = 0;
-		let mut cursor = self.as_ref().walk();
-		loop {
-			let node = cursor.node();
-			writeln!(
-				buf,
-				"{:i$}kind={:?}, named={:?}, has_error={:?}, error={:?}, missing={:?}, extra={:?}, field={:?}",
-				"",
-				node.kind(),
-				node.is_named(),
-				node.has_error(),
-				node.is_error(),
-				node.is_missing(),
-				node.is_extra(),
-				cursor.field_name(),
-				i = level * 2
-			)
-			.unwrap();
-
-			if cursor.goto_first_child() {
-				level += 1;
-			} else {
-				while !cursor.goto_next_sibling() {
-					if cursor.goto_parent() {
-						level -= 1;
-					} else {
-						return;
-					}
-				}
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.done {
+			return None;
+		}
+		while self.cursor.field_id() != Some(self.field) {
+			if !self.cursor.goto_next_sibling() {
+				return None;
 			}
 		}
+		let result = CstNode::from(self.cursor.node());
+		self.done = !self.cursor.goto_next_sibling();
+		Some(result)
 	}
 }
 
-impl<'a> AsRef<Node<'a>> for CstNode
-where
-	Self: 'a,
-{
-	fn as_ref(&self) -> &Node<'a> {
-		unsafe { std::mem::transmute(&self.node) }
-	}
-}
-
-impl<'a> AsMut<Node<'a>> for CstNode
-where
-	Self: 'a,
-{
-	fn as_mut(&mut self) -> &mut Node<'a> {
-		unsafe { std::mem::transmute(&mut self.node) }
-	}
-}
-
-impl<'a> From<CstNode> for Node<'a>
-where
-	CstNode: 'a,
-{
-	fn from(x: CstNode) -> Self {
-		x.node
+impl<'tree> std::fmt::Debug for ChildrenWithFieldName<'tree> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut iter = self.clone();
+		iter.reset();
+		f.debug_list().entries(iter).finish()
 	}
 }
 
 #[cfg(test)]
-mod test {
-	use expect_test::{expect, expect_file, ExpectFile};
-	use shackle_diagnostics::SourceFile;
-	use tree_sitter::Parser;
+mod tests {
+	use expect_test::{ExpectFile, expect, expect_file};
 
 	use super::Cst;
+	use crate::InputLang;
 
 	fn check_cst_file(source: &str, expected: ExpectFile) {
-		let mut parser = Parser::new();
-		parser
-			.set_language(&tree_sitter_minizinc::LANGUAGE.into())
-			.unwrap();
-		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
-		let mut buf = String::new();
-		cst.debug_print(&mut buf);
-		expected.assert_eq(&buf);
+		let cst = Cst::new(source, InputLang::MiniZinc);
+		expected.assert_debug_eq(&cst);
 	}
 
 	#[test]
@@ -331,26 +368,21 @@ mod test {
 			int: = 1;
 			foo
 		"#;
-		let mut parser = Parser::new();
-		parser
-			.set_language(&tree_sitter_minizinc::LANGUAGE.into())
-			.unwrap();
-		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
+		let cst = Cst::new(source, InputLang::MiniZinc);
 		let actual = cst
 			.error_nodes()
 			.map(|n| {
 				format!(
 					"{} {}",
-					if n.as_ref().is_missing() {
+					if n.is_missing() {
 						"missing"
 					} else {
 						"unexpected"
 					},
-					if n.as_ref().is_error() {
-						n.text()
+					if n.is_error() {
+						n.text(source)
 					} else {
-						n.as_ref().kind()
+						n.kind()
 					}
 				)
 			})

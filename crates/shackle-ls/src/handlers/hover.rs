@@ -1,101 +1,74 @@
-use lsp_server::ResponseError;
+use lsp_server::{ErrorCode, ResponseError};
 use lsp_types::{
-	request::HoverRequest, Hover, HoverContents, HoverParams, LanguageString, MarkedString,
+	Hover, HoverContents, HoverParams, LanguageString, MarkedString, Position,
+	request::HoverRequest,
 };
-use shackle_compiler::{
-	db::CompilerDatabase,
-	file::ModelRef,
-	hir::{
-		db::Hir,
-		ids::{LocalEntityRef, NodeRef},
-		source::{find_node, Point},
-	},
-};
+use shackle_hir::{db::CompilerDatabase, ids::EntityId, input::ModelFile, source::find_leaf};
 
-use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::node_ref_to_location};
+use crate::{
+	db::LanguageServerContext,
+	dispatch::RequestHandler,
+	utils::{node_ref_to_location, position_to_byte_offset},
+};
 
 #[derive(Debug)]
-pub struct HoverHandler;
+pub(crate) struct HoverHandler;
 
-impl RequestHandler<HoverRequest, (ModelRef, Point)> for HoverHandler {
+impl RequestHandler<HoverRequest, (ModelFile, Position)> for HoverHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: HoverParams,
-	) -> Result<(ModelRef, Point), ResponseError> {
+	) -> Result<(ModelFile, Position), ResponseError> {
 		let model =
 			db.set_active_file_from_document(&params.text_document_position_params.text_document)?;
-		let start = Point {
-			row: params.text_document_position_params.position.line as usize,
-			column: params.text_document_position_params.position.character as usize,
-		};
-		Ok((model, start))
+		let position = params.text_document_position_params.position;
+		Ok((model, position))
 	}
 
 	fn execute(
 		db: &CompilerDatabase,
-		(model_ref, start): (ModelRef, Point),
+		(model_ref, start): (ModelFile, Position),
 	) -> Result<Option<Hover>, ResponseError> {
-		let found = find_node(db, *model_ref, start, start);
-		Ok((|| {
-			let node = found?;
-			match node {
-				NodeRef::Entity(e) => {
-					let item = e.item(db);
-					match e.entity(db) {
-						LocalEntityRef::Expression(e) => {
-							let types = db.lookup_item_types(item);
-							let model = item.model(db);
-							let data = item.local_item_ref(db).data(&model);
-							let value =
-								types.pretty_print_expression_ty(db, data, e).or_else(|| {
-									let res = types.name_resolution(e)?;
-									let types = db.lookup_item_types(res.item());
-									let model = res.item().model(db);
-									let data = res.item().local_item_ref(db).data(&model);
-									types.pretty_print_pattern_ty(db, data, res.pattern())
-								})?;
-							Some(Hover {
-								contents: HoverContents::Scalar(MarkedString::LanguageString(
-									LanguageString {
-										language: "minizinc".to_owned(),
-										value,
-									},
-								)),
-								range: Some(node_ref_to_location(db, node)?.range),
-							})
-						}
-						LocalEntityRef::Pattern(p) => {
-							let types = db.lookup_item_types(item);
-							let model = item.model(db);
-							let data = item.local_item_ref(db).data(&model);
-							Some(Hover {
-								contents: HoverContents::Scalar(MarkedString::LanguageString(
-									LanguageString {
-										language: "minizinc".to_owned(),
-										value: types.pretty_print_pattern_ty(db, data, p)?,
-									},
-								)),
-								range: Some(node_ref_to_location(db, node)?.range),
-							})
-						}
-						_ => None,
-					}
+		let byte_offset =
+			position_to_byte_offset(&model_ref.contents(db), start).ok_or_else(|| {
+				ResponseError {
+					code: ErrorCode::InvalidRequest as i32,
+					message: "Invalid position.".to_owned(),
+					data: None,
 				}
-				_ => None,
-			}
-		})())
+			})?;
+		let Some(found) = find_leaf(db, model_ref, byte_offset) else {
+			return Ok(None);
+		};
+		let item = found.item(db);
+		let data = item.data(db);
+		let types = item.types(db);
+		let range = node_ref_to_location(db, found).map(|loc| loc.range);
+		let value = match found.entity(db) {
+			EntityId::Expression(e) => types.pretty_print_expression_ty(data, e),
+			EntityId::Pattern(p) => types.pretty_print_pattern_ty(data, p),
+			_ => None,
+		};
+
+		Ok(value.map(|value| Hover {
+			contents: HoverContents::Scalar(MarkedString::LanguageString(LanguageString {
+				language: "minizinc".to_owned(),
+				value,
+			})),
+			range,
+		}))
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::HoverHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_hover() {

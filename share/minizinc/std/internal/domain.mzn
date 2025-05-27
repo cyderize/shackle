@@ -1,55 +1,38 @@
 % Domain constraints
-test mzn_domain_constraint(string: name, $$E: x, set of $$E: s)
-	:: mzn_inline_call_by_name =
+test mzn_domain_constraint(string: name, $$E: x, set of $$E: s) :: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(enum2int(x), enum2int(s)),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
-test mzn_domain_constraint(string: name, opt $$E: x, set of $$E: s)
-	:: mzn_inline_call_by_name =
+test mzn_domain_constraint(string: name, opt $$E: x, set of $$E: s) :: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(enum2int(x), enum2int(s)),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
-test mzn_domain_constraint(string: name, set of $$E: x, set of $$E: s)
-	:: mzn_inline_call_by_name =
+test mzn_domain_constraint(string: name, set of $$E: x, set of $$E: s) :: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(enum2int(x), enum2int(s)),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
-test mzn_domain_constraint(string: name, float: x, set of float: s)
-	:: mzn_inline_call_by_name =
+test mzn_domain_constraint(string: name, float: x, set of float: s) :: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(x, s),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
-test mzn_domain_constraint(string: name, opt float: x, set of float: s)
-	:: mzn_inline_call_by_name =
+test mzn_domain_constraint(string: name, opt float: x, set of float: s) :: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(x, s),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
 test mzn_domain_constraint(string: name, set of float: x, set of float: s)
 	:: mzn_inline_call_by_name =
 	mzn_assert_warn(
 		mzn_var_dom(x, s),
-		"the type-inst of '" ++
-			name ++
-			"' is \(s), but is assigned the value \(x).",
+		"the type-inst of '" ++ name ++ "' is \(s), but is assigned the value \(x).",
 	);
 
 predicate mzn_domain_constraint(string: name, var $$E: x, set of $$E: s)
-	:: mzn_inline_call_by_name = mzn_var_dom(enum2int(x), enum2int(s));
+	 :: mzn_inline_call_by_name = mzn_var_dom(enum2int(x), enum2int(s));
 predicate mzn_domain_constraint(string: name, var opt $$E: x, set of $$E: s)
 	:: mzn_inline_call_by_name = mzn_var_dom(enum2int(x), enum2int(s));
 predicate mzn_domain_constraint(string: name, var set of $$E: x, set of $$E: s)
@@ -70,12 +53,11 @@ test mzn_var_dom(set of int: x, set of int: s) = x subset s;
 predicate mzn_var_dom(var set of int: x, set of int: s) =
 	if has_ub_set(x) /\ ub(x) subset s then true else set_subset(x, s) endif;
 
-test mzn_var_dom(array [int] of int: x, set of int: d) =
-	forall (x_i in x) (mzn_var_dom(x_i, d));
+test mzn_var_dom(array [int] of int: x, set of int: d) = forall (x_i in x) (mzn_var_dom(x_i, d));
 predicate mzn_var_dom(array [int] of var int: x, set of int: d) =
 	forall (x_i in x) (mzn_var_dom(x_i, d));
 test mzn_var_dom(array [int] of opt int: x, set of int: d) =
-	forall (x_i in x) (mzn_var_dom(x_i, d));
+	 forall (x_i in x) (mzn_var_dom(x_i, d));
 predicate mzn_var_dom(array [int] of var opt int: x, set of int: d) =
 	forall (x_i in x) (mzn_var_dom(x_i, d));
 test mzn_var_dom(array [int] of set of int: x, set of int: d) =
@@ -85,11 +67,7 @@ predicate mzn_var_dom(array [int] of var set of int: x, set of int: d) =
 
 test mzn_var_dom(float: x, float: l, float: u) = x >= l /\ x <= u;
 predicate mzn_var_dom(var float: x, float: l, float: u) =
-	if has_bounds(x) /\ lb(x) >= l /\ ub(x) <= u then
-		true
-	else
-		x >= l /\ x <= u
-	endif;
+	if has_bounds(x) /\ lb(x) >= l /\ ub(x) <= u then true else x >= l /\ x <= u endif;
 
 test mzn_var_dom(float: x, set of float: s) = x in s;
 predicate mzn_var_dom(var float: x, set of float: s) = x in s;
@@ -105,20 +83,14 @@ test mzn_var_dom(array [int] of float: x, float: l, float: u) =
 predicate mzn_var_dom(array [int] of var float: x, float: l, float: u) =
 	forall (x_i in x) (mzn_var_dom(x_i, l, u));
 test mzn_var_dom(array [int] of float: x, set of float: d) =
-	forall (x_i in x) (mzn_var_dom(x_i, d));
+	 forall (x_i in x) (mzn_var_dom(x_i, d));
 predicate mzn_var_dom(array [int] of var float: x, set of float: d) =
 	forall (x_i in x) (mzn_var_dom(x_i, d));
 
 test mzn_check_index_set(string: name, set of $$E: actual, set of $$E: expected)
+	:: mzn_inline_call_by_name = mzn_check_index_set(name, 1, 1, actual, expected);
+test mzn_check_index_set(string: name, int: d, int: dims, set of $$E: actual, set of $$E: expected)
 	:: mzn_inline_call_by_name =
-	mzn_check_index_set(name, 1, 1, actual, expected);
-test mzn_check_index_set(
-	string: name,
-	int: d,
-	int: dims,
-	set of $$E: actual,
-	set of $$E: expected,
-) :: mzn_inline_call_by_name =
 	assert(
 		actual = expected,
 		"Index set " ++
@@ -127,9 +99,7 @@ test mzn_check_index_set(
 			name ++
 			"' is \(expected), but is assigned an array with " ++
 			if dims > 1 then "the corresponding " endif ++
-			"index set \(
-				actual
-			). You may need to coerce the index sets using the array\(
+			"index set \(actual). You may need to coerce the index sets using the array\(
 				dims
 			)d function.",
 	);

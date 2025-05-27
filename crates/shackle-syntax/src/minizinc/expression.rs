@@ -3,15 +3,15 @@
 use std::borrow::Cow;
 
 use super::{
-	parse_float_literal, parse_integer_literal, Absent, ArrayAccess, ArrayComprehension,
-	ArrayLiteral, ArrayLiteral2D, BooleanLiteral, Children, Constraint, Declaration, FloatLiteral,
-	Generator, Infinity, IntegerLiteral, Parameter, Pattern, RecordLiteral, SetComprehension,
-	SetLiteral, StringLiteral, TupleLiteral, Type,
+	Absent, ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, BooleanLiteral,
+	Children, Constraint, Declaration, FloatLiteral, Generator, Infinity, IntegerLiteral,
+	Parameter, Pattern, RecordLiteral, SetComprehension, SetLiteral, StringLiteral, TupleLiteral,
+	Type,
 };
 use crate::{
 	ast::{
-		ast_enum, ast_node, child_with_field_name, children_with_field_name, decode_string,
-		optional_child_with_field_name, AstNode,
+		AstNode, ast_enum, ast_node, child_with_field_name, children_with_field_name,
+		decode_string_literal, optional_child_with_field_name,
 	},
 	cst::CstNode,
 };
@@ -51,11 +51,10 @@ ast_enum!(
 	"parenthesised_expression" => "expression" // Turn parenthesised_expression into Expression node
 );
 
-impl Expression {
+impl<'tree> Expression<'tree> {
 	/// Whether or not this expression is parenthesised
 	pub fn is_parenthesised(&self) -> bool {
 		self.cst_node()
-			.as_ref()
 			.parent()
 			.map(|p| p.kind() == "parenthesised_expression")
 			.unwrap_or_default()
@@ -69,14 +68,14 @@ ast_node!(
 	expression
 );
 
-impl AnnotatedExpression {
+impl<'tree> AnnotatedExpression<'tree> {
 	/// The annotations
-	pub fn annotations(&self) -> Children<'_, Expression> {
+	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
 
 	/// The expression which was annotated
-	pub fn expression(&self) -> Expression {
+	pub fn expression(&self) -> Expression<'tree> {
 		child_with_field_name(self, "expression")
 	}
 }
@@ -89,40 +88,38 @@ ast_enum!(
 	"inversed_identifier" => InversedIdentifier
 );
 
-impl Identifier {
+impl<'tree> Identifier<'tree> {
 	/// Get the name of this identifier
-	pub fn name(&self) -> Cow<'_, str> {
+	pub fn name<'a>(&self, source: &'a str) -> Cow<'a, str> {
 		match *self {
-			Identifier::QuotedIdentifier(ref i) => Cow::from(i.name()),
-			Identifier::UnquotedIdentifier(ref i) => Cow::from(i.name()),
-			Identifier::InversedIdentifier(ref i) => Cow::from(i.name()),
+			Identifier::QuotedIdentifier(ref i) => Cow::from(i.name(source)),
+			Identifier::UnquotedIdentifier(ref i) => Cow::from(i.name(source)),
+			Identifier::InversedIdentifier(ref i) => Cow::from(i.name(source)),
 		}
 	}
 }
 
 ast_node!(
 	/// Identifier
-	UnquotedIdentifier,
-	name
+	UnquotedIdentifier
 );
 
-impl UnquotedIdentifier {
+impl<'tree> UnquotedIdentifier<'tree> {
 	/// Get the name of this identifier
-	pub fn name(&self) -> &str {
-		self.cst_text()
+	pub fn name<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 
 ast_node!(
 	/// Quoted identifier
-	QuotedIdentifier,
-	name
+	QuotedIdentifier
 );
 
-impl QuotedIdentifier {
+impl<'tree> QuotedIdentifier<'tree> {
 	/// Get the name of this identifier without the enclosing quotes
-	pub fn name(&self) -> &str {
-		let text = self.cst_text();
+	pub fn name<'a>(&self, source: &'a str) -> &'a str {
+		let text = self.cst_text(source);
 		&text[1..text.len() - 1]
 	}
 }
@@ -130,19 +127,18 @@ impl QuotedIdentifier {
 ast_node!(
 	/// Inversed identifier Foo^-1
 	InversedIdentifier,
-	identifier,
-	name
+	identifier
 );
 
-impl InversedIdentifier {
+impl<'tree> InversedIdentifier<'tree> {
 	/// Get the identifier (without the ^-1)
-	pub fn identifier(&self) -> Identifier {
+	pub fn identifier(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "identifier")
 	}
 
 	/// Get the name of this identifier ending with ⁻¹ without any enclosing quotes
-	pub fn name(&self) -> String {
-		format!("{}⁻¹", self.identifier().name())
+	pub fn name(&self, source: &str) -> String {
+		format!("{}⁻¹", self.identifier().name(source))
 	}
 }
 
@@ -158,9 +154,9 @@ ast_node!(
 	else_result
 );
 
-impl IfThenElse {
+impl<'tree> IfThenElse<'tree> {
 	/// If-then and elseif-then pairs
-	pub fn branches(&self) -> Branches<'_> {
+	pub fn branches(&self) -> Branches<'tree> {
 		Branches {
 			conditions: children_with_field_name(self, "condition"),
 			results: children_with_field_name(self, "result"),
@@ -168,7 +164,7 @@ impl IfThenElse {
 	}
 
 	/// Else expression
-	pub fn else_result(&self) -> Option<Expression> {
+	pub fn else_result(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "else")
 	}
 }
@@ -176,15 +172,15 @@ impl IfThenElse {
 /// Iterator over the branches of an `IfThenElse`
 
 #[derive(Clone, Debug)]
-pub struct Branches<'a> {
-	conditions: Children<'a, Expression>,
-	results: Children<'a, Expression>,
+pub struct Branches<'tree> {
+	conditions: Children<'tree, Expression<'tree>>,
+	results: Children<'tree, Expression<'tree>>,
 }
 
-impl Iterator for Branches<'_> {
-	type Item = Branch;
+impl<'tree> Iterator for Branches<'tree> {
+	type Item = Branch<'tree>;
 
-	fn next(&mut self) -> Option<Branch> {
+	fn next(&mut self) -> Option<Self::Item> {
 		match (self.conditions.next(), self.results.next()) {
 			(Some(condition), Some(result)) => Some(Branch { condition, result }),
 			(None, None) => None,
@@ -195,11 +191,11 @@ impl Iterator for Branches<'_> {
 
 /// A branch of an `IfThenElse`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Branch {
+pub struct Branch<'tree> {
 	/// The boolean condition
-	pub condition: Expression,
+	pub condition: Expression<'tree>,
 	/// The result if the condition holds
-	pub result: Expression,
+	pub result: Expression<'tree>,
 }
 
 ast_node!(
@@ -209,15 +205,15 @@ ast_node!(
 	arguments
 );
 
-impl Call {
+impl<'tree> Call<'tree> {
 	/// Get the expression being called
 	/// Will usually be an identifier
-	pub fn function(&self) -> Expression {
+	pub fn function(&self) -> Expression<'tree> {
 		child_with_field_name(self, "function")
 	}
 
 	/// Get the call arguments.
-	pub fn arguments(&self) -> Children<'_, Expression> {
+	pub fn arguments(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "argument")
 	}
 }
@@ -228,7 +224,7 @@ ast_node!(
 	name,
 );
 
-impl Operator {
+impl<'tree> Operator<'tree> {
 	/// The name of the operator
 	pub fn name(&self) -> &str {
 		self.cst_kind()
@@ -241,14 +237,14 @@ ast_node!(
 	operand
 );
 
-impl PrefixOperator {
+impl<'tree> PrefixOperator<'tree> {
 	/// Get the operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the operand
-	pub fn operand(&self) -> Expression {
+	pub fn operand(&self) -> Expression<'tree> {
 		child_with_field_name(self, "operand")
 	}
 }
@@ -261,19 +257,19 @@ ast_node!(
 	right
 );
 
-impl InfixOperator {
+impl<'tree> InfixOperator<'tree> {
 	/// Get the left hand side
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the left hand side
-	pub fn left(&self) -> Expression {
+	pub fn left(&self) -> Expression<'tree> {
 		child_with_field_name(self, "left")
 	}
 
 	/// Get the left hand side
-	pub fn right(&self) -> Expression {
+	pub fn right(&self) -> Expression<'tree> {
 		child_with_field_name(self, "right")
 	}
 }
@@ -285,14 +281,14 @@ ast_node!(
 	operator,
 );
 
-impl PostfixOperator {
+impl<'tree> PostfixOperator<'tree> {
 	/// Get the operator
-	pub fn operator(&self) -> Operator {
+	pub fn operator(&self) -> Operator<'tree> {
 		child_with_field_name(self, "operator")
 	}
 
 	/// Get the operand
-	pub fn operand(&self) -> Expression {
+	pub fn operand(&self) -> Expression<'tree> {
 		child_with_field_name(self, "operand")
 	}
 }
@@ -305,20 +301,20 @@ ast_node!(
 	template
 );
 
-impl GeneratorCall {
+impl<'tree> GeneratorCall<'tree> {
 	/// Get the expression being called
 	/// Should always be an `Identifier` for now but for lambdas would be something else
-	pub fn function(&self) -> Expression {
+	pub fn function(&self) -> Expression<'tree> {
 		child_with_field_name(self, "function")
 	}
 
 	/// The generators for this call
-	pub fn generators(&self) -> Children<'_, Generator> {
+	pub fn generators(&self) -> Children<'tree, Generator<'tree>> {
 		children_with_field_name(self, "generator")
 	}
 
 	/// The body of this call
-	pub fn template(&self) -> Expression {
+	pub fn template(&self) -> Expression<'tree> {
 		child_with_field_name(self, "template")
 	}
 }
@@ -329,62 +325,74 @@ ast_node!(
 	contents
 );
 
-impl StringInterpolation {
+impl<'tree> StringInterpolation<'tree> {
 	/// Get the contents of this string interpolation
-	pub fn contents(&self) -> Children<'_, InterpolationItem> {
+	pub fn contents(&self) -> Children<'tree, InterpolationItem<'tree>> {
 		children_with_field_name(self, "item")
+	}
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+enum InterpolationPart<'tree> {
+	String(CstNode<'tree>),
+	Expression(Expression<'tree>),
+}
+
+impl std::fmt::Debug for InterpolationPart<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			InterpolationPart::String(_) => write!(f, "StringCharacters"),
+			InterpolationPart::Expression(e) => e.fmt(f),
+		}
 	}
 }
 
 /// An element in a string interpolation
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum InterpolationItem {
-	/// String content
-	String(String),
-	/// An expression
-	Expression(Expression),
-}
+pub struct InterpolationItem<'tree>(InterpolationPart<'tree>);
 
-impl InterpolationItem {
-	/// Return whether this interpolation item is a string
-	pub fn is_string(&self) -> bool {
-		matches!(*self, InterpolationItem::String(_))
-	}
-
-	/// Return whether this interpolation item is an expression
-	pub fn is_expression(&self) -> bool {
-		matches!(*self, InterpolationItem::Expression(_))
-	}
-
-	/// Get the string if this is one
-	pub fn string(&self) -> Option<&str> {
-		match *self {
-			InterpolationItem::String(ref s) => Some(s),
-			_ => None,
-		}
-	}
-
-	/// Get the expression if this is one
-	pub fn expression(&self) -> Option<&Expression> {
-		match *self {
-			InterpolationItem::Expression(ref e) => Some(e),
-			_ => None,
-		}
-	}
-}
-
-impl From<CstNode> for InterpolationItem {
-	fn from(syntax: CstNode) -> Self {
-		let tree = syntax.cst();
-		let c = syntax.as_ref();
-		match c.kind() {
-			"string" => InterpolationItem::String(decode_string(&tree.node(*c))),
-			"expression" => {
-				InterpolationItem::Expression(Expression::new(tree.node(c.child(0).unwrap())))
+impl<'tree> InterpolationItem<'tree> {
+	/// Get the string or expresssion
+	pub fn value(&'tree self, source: &str) -> InterpolationValue<'tree> {
+		match self.0 {
+			InterpolationPart::String(ref cst_node) => {
+				InterpolationValue::String(decode_string_literal(cst_node, source))
 			}
+			InterpolationPart::Expression(ref e) => InterpolationValue::Expression(e),
+		}
+	}
+}
+
+impl<'tree> AstNode<'tree> for InterpolationItem<'tree> {
+	fn cst_node(&self) -> &CstNode<'tree> {
+		match self.0 {
+			InterpolationPart::String(ref n) => n,
+			InterpolationPart::Expression(ref e) => e.cst_node(),
+		}
+	}
+}
+
+impl<'tree> From<CstNode<'tree>> for InterpolationItem<'tree> {
+	fn from(syntax: CstNode<'tree>) -> Self {
+		match syntax.kind() {
+			"string" => InterpolationItem(InterpolationPart::String(syntax)),
+			"expression" => InterpolationItem(InterpolationPart::Expression(Expression::new(
+				syntax.child(0).unwrap(),
+			))),
 			_ => unreachable!(),
 		}
 	}
+}
+
+/// A value in a string interpolation, either a string or an expression
+///
+/// Returned by `InterpolationItem::value()`
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum InterpolationValue<'tree> {
+	/// String value
+	String(String),
+	/// Expression
+	Expression(&'tree Expression<'tree>),
 }
 
 ast_node!(
@@ -394,14 +402,14 @@ ast_node!(
 	in_expression
 );
 
-impl Let {
+impl<'tree> Let<'tree> {
 	/// The items of the let expression
-	pub fn items(&self) -> Children<'_, LetItem> {
+	pub fn items(&self) -> Children<'tree, LetItem<'tree>> {
 		children_with_field_name(self, "item")
 	}
 
 	/// The value of the let expression
-	pub fn in_expression(&self) -> Expression {
+	pub fn in_expression(&self) -> Expression<'tree> {
 		child_with_field_name(self, "in")
 	}
 }
@@ -413,14 +421,14 @@ ast_node!(
 	cases,
 );
 
-impl Case {
+impl<'tree> Case<'tree> {
 	/// The expression being matched
-	pub fn expression(&self) -> Expression {
+	pub fn expression(&self) -> Expression<'tree> {
 		child_with_field_name(self, "expression")
 	}
 
 	/// The cases
-	pub fn cases(&self) -> Children<'_, CaseItem> {
+	pub fn cases(&self) -> Children<'tree, CaseItem<'tree>> {
 		children_with_field_name(self, "case")
 	}
 }
@@ -432,14 +440,14 @@ ast_node!(
 	value
 );
 
-impl CaseItem {
+impl<'tree> CaseItem<'tree> {
 	/// The pattern to match
-	pub fn pattern(&self) -> Pattern {
+	pub fn pattern(&self) -> Pattern<'tree> {
 		child_with_field_name(self, "pattern")
 	}
 
 	/// The value if this case holds
-	pub fn value(&self) -> Expression {
+	pub fn value(&self) -> Expression<'tree> {
 		child_with_field_name(self, "value")
 	}
 }
@@ -458,14 +466,14 @@ ast_node!(
 	field
 );
 
-impl TupleAccess {
+impl<'tree> TupleAccess<'tree> {
 	/// The tuple being accessed
-	pub fn tuple(&self) -> Expression {
+	pub fn tuple(&self) -> Expression<'tree> {
 		child_with_field_name(self, "tuple")
 	}
 
 	/// The field being accessed
-	pub fn field(&self) -> IntegerLiteral {
+	pub fn field(&self) -> IntegerLiteral<'tree> {
 		child_with_field_name(self, "field")
 	}
 }
@@ -477,14 +485,14 @@ ast_node!(
 	field
 );
 
-impl RecordAccess {
+impl<'tree> RecordAccess<'tree> {
 	/// The record being accessed
-	pub fn record(&self) -> Expression {
+	pub fn record(&self) -> Expression<'tree> {
 		child_with_field_name(self, "record")
 	}
 
 	/// The field being accessed
-	pub fn field(&self) -> Identifier {
+	pub fn field(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "field")
 	}
 }
@@ -497,19 +505,19 @@ ast_node!(
 	body
 );
 
-impl Lambda {
+impl<'tree> Lambda<'tree> {
 	/// The ascribed return type if there is one
-	pub fn return_type(&self) -> Option<Type> {
+	pub fn return_type(&self) -> Option<Type<'tree>> {
 		optional_child_with_field_name(self, "return_type")
 	}
 
 	/// The parameters of the function
-	pub fn parameters(&self) -> Children<'_, Parameter> {
+	pub fn parameters(&self) -> Children<'tree, Parameter<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 
 	/// The body of the function
-	pub fn body(&self) -> Expression {
+	pub fn body(&self) -> Expression<'tree> {
 		child_with_field_name(self, "body")
 	}
 }
@@ -523,7 +531,8 @@ impl Lambda {
 pub fn pretty_print_identifier(name: &str) -> String {
 	assert!(
 		!name.contains('\''),
-		"Identifier names cannot contain single quotes"
+		"Identifier {} is invalid because it contains a single quote",
+		name
 	);
 	if matches!(
 		name,
@@ -565,44 +574,29 @@ pub fn pretty_print_identifier(name: &str) -> String {
 		return format!("'{}'", name);
 	}
 
-	for c in name.chars() {
-		if matches!(
-			c,
-			'"' | '\''
-				| '.' | '-' | '['
-				| ']' | '^' | ','
-				| ';' | ':' | '('
-				| ')' | '{' | '}'
-				| '&' | '|' | '$'
-				| '∞' | '%' | '<'
-				| '>' | '⟷' | '⇔'
-				| '→' | '⇒' | '←'
-				| '⇐' | '/' | '∨'
-				| '⊻' | '∧' | '='
-				| '!' | '≠' | '≤'
-				| '≥' | '∈' | '⊆'
-				| '⊇' | '∪' | '∩'
-				| '+' | '*' | '~'
-		) || c.is_whitespace()
-		{
-			// Operators in identifiers need quoting
-			return format!("'{}'", name);
-		}
+	let mut chars = name.chars();
+	let first_char = chars.next().expect("Identifier cannot be empty");
+
+	if !first_char.is_alphabetic() && first_char != '_' {
+		// Identifiers which don't start with a letter or underscore need quoting
+		return format!("'{}'", name);
 	}
 
-	if parse_integer_literal(name).is_ok() || parse_float_literal(name).is_ok() {
-		// Identifiers which are numeric literals need quoting
-		return format!("'{}'", name);
+	for c in chars {
+		if !c.is_alphanumeric() && c != '_' {
+			// Non alphanumeric identifiers need quoting
+			return format!("'{}'", name);
+		}
 	}
 
 	name.to_owned()
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use crate::{ast::test::*, minizinc::pretty_print_identifier};
+	use crate::{ast::tests::*, minizinc::pretty_print_identifier};
 
 	#[test]
 	fn test_annotated_expression() {
@@ -622,7 +616,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -634,7 +627,6 @@ mod test {
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "bar",
                                             },
                                         ),
                                     ),
@@ -642,7 +634,6 @@ mod test {
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "qux",
                                             },
                                         ),
                                     ),
@@ -651,7 +642,6 @@ mod test {
                                     UnquotedIdentifier(
                                         UnquotedIdentifier {
                                             cst_kind: "identifier",
-                                            name: "foo",
                                         },
                                     ),
                                 ),
@@ -666,7 +656,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "y",
                                 },
                             ),
                         ),
@@ -685,9 +674,6 @@ mod test {
                                             left: IntegerLiteral(
                                                 IntegerLiteral {
                                                     cst_kind: "integer_literal",
-                                                    value: Ok(
-                                                        1,
-                                                    ),
                                                 },
                                             ),
                                             operator: Operator {
@@ -698,7 +684,6 @@ mod test {
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "n",
                                                     },
                                                 ),
                                             ),
@@ -724,102 +709,141 @@ mod test {
 			r#"
 		bool: x;
 		bool: 'hello world';
-		bool: ✔️;
+		bool: Δ;
+        bool: inversed = Foo^-1;
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Declaration(
-                Declaration {
-                    cst_kind: "declaration",
-                    pattern: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    declared_type: TypeBase(
-                        TypeBase {
-                            cst_kind: "type_base",
-                            var_type: None,
-                            opt_type: None,
-                            any_type: false,
-                            domain: Unbounded(
-                                UnboundedDomain {
-                                    cst_kind: "primitive_type",
-                                    primitive_type: Bool,
+    MznModel(
+        Model {
+            items: [
+                Declaration(
+                    Declaration {
+                        cst_kind: "declaration",
+                        pattern: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
                             ),
-                        },
-                    ),
-                    definition: None,
-                    annotations: [],
-                },
-            ),
-            Declaration(
-                Declaration {
-                    cst_kind: "declaration",
-                    pattern: Identifier(
-                        QuotedIdentifier(
-                            QuotedIdentifier {
-                                cst_kind: "quoted_identifier",
-                                name: "hello world",
+                        ),
+                        declared_type: TypeBase(
+                            TypeBase {
+                                cst_kind: "type_base",
+                                var_type: None,
+                                opt_type: None,
+                                any_type: false,
+                                domain: Unbounded(
+                                    UnboundedDomain {
+                                        cst_kind: "primitive_type",
+                                        primitive_type: Bool,
+                                    },
+                                ),
                             },
                         ),
-                    ),
-                    declared_type: TypeBase(
-                        TypeBase {
-                            cst_kind: "type_base",
-                            var_type: None,
-                            opt_type: None,
-                            any_type: false,
-                            domain: Unbounded(
-                                UnboundedDomain {
-                                    cst_kind: "primitive_type",
-                                    primitive_type: Bool,
+                        definition: None,
+                        annotations: [],
+                    },
+                ),
+                Declaration(
+                    Declaration {
+                        cst_kind: "declaration",
+                        pattern: Identifier(
+                            QuotedIdentifier(
+                                QuotedIdentifier {
+                                    cst_kind: "quoted_identifier",
                                 },
                             ),
-                        },
-                    ),
-                    definition: None,
-                    annotations: [],
-                },
-            ),
-            Declaration(
-                Declaration {
-                    cst_kind: "declaration",
-                    pattern: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "✔\u{fe0f}",
+                        ),
+                        declared_type: TypeBase(
+                            TypeBase {
+                                cst_kind: "type_base",
+                                var_type: None,
+                                opt_type: None,
+                                any_type: false,
+                                domain: Unbounded(
+                                    UnboundedDomain {
+                                        cst_kind: "primitive_type",
+                                        primitive_type: Bool,
+                                    },
+                                ),
                             },
                         ),
-                    ),
-                    declared_type: TypeBase(
-                        TypeBase {
-                            cst_kind: "type_base",
-                            var_type: None,
-                            opt_type: None,
-                            any_type: false,
-                            domain: Unbounded(
-                                UnboundedDomain {
-                                    cst_kind: "primitive_type",
-                                    primitive_type: Bool,
+                        definition: None,
+                        annotations: [],
+                    },
+                ),
+                Declaration(
+                    Declaration {
+                        cst_kind: "declaration",
+                        pattern: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
                             ),
-                        },
-                    ),
-                    definition: None,
-                    annotations: [],
-                },
-            ),
-        ],
-    },
-)
+                        ),
+                        declared_type: TypeBase(
+                            TypeBase {
+                                cst_kind: "type_base",
+                                var_type: None,
+                                opt_type: None,
+                                any_type: false,
+                                domain: Unbounded(
+                                    UnboundedDomain {
+                                        cst_kind: "primitive_type",
+                                        primitive_type: Bool,
+                                    },
+                                ),
+                            },
+                        ),
+                        definition: None,
+                        annotations: [],
+                    },
+                ),
+                Declaration(
+                    Declaration {
+                        cst_kind: "declaration",
+                        pattern: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        declared_type: TypeBase(
+                            TypeBase {
+                                cst_kind: "type_base",
+                                var_type: None,
+                                opt_type: None,
+                                any_type: false,
+                                domain: Unbounded(
+                                    UnboundedDomain {
+                                        cst_kind: "primitive_type",
+                                        primitive_type: Bool,
+                                    },
+                                ),
+                            },
+                        ),
+                        definition: Some(
+                            Identifier(
+                                InversedIdentifier(
+                                    InversedIdentifier {
+                                        cst_kind: "inversed_identifier",
+                                        identifier: UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    },
+                                ),
+                            ),
+                        ),
+                        annotations: [],
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -833,169 +857,156 @@ MznModel(
 		z = if a then b endif;
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
                         ),
-                    ),
-                    definition: IfThenElse(
-                        IfThenElse {
-                            cst_kind: "if_then_else",
-                            branches: Branches {
-                                conditions: [
+                        definition: IfThenElse(
+                            IfThenElse {
+                                cst_kind: "if_then_else",
+                                branches: Branches {
+                                    conditions: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                    ],
+                                    results: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                    ],
+                                },
+                                else_result: Some(
                                     Identifier(
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
-                                    ),
-                                ],
-                                results: [
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "b",
-                                            },
-                                        ),
-                                    ),
-                                ],
-                            },
-                            else_result: Some(
-                                Identifier(
-                                    UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "c",
-                                        },
                                     ),
                                 ),
-                            ),
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
                             },
                         ),
-                    ),
-                    definition: IfThenElse(
-                        IfThenElse {
-                            cst_kind: "if_then_else",
-                            branches: Branches {
-                                conditions: [
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: IfThenElse(
+                            IfThenElse {
+                                cst_kind: "if_then_else",
+                                branches: Branches {
+                                    conditions: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                    ],
+                                    results: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                    ],
+                                },
+                                else_result: Some(
                                     Identifier(
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
-                                    ),
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "c",
-                                            },
-                                        ),
-                                    ),
-                                ],
-                                results: [
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "b",
-                                            },
-                                        ),
-                                    ),
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "d",
-                                            },
-                                        ),
-                                    ),
-                                ],
-                            },
-                            else_result: Some(
-                                Identifier(
-                                    UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "e",
-                                        },
                                     ),
                                 ),
-                            ),
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
                             },
                         ),
-                    ),
-                    definition: IfThenElse(
-                        IfThenElse {
-                            cst_kind: "if_then_else",
-                            branches: Branches {
-                                conditions: [
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "a",
-                                            },
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: IfThenElse(
+                            IfThenElse {
+                                cst_kind: "if_then_else",
+                                branches: Branches {
+                                    conditions: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
                                         ),
-                                    ),
-                                ],
-                                results: [
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "b",
-                                            },
+                                    ],
+                                    results: [
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
                                         ),
-                                    ),
-                                ],
+                                    ],
+                                },
+                                else_result: None,
                             },
-                            else_result: None,
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1009,134 +1020,124 @@ MznModel(
 		z = foo(bar)(qux);
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: Call(
-                        Call {
-                            cst_kind: "call",
-                            function: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
                             ),
-                            arguments: [],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
                         ),
-                    ),
-                    definition: Call(
-                        Call {
-                            cst_kind: "call",
-                            function: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
-                            ),
-                            arguments: [
-                                Identifier(
+                        definition: Call(
+                            Call {
+                                cst_kind: "call",
+                                function: Identifier(
                                     UnquotedIdentifier(
                                         UnquotedIdentifier {
                                             cst_kind: "identifier",
-                                            name: "one",
                                         },
                                     ),
                                 ),
-                                Identifier(
+                                arguments: [],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: Call(
+                            Call {
+                                cst_kind: "call",
+                                function: Identifier(
                                     UnquotedIdentifier(
                                         UnquotedIdentifier {
                                             cst_kind: "identifier",
-                                            name: "two",
                                         },
                                     ),
                                 ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "z",
-                            },
-                        ),
-                    ),
-                    definition: Call(
-                        Call {
-                            cst_kind: "call",
-                            function: Call(
-                                Call {
-                                    cst_kind: "call",
-                                    function: Identifier(
+                                arguments: [
+                                    Identifier(
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "foo",
                                             },
                                         ),
                                     ),
-                                    arguments: [
-                                        Identifier(
+                                    Identifier(
+                                        UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: Call(
+                            Call {
+                                cst_kind: "call",
+                                function: Call(
+                                    Call {
+                                        cst_kind: "call",
+                                        function: Identifier(
                                             UnquotedIdentifier(
                                                 UnquotedIdentifier {
                                                     cst_kind: "identifier",
-                                                    name: "bar",
                                                 },
                                             ),
                                         ),
-                                    ],
-                                },
-                            ),
-                            arguments: [
-                                Identifier(
-                                    UnquotedIdentifier(
-                                        UnquotedIdentifier {
-                                            cst_kind: "identifier",
-                                            name: "qux",
-                                        },
-                                    ),
+                                        arguments: [
+                                            Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
+                                            ),
+                                        ],
+                                    },
                                 ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                                arguments: [
+                                    Identifier(
+                                        UnquotedIdentifier(
+                                            UnquotedIdentifier {
+                                                cst_kind: "identifier",
+                                            },
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1146,42 +1147,40 @@ MznModel(
 		check_ast(
 			"x = -a;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: PrefixOperator(
+                            PrefixOperator {
+                                cst_kind: "prefix_operator",
+                                operator: Operator {
+                                    cst_kind: "-",
+                                    name: "-",
+                                },
+                                operand: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
                             },
                         ),
-                    ),
-                    definition: PrefixOperator(
-                        PrefixOperator {
-                            cst_kind: "prefix_operator",
-                            operator: Operator {
-                                cst_kind: "-",
-                                name: "-",
-                            },
-                            operand: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "a",
-                                    },
-                                ),
-                            ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1194,105 +1193,98 @@ MznModel(
 		y = a + b * c;
 		"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: InfixOperator(
-                        InfixOperator {
-                            cst_kind: "infix_operator",
-                            left: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "a",
-                                    },
-                                ),
-                            ),
-                            operator: Operator {
-                                cst_kind: "+",
-                                name: "+",
-                            },
-                            right: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "b",
-                                    },
-                                ),
-                            ),
-                        },
-                    ),
-                },
-            ),
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "y",
-                            },
-                        ),
-                    ),
-                    definition: InfixOperator(
-                        InfixOperator {
-                            cst_kind: "infix_operator",
-                            left: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "a",
-                                    },
-                                ),
-                            ),
-                            operator: Operator {
-                                cst_kind: "+",
-                                name: "+",
-                            },
-                            right: InfixOperator(
-                                InfixOperator {
-                                    cst_kind: "infix_operator",
-                                    left: Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "b",
-                                            },
-                                        ),
-                                    ),
-                                    operator: Operator {
-                                        cst_kind: "*",
-                                        name: "*",
-                                    },
-                                    right: Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "c",
-                                            },
-                                        ),
-                                    ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
                                 },
                             ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                left: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                operator: Operator {
+                                    cst_kind: "+",
+                                    name: "+",
+                                },
+                                right: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                            },
+                        ),
+                    },
+                ),
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: InfixOperator(
+                            InfixOperator {
+                                cst_kind: "infix_operator",
+                                left: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                operator: Operator {
+                                    cst_kind: "+",
+                                    name: "+",
+                                },
+                                right: InfixOperator(
+                                    InfixOperator {
+                                        cst_kind: "infix_operator",
+                                        left: Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                        operator: Operator {
+                                            cst_kind: "*",
+                                            name: "*",
+                                        },
+                                        right: Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1302,42 +1294,40 @@ MznModel(
 		check_ast(
 			"x = a..;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: PostfixOperator(
+                            PostfixOperator {
+                                cst_kind: "postfix_operator",
+                                operand: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                operator: Operator {
+                                    cst_kind: "..",
+                                    name: "..",
+                                },
                             },
                         ),
-                    ),
-                    definition: PostfixOperator(
-                        PostfixOperator {
-                            cst_kind: "postfix_operator",
-                            operand: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "a",
-                                    },
-                                ),
-                            ),
-                            operator: Operator {
-                                cst_kind: "..",
-                                name: "..",
-                            },
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1350,155 +1340,145 @@ MznModel(
 			constraint exists (i, j in s, k in t where p) (true);
 			"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Constraint(
-                Constraint {
-                    cst_kind: "constraint",
-                    expression: GeneratorCall(
-                        GeneratorCall {
-                            cst_kind: "generator_call",
-                            function: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "forall",
-                                    },
+    MznModel(
+        Model {
+            items: [
+                Constraint(
+                    Constraint {
+                        cst_kind: "constraint",
+                        expression: GeneratorCall(
+                            GeneratorCall {
+                                cst_kind: "generator_call",
+                                function: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
                                 ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "i",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: None,
+                                            where_clause: None,
+                                        },
+                                    ),
+                                ],
+                                template: BooleanLiteral(
+                                    BooleanLiteral {
+                                        cst_kind: "boolean_literal",
+                                        value: true,
                                     },
                                 ),
-                            ],
-                            template: BooleanLiteral(
-                                BooleanLiteral {
-                                    cst_kind: "boolean_literal",
-                                    value: true,
-                                },
-                            ),
-                        },
-                    ),
-                    annotations: [],
-                },
-            ),
-            Constraint(
-                Constraint {
-                    cst_kind: "constraint",
-                    expression: GeneratorCall(
-                        GeneratorCall {
-                            cst_kind: "generator_call",
-                            function: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "exists",
-                                    },
+                            },
+                        ),
+                        annotations: [],
+                    },
+                ),
+                Constraint(
+                    Constraint {
+                        cst_kind: "constraint",
+                        expression: GeneratorCall(
+                            GeneratorCall {
+                                cst_kind: "generator_call",
+                                function: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
                                 ),
-                            ),
-                            generators: [
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
+                                generators: [
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "i",
                                                     },
                                                 ),
                                             ),
-                                            Identifier(
+                                            where_clause: None,
+                                        },
+                                    ),
+                                    IteratorGenerator(
+                                        IteratorGenerator {
+                                            cst_kind: "generator",
+                                            patterns: [
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
+                                            ],
+                                            collection: Identifier(
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "j",
                                                     },
                                                 ),
                                             ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "s",
-                                                },
+                                            where_clause: Some(
+                                                Identifier(
+                                                    UnquotedIdentifier(
+                                                        UnquotedIdentifier {
+                                                            cst_kind: "identifier",
+                                                        },
+                                                    ),
+                                                ),
                                             ),
-                                        ),
-                                        where_clause: None,
+                                        },
+                                    ),
+                                ],
+                                template: BooleanLiteral(
+                                    BooleanLiteral {
+                                        cst_kind: "boolean_literal",
+                                        value: true,
                                     },
                                 ),
-                                IteratorGenerator(
-                                    IteratorGenerator {
-                                        cst_kind: "generator",
-                                        patterns: [
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "k",
-                                                    },
-                                                ),
-                                            ),
-                                        ],
-                                        collection: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "t",
-                                                },
-                                            ),
-                                        ),
-                                        where_clause: Some(
-                                            Identifier(
-                                                UnquotedIdentifier(
-                                                    UnquotedIdentifier {
-                                                        cst_kind: "identifier",
-                                                        name: "p",
-                                                    },
-                                                ),
-                                            ),
-                                        ),
-                                    },
-                                ),
-                            ],
-                            template: BooleanLiteral(
-                                BooleanLiteral {
-                                    cst_kind: "boolean_literal",
-                                    value: true,
-                                },
-                            ),
-                        },
-                    ),
-                    annotations: [],
-                },
-            ),
-        ],
-    },
-)
+                            },
+                        ),
+                        annotations: [],
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1508,48 +1488,46 @@ MznModel(
 		check_ast(
 			r#"x = "foo\(y)bar";"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
                         ),
-                    ),
-                    definition: StringInterpolation(
-                        StringInterpolation {
-                            cst_kind: "string_interpolation",
-                            contents: [
-                                String(
-                                    "foo",
-                                ),
-                                Expression(
-                                    Identifier(
-                                        UnquotedIdentifier(
-                                            UnquotedIdentifier {
-                                                cst_kind: "identifier",
-                                                name: "y",
-                                            },
+                        definition: StringInterpolation(
+                            StringInterpolation {
+                                cst_kind: "string_interpolation",
+                                contents: [
+                                    InterpolationItem(
+                                        StringCharacters,
+                                    ),
+                                    InterpolationItem(
+                                        Identifier(
+                                            UnquotedIdentifier(
+                                                UnquotedIdentifier {
+                                                    cst_kind: "identifier",
+                                                },
+                                            ),
                                         ),
                                     ),
-                                ),
-                                String(
-                                    "bar",
-                                ),
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                                    InterpolationItem(
+                                        StringCharacters,
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1564,74 +1542,73 @@ MznModel(
 			} in true;
 			"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Constraint(
-                Constraint {
-                    cst_kind: "constraint",
-                    expression: Let(
-                        Let {
-                            cst_kind: "let_expression",
-                            items: [
-                                Declaration(
-                                    Declaration {
-                                        cst_kind: "declaration",
-                                        pattern: Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
-                                            ),
-                                        ),
-                                        declared_type: TypeBase(
-                                            TypeBase {
-                                                cst_kind: "type_base",
-                                                var_type: Some(
-                                                    Var,
-                                                ),
-                                                opt_type: None,
-                                                any_type: false,
-                                                domain: Unbounded(
-                                                    UnboundedDomain {
-                                                        cst_kind: "primitive_type",
-                                                        primitive_type: Int,
+    MznModel(
+        Model {
+            items: [
+                Constraint(
+                    Constraint {
+                        cst_kind: "constraint",
+                        expression: Let(
+                            Let {
+                                cst_kind: "let_expression",
+                                items: [
+                                    Declaration(
+                                        Declaration {
+                                            cst_kind: "declaration",
+                                            pattern: Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
                                                     },
                                                 ),
-                                            },
-                                        ),
-                                        definition: None,
-                                        annotations: [],
+                                            ),
+                                            declared_type: TypeBase(
+                                                TypeBase {
+                                                    cst_kind: "type_base",
+                                                    var_type: Some(
+                                                        Var,
+                                                    ),
+                                                    opt_type: None,
+                                                    any_type: false,
+                                                    domain: Unbounded(
+                                                        UnboundedDomain {
+                                                            cst_kind: "primitive_type",
+                                                            primitive_type: Int,
+                                                        },
+                                                    ),
+                                                },
+                                            ),
+                                            definition: None,
+                                            annotations: [],
+                                        },
+                                    ),
+                                    Constraint(
+                                        Constraint {
+                                            cst_kind: "constraint",
+                                            expression: BooleanLiteral(
+                                                BooleanLiteral {
+                                                    cst_kind: "boolean_literal",
+                                                    value: false,
+                                                },
+                                            ),
+                                            annotations: [],
+                                        },
+                                    ),
+                                ],
+                                in_expression: BooleanLiteral(
+                                    BooleanLiteral {
+                                        cst_kind: "boolean_literal",
+                                        value: true,
                                     },
                                 ),
-                                Constraint(
-                                    Constraint {
-                                        cst_kind: "constraint",
-                                        expression: BooleanLiteral(
-                                            BooleanLiteral {
-                                                cst_kind: "boolean_literal",
-                                                value: false,
-                                            },
-                                        ),
-                                        annotations: [],
-                                    },
-                                ),
-                            ],
-                            in_expression: BooleanLiteral(
-                                BooleanLiteral {
-                                    cst_kind: "boolean_literal",
-                                    value: true,
-                                },
-                            ),
-                        },
-                    ),
-                    annotations: [],
-                },
-            ),
-        ],
-    },
-)
+                            },
+                        ),
+                        annotations: [],
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1646,84 +1623,80 @@ MznModel(
 				endcase;
 			"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: Case(
+                            Case {
+                                cst_kind: "case_expression",
+                                expression: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                cases: [
+                                    CaseItem {
+                                        cst_kind: "case_expression_case",
+                                        pattern: Call(
+                                            PatternCall {
+                                                cst_kind: "pattern_call",
+                                                identifier: UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
+                                                arguments: [
+                                                    Identifier(
+                                                        UnquotedIdentifier(
+                                                            UnquotedIdentifier {
+                                                                cst_kind: "identifier",
+                                                            },
+                                                        ),
+                                                    ),
+                                                ],
+                                            },
+                                        ),
+                                        value: BooleanLiteral(
+                                            BooleanLiteral {
+                                                cst_kind: "boolean_literal",
+                                                value: true,
+                                            },
+                                        ),
+                                    },
+                                    CaseItem {
+                                        cst_kind: "case_expression_case",
+                                        pattern: Anonymous(
+                                            Anonymous {
+                                                cst_kind: "anonymous",
+                                            },
+                                        ),
+                                        value: BooleanLiteral(
+                                            BooleanLiteral {
+                                                cst_kind: "boolean_literal",
+                                                value: false,
+                                            },
+                                        ),
+                                    },
+                                ],
                             },
                         ),
-                    ),
-                    definition: Case(
-                        Case {
-                            cst_kind: "case_expression",
-                            expression: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "a",
-                                    },
-                                ),
-                            ),
-                            cases: [
-                                CaseItem {
-                                    cst_kind: "case_expression_case",
-                                    pattern: Call(
-                                        PatternCall {
-                                            cst_kind: "pattern_call",
-                                            identifier: UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "Foo",
-                                                },
-                                            ),
-                                            arguments: [
-                                                Identifier(
-                                                    UnquotedIdentifier(
-                                                        UnquotedIdentifier {
-                                                            cst_kind: "identifier",
-                                                            name: "b",
-                                                        },
-                                                    ),
-                                                ),
-                                            ],
-                                        },
-                                    ),
-                                    value: BooleanLiteral(
-                                        BooleanLiteral {
-                                            cst_kind: "boolean_literal",
-                                            value: true,
-                                        },
-                                    ),
-                                },
-                                CaseItem {
-                                    cst_kind: "case_expression_case",
-                                    pattern: Anonymous(
-                                        Anonymous {
-                                            cst_kind: "anonymous",
-                                        },
-                                    ),
-                                    value: BooleanLiteral(
-                                        BooleanLiteral {
-                                            cst_kind: "boolean_literal",
-                                            value: false,
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1733,44 +1706,39 @@ MznModel(
 		check_ast(
 			"x = foo.1;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: TupleAccess(
+                            TupleAccess {
+                                cst_kind: "tuple_access",
+                                tuple: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                field: IntegerLiteral {
+                                    cst_kind: "integer_literal",
+                                },
                             },
                         ),
-                    ),
-                    definition: TupleAccess(
-                        TupleAccess {
-                            cst_kind: "tuple_access",
-                            tuple: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
-                            ),
-                            field: IntegerLiteral {
-                                cst_kind: "integer_literal",
-                                value: Ok(
-                                    1,
-                                ),
-                            },
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1780,44 +1748,41 @@ MznModel(
 		check_ast(
 			"x = foo.bar;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: RecordAccess(
-                        RecordAccess {
-                            cst_kind: "record_access",
-                            record: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "foo",
-                                    },
-                                ),
-                            ),
-                            field: UnquotedIdentifier(
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "bar",
                                 },
                             ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                        ),
+                        definition: RecordAccess(
+                            RecordAccess {
+                                cst_kind: "record_access",
+                                record: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
+                                ),
+                                field: UnquotedIdentifier(
+                                    UnquotedIdentifier {
+                                        cst_kind: "identifier",
+                                    },
+                                ),
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1828,43 +1793,24 @@ MznModel(
 		check_ast(
 			"x = lambda int: (int: x) => x;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
-                            },
-                        ),
-                    ),
-                    definition: Lambda(
-                        Lambda {
-                            cst_kind: "lambda",
-                            return_type: Some(
-                                TypeBase(
-                                    TypeBase {
-                                        cst_kind: "type_base",
-                                        var_type: None,
-                                        opt_type: None,
-                                        any_type: false,
-                                        domain: Unbounded(
-                                            UnboundedDomain {
-                                                cst_kind: "primitive_type",
-                                                primitive_type: Int,
-                                            },
-                                        ),
-                                    },
-                                ),
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
                             ),
-                            parameters: [
-                                Parameter {
-                                    cst_kind: "parameter",
-                                    declared_type: TypeBase(
+                        ),
+                        definition: Lambda(
+                            Lambda {
+                                cst_kind: "lambda",
+                                return_type: Some(
+                                    TypeBase(
                                         TypeBase {
                                             cst_kind: "type_base",
                                             var_type: None,
@@ -1878,34 +1824,50 @@ MznModel(
                                             ),
                                         },
                                     ),
-                                    pattern: Some(
-                                        Identifier(
-                                            UnquotedIdentifier(
-                                                UnquotedIdentifier {
-                                                    cst_kind: "identifier",
-                                                    name: "x",
-                                                },
+                                ),
+                                parameters: [
+                                    Parameter {
+                                        cst_kind: "parameter",
+                                        declared_type: TypeBase(
+                                            TypeBase {
+                                                cst_kind: "type_base",
+                                                var_type: None,
+                                                opt_type: None,
+                                                any_type: false,
+                                                domain: Unbounded(
+                                                    UnboundedDomain {
+                                                        cst_kind: "primitive_type",
+                                                        primitive_type: Int,
+                                                    },
+                                                ),
+                                            },
+                                        ),
+                                        pattern: Some(
+                                            Identifier(
+                                                UnquotedIdentifier(
+                                                    UnquotedIdentifier {
+                                                        cst_kind: "identifier",
+                                                    },
+                                                ),
                                             ),
                                         ),
-                                    ),
-                                    annotations: [],
-                                },
-                            ],
-                            body: Identifier(
-                                UnquotedIdentifier(
-                                    UnquotedIdentifier {
-                                        cst_kind: "identifier",
-                                        name: "x",
+                                        annotations: [],
                                     },
+                                ],
+                                body: Identifier(
+                                    UnquotedIdentifier(
+                                        UnquotedIdentifier {
+                                            cst_kind: "identifier",
+                                        },
+                                    ),
                                 ),
-                            ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                            },
+                        ),
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -1915,7 +1877,8 @@ MznModel(
 		assert_eq!(pretty_print_identifier("x"), "x");
 		assert_eq!(pretty_print_identifier("-"), "'-'");
 		assert_eq!(pretty_print_identifier("a b"), "'a b'");
-		assert_eq!(pretty_print_identifier("😃"), "😃");
+		assert_eq!(pretty_print_identifier("😃"), "'😃'");
+		assert_eq!(pretty_print_identifier("Δ"), "Δ");
 		assert_eq!(pretty_print_identifier("123"), "'123'");
 		assert_eq!(pretty_print_identifier("1E24"), "'1E24'");
 	}

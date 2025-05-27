@@ -1,29 +1,28 @@
-use std::collections::HashMap;
-
 use lsp_server::{ErrorCode::InvalidRequest, ResponseError};
-use lsp_types::{request::Rename, RenameParams, TextEdit, WorkspaceEdit};
-use shackle_compiler::{
-	db::CompilerDatabase,
-	file::ModelRef,
-	hir::{
-		db::Hir,
-		ids::{LocalEntityRef, NodeRef, PatternRef},
-		source::{find_node, Point},
-	},
-	syntax::db::SourceParser,
+use lsp_types::{
+	AnnotatedTextEdit, ChangeAnnotation, DocumentChanges, OneOf,
+	OptionalVersionedTextDocumentIdentifier, Position, RenameParams, TextDocumentEdit, TextEdit,
+	Uri, WorkspaceEdit, request::Rename,
+};
+use shackle_hir::{
+	Identifier, RenameCheck, db::CompilerDatabase, input::ModelFile, source::find_leaf,
 };
 use shackle_syntax::minizinc::pretty_print_identifier;
-use streaming_iterator::StreamingIterator;
 
-use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::node_ref_to_location};
+use crate::{
+	db::LanguageServerContext,
+	dispatch::RequestHandler,
+	utils::{node_ref_to_location, position_to_byte_offset, uri_to_path},
+};
 
 #[derive(Debug)]
-pub struct RenameHandler;
+pub(crate) struct RenameHandler;
 
-pub struct SymbolHandlerData {
-	model_ref: ModelRef,
-	cursor_pos: Point,
+pub(crate) struct SymbolHandlerData {
+	model_ref: ModelFile,
+	cursor_pos: Position,
 	new_name: String,
+	workspace_uri: Option<Uri>,
 }
 
 fn create_error(msg: &str) -> ResponseError {
@@ -39,12 +38,6 @@ impl RequestHandler<Rename, SymbolHandlerData> for RenameHandler {
 		db: &mut impl LanguageServerContext,
 		params: RenameParams,
 	) -> Result<SymbolHandlerData, ResponseError> {
-		// identifiers can consist of anything which is not in these chars
-		let cursor_pos = Point {
-			row: params.text_document_position.position.line as usize,
-			column: params.text_document_position.position.character as usize,
-		};
-
 		// cannot include single quotes
 		if params.new_name.chars().any(|ch| ch == '\'') {
 			return Err(create_error("Identifier cannot include single quotes"));
@@ -58,9 +51,10 @@ impl RequestHandler<Rename, SymbolHandlerData> for RenameHandler {
 		let new_name = pretty_print_identifier(&params.new_name);
 
 		Ok(SymbolHandlerData {
-			cursor_pos,
+			cursor_pos: params.text_document_position.position,
 			new_name,
 			model_ref,
+			workspace_uri: db.get_options().workspace_uri.clone(),
 		})
 	}
 
@@ -68,90 +62,123 @@ impl RequestHandler<Rename, SymbolHandlerData> for RenameHandler {
 		db: &CompilerDatabase,
 		data: SymbolHandlerData,
 	) -> Result<Option<WorkspaceEdit>, ResponseError> {
-		// Find the node that is possibly going to be changed
-		let node: NodeRef = find_node(db, *data.model_ref, data.cursor_pos, data.cursor_pos)
-			.ok_or_else(|| create_error("Identifier not selected"))?;
+		let byte_offset = position_to_byte_offset(&data.model_ref.contents(db), data.cursor_pos)
+			.ok_or_else(|| create_error("Invalid position"))?;
+		let entity = find_leaf(db, data.model_ref, byte_offset)
+			.or_else(|| find_leaf(db, data.model_ref, byte_offset.saturating_sub(1)))
+			.ok_or_else(|| create_error("No symbol found at cursor position"))?;
+		let declaration = entity
+			.declaration(db)
+			.ok_or_else(|| create_error("No declaration found for symbol"))?;
+		let workspace_path = data
+			.workspace_uri
+			.map(|uri| uri_to_path(&uri))
+			.unwrap_or_else(|| match entity.item(db).model_file(db) {
+				ModelFile::Named(n) => n.path(db).clone(),
+				_ => unreachable!(),
+			});
 
-		let pattern: PatternRef = match node {
-			NodeRef::Entity(e) => {
-				let item = e.item(db);
-				match e.entity(db) {
-					LocalEntityRef::Expression(e) => db
-						.lookup_item_types(item)
-						.name_resolution(e)
-						.ok_or_else(|| create_error("Could not resolve pattern"))?,
-					LocalEntityRef::Pattern(p) => db
-						.lookup_item_types(item)
-						.pattern_resolution(p)
-						.unwrap_or_else(|| PatternRef::new(item, p)),
-					_ => return Ok(None), // Don't want a message in this case, so Ok(None) instead of an Err
-				}
-			}
-			_ => return Ok(None),
-		};
+		let check = RenameCheck::check(db, declaration, Identifier::new(db, &data.new_name));
 
-		let models = db.resolve_includes().ok().unwrap();
-		#[allow(clippy::mutable_key_type)] // Mutable key key required to create WorkspaceEdit
-		let mut edits = HashMap::new();
-
-		// loop over all the files included from the main file
-		for m in models.iter().copied() {
-			let cst = db.cst(*m).ok().unwrap();
-			let query = tree_sitter::Query::new(
-				&tree_sitter_minizinc::LANGUAGE.into(),
-				tree_sitter_minizinc::IDENTIFIERS_QUERY,
-			)
-			.expect("Failed to create query");
-			let mut cursor = tree_sitter::QueryCursor::new();
-			let mut nodes = cursor
-				.captures(&query, cst.root_node(), cst.text().as_bytes())
-				.map(|(c, _)| c.captures[0].node);
-			let source_map = db.lookup_source_map(m);
-
-			// The edits to the current file
-			let mut model_edits = Vec::new();
-			let mut url = None;
-
-			// Loop over all the identifiers
-			while let Some(node) = nodes.next() {
-				if let Some(node_ref @ NodeRef::Entity(entity)) = source_map.find_node(*node) {
-					let item = entity.item(db);
-					let types = db.lookup_item_types(item);
-					let def = match entity.entity(db) {
-						LocalEntityRef::Expression(e) => types.name_resolution(e),
-						LocalEntityRef::Pattern(p) => Some(PatternRef::new(item, p)),
-						_ => None,
-					};
-					// If the definition is matching, push it to be updated
-					if def == Some(pattern) {
-						if let Some(loc) = node_ref_to_location(db, node_ref) {
-							model_edits.push(TextEdit::new(loc.range, data.new_name.clone()));
-							url = Some(loc.uri);
-						}
-					}
-				}
-			}
-
-			// The file will be known iff there is an edit to change
-			if let Some(url) = url {
-				// Put it into the hashmap
-				edits.insert(url, model_edits);
-			}
+		if !declaration
+			.item(db)
+			.model_file(db)
+			.unwrap_named()
+			.path(db)
+			.starts_with(&workspace_path)
+		{
+			return Err(create_error(
+				"Cannot rename symbols in files ouside workspace",
+			));
 		}
 
-		Ok(Some(WorkspaceEdit::new(edits)))
+		let decl_loc = node_ref_to_location(db, declaration.into_entity(db))
+			.ok_or_else(|| create_error("Failed to get location of symbol declaration"))?;
+		let mut changes = vec![TextDocumentEdit {
+			edits: vec![OneOf::Right(AnnotatedTextEdit {
+				annotation_id: "rename".to_owned(),
+				text_edit: TextEdit::new(decl_loc.range, data.new_name.clone()),
+			})],
+			text_document: OptionalVersionedTextDocumentIdentifier {
+				uri: decl_loc.uri,
+				version: None,
+			},
+		}];
+
+		let references = declaration.references(db);
+		for reference in references {
+			if !reference
+				.item(db)
+				.model_file(db)
+				.unwrap_named()
+				.path(db)
+				.starts_with(&workspace_path)
+			{
+				return Err(create_error(
+					"Cannot rename symbols in files ouside workspace",
+				));
+			}
+
+			let ref_loc = node_ref_to_location(db, reference)
+				.ok_or_else(|| create_error("Failed to get location of symbol reference"))?;
+			changes.push(TextDocumentEdit {
+				edits: vec![OneOf::Right(AnnotatedTextEdit {
+					annotation_id: "rename".to_owned(),
+					text_edit: TextEdit::new(ref_loc.range, data.new_name.clone()),
+				})],
+				text_document: OptionalVersionedTextDocumentIdentifier {
+					uri: ref_loc.uri,
+					version: None,
+				},
+			});
+		}
+
+		Ok(Some(WorkspaceEdit {
+			document_changes: Some(DocumentChanges::Edits(changes)),
+			change_annotations: Some(
+				[(
+					"rename".to_owned(),
+					ChangeAnnotation {
+						label: if matches!(check, RenameCheck::Ok) {
+							"Rename"
+						} else {
+							"Rename confict"
+						}
+						.to_owned(),
+						needs_confirmation: Some(!matches!(check, RenameCheck::Ok)),
+						description: match check {
+							RenameCheck::Ok => None,
+							RenameCheck::IdentifierAlreadyDefined => {
+								Some("Renaming this symbol will cause a naming conflict".to_owned())
+							}
+							RenameCheck::ShadowConflict => Some(
+								"Renaming this symbol will change the meaning of the program"
+									.to_owned(),
+							),
+							RenameCheck::InvalidOverload => Some(
+								"Renaming this symbol will cause invalid function overloading"
+									.to_owned(),
+							),
+						},
+					},
+				)]
+				.into_iter()
+				.collect(),
+			),
+			..Default::default()
+		}))
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::{RenameParams, TextDocumentPositionParams, Uri};
 
 	use super::RenameHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_references() {
@@ -167,7 +194,7 @@ any: z = x;
 			"#,
 			false,
 			RenameParams {
-				new_name: "abc 123 !@# \"".into(),
+				new_name: "abc 123 !@# \"".to_owned(),
 				text_document_position: TextDocumentPositionParams {
 					text_document: lsp_types::TextDocumentIdentifier {
 						uri: Uri::from_str("file:///test.mzn").unwrap(),
@@ -184,35 +211,57 @@ any: z = x;
 			expect!([r#"
     {
       "Ok": {
-        "changes": {
-          "test.mzn": [
-            {
-              "range": {
-                "start": {
-                  "line": 5,
-                  "character": 9
-                },
-                "end": {
-                  "line": 5,
-                  "character": 10
-                }
-              },
-              "newText": "'abc 123 !@# \"'"
+        "documentChanges": [
+          {
+            "textDocument": {
+              "uri": "test.mzn",
+              "version": null
             },
-            {
-              "range": {
-                "start": {
-                  "line": 6,
-                  "character": 5
+            "edits": [
+              {
+                "range": {
+                  "start": {
+                    "line": 5,
+                    "character": 9
+                  },
+                  "end": {
+                    "line": 5,
+                    "character": 10
+                  }
                 },
-                "end": {
-                  "line": 6,
-                  "character": 6
-                }
-              },
-              "newText": "'abc 123 !@# \"'"
-            }
-          ]
+                "newText": "'abc 123 !@# \"'",
+                "annotationId": "rename"
+              }
+            ]
+          },
+          {
+            "textDocument": {
+              "uri": "test.mzn",
+              "version": null
+            },
+            "edits": [
+              {
+                "range": {
+                  "start": {
+                    "line": 6,
+                    "character": 5
+                  },
+                  "end": {
+                    "line": 6,
+                    "character": 6
+                  }
+                },
+                "newText": "'abc 123 !@# \"'",
+                "annotationId": "rename"
+              }
+            ]
+          }
+        ],
+        "changeAnnotations": {
+          "rename": {
+            "label": "Rename",
+            "needsConfirmation": false
+          }
         }
       }
     }"#]),

@@ -212,9 +212,10 @@ impl std::ops::Index<&[Value]> for Array {
 						if e.ty == val.ty {
 							idx += val.pos
 						} else {
-							panic!("incorrect index type: using value of type {} for an index of type {}",
-							e.ty.name,
-							val.ty.name)
+							panic!(
+								"incorrect index type: using value of type {} for an index of type {}",
+								e.ty.name, val.ty.name
+							)
 						}
 					} else {
 						panic!(
@@ -457,7 +458,7 @@ impl CtorLock<'_> {
 	/// ## Warning
 	/// This function will panic if Enum type is uninitialized
 	pub fn iter(&self) -> impl Iterator<Item = &Constructor> {
-		let EnumInner::Constructors(ref cons) = self.lock.deref() else {
+		let EnumInner::Constructors(cons) = self.lock.deref() else {
 			panic!("cannot access constructors of an uninitialized enumerated type")
 		};
 		cons.iter().filter(|ctor| ctor.2 > 0)

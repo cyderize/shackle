@@ -1,6 +1,6 @@
 use shackle_syntax::{
 	ast::AstNode,
-	minizinc::{self, pretty_print_identifier, PatternNumericLiteral},
+	minizinc::{self, PatternNumericLiteral, pretty_print_identifier},
 };
 
 use crate::{
@@ -8,18 +8,20 @@ use crate::{
 	ir::Element,
 };
 
-impl Format for minizinc::Pattern {
+impl<'tree> Format for minizinc::Pattern<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let e = match self {
-			minizinc::Pattern::Absent(a) => Element::text(a.cst_text()),
-			minizinc::Pattern::Anonymous(a) => Element::text(a.cst_text()),
+			minizinc::Pattern::Absent(a) => Element::text(a.cst_text(formatter.source())),
+			minizinc::Pattern::Anonymous(a) => Element::text(a.cst_text(formatter.source())),
 			minizinc::Pattern::BooleanLiteral(b) => {
 				Element::text(if b.value() { "true" } else { "false" })
 			}
 			minizinc::Pattern::Call(c) => c.format(formatter),
-			minizinc::Pattern::Identifier(i) => Element::text(pretty_print_identifier(&i.name())),
+			minizinc::Pattern::Identifier(i) => {
+				Element::text(pretty_print_identifier(&i.name(formatter.source())))
+			}
 			minizinc::Pattern::PatternNumericLiteral(n) => n.format(formatter),
-			minizinc::Pattern::StringLiteral(s) => Element::text(s.cst_text()),
+			minizinc::Pattern::StringLiteral(s) => Element::text(s.cst_text(formatter.source())),
 			minizinc::Pattern::Tuple(t) => t.format(formatter),
 			minizinc::Pattern::Record(r) => formatter.format_list("(", ")", r.fields()),
 		};
@@ -34,20 +36,20 @@ impl Format for minizinc::Pattern {
 	}
 }
 
-impl Format for PatternNumericLiteral {
-	fn format(&self, _formatter: &mut MiniZincFormatter) -> Element {
+impl<'tree> Format for PatternNumericLiteral<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		if self.negated() {
 			Element::sequence(vec![
 				Element::text("-"),
-				Element::text(self.value().cst_text()),
+				Element::text(self.value().cst_text(formatter.source())),
 			])
 		} else {
-			Element::text(self.value().cst_text())
+			Element::text(self.value().cst_text(formatter.source()))
 		}
 	}
 }
 
-impl Format for minizinc::PatternCall {
+impl<'tree> Format for minizinc::PatternCall<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			minizinc::Expression::Identifier(self.identifier()).format(formatter),
@@ -56,7 +58,7 @@ impl Format for minizinc::PatternCall {
 	}
 }
 
-impl Format for minizinc::PatternTuple {
+impl<'tree> Format for minizinc::PatternTuple<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let fields = self.fields().collect::<Vec<_>>();
 		if fields.is_empty() {
@@ -77,7 +79,7 @@ impl Format for minizinc::PatternTuple {
 	}
 }
 
-impl Format for minizinc::PatternRecordField {
+impl<'tree> Format for minizinc::PatternRecordField<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			minizinc::Expression::Identifier(self.name()).format(formatter),

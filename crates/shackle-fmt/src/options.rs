@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Trait for core formatting options
-pub trait FormatOptions {
+pub(crate) trait FormatOptions {
 	/// Target maximum line length
 	fn line_width(&self) -> usize;
 	/// Whether to indent using tabs

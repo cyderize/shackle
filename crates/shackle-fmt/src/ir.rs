@@ -19,18 +19,18 @@ impl<T: IntoIterator<Item = Element>> From<T> for Element {
 ///
 /// The constructor functions are used to produce an IR indicating how to format the code.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Element(ElementData);
+pub(crate) struct Element(ElementData);
 
 impl Element {
 	/// A raw string to be printed.
-	pub fn text(text: impl ToString) -> Self {
+	pub(crate) fn text(text: impl ToString) -> Self {
 		let string = text.to_string();
 		let mut elements = Vec::with_capacity(1);
 		for (i, s) in string.split('\n').enumerate() {
 			if i > 0 {
 				elements.push(Self(ElementData::LineBreak { literal: true }));
 			}
-			elements.push(Self(ElementData::Text(s.to_string())));
+			elements.push(Self(ElementData::Text(s.to_owned())));
 		}
 		Self::sequence(elements)
 	}
@@ -38,7 +38,7 @@ impl Element {
 	/// A sequence of elements.
 	///
 	/// Does not affect breaking (i.e. whether the elements are broken is determined by whether the containing group is broken).
-	pub fn sequence(elements: impl IntoIterator<Item = Element>) -> Self {
+	pub(crate) fn sequence(elements: impl IntoIterator<Item = Element>) -> Self {
 		let mut elements = elements.into_iter().collect::<Vec<_>>();
 		if elements.len() == 1 {
 			Self(elements.pop().unwrap().0)
@@ -55,25 +55,25 @@ impl Element {
 	/// When a group is broken apart, we simply render the children in broken mode - no line breaks are automatically
 	/// inserted. The `if_broken` and `line_break_or_space` functions (and similar) are used to control where line
 	/// breaks can appear.
-	pub fn group(element: impl Into<Element>) -> Self {
+	pub(crate) fn group(element: impl Into<Element>) -> Self {
 		Self(ElementData::Group(Box::new(element.into())))
 	}
 
 	/// A group which should be broken apart
-	#[allow(dead_code)]
-	pub fn broken_group(element: impl Into<Element>) -> Self {
+	#[allow(dead_code, reason = "May be needed in the future")]
+	pub(crate) fn broken_group(element: impl Into<Element>) -> Self {
 		Self::group(vec![Self::break_parent(), element.into()])
 	}
 
 	/// Increments the indentation level for the given element.
 	///
 	/// Indentation is added when a line break occurs.
-	pub fn indent(element: impl Into<Element>) -> Self {
+	pub(crate) fn indent(element: impl Into<Element>) -> Self {
 		Self(ElementData::Indent(Box::new(element.into())))
 	}
 
 	/// Join the elements together with the given separator.
-	pub fn join(
+	pub(crate) fn join(
 		elements: impl IntoIterator<Item = Element>,
 		separator: impl Into<Element>,
 	) -> Self {
@@ -93,53 +93,53 @@ impl Element {
 	}
 
 	/// Chooses between the elements based on if the current group is broken.
-	pub fn if_broken_else(broken: impl Into<Element>, unbroken: impl Into<Element>) -> Self {
+	pub(crate) fn if_broken_else(broken: impl Into<Element>, unbroken: impl Into<Element>) -> Self {
 		Self::sequence([Self::if_broken(broken), Self::if_unbroken(unbroken)])
 	}
 
 	/// Emits the element if the current group is broken.
-	pub fn if_broken(broken: impl Into<Element>) -> Self {
+	pub(crate) fn if_broken(broken: impl Into<Element>) -> Self {
 		Self(ElementData::IfBroken(Box::new(broken.into())))
 	}
 
 	/// Emits the element if the current group is unbroken.
-	pub fn if_unbroken(unbroken: impl Into<Element>) -> Self {
+	pub(crate) fn if_unbroken(unbroken: impl Into<Element>) -> Self {
 		Self(ElementData::IfUnbroken(Box::new(unbroken.into())))
 	}
 
 	/// Text to place at the end of the current line.
-	pub fn line_suffix(suffix: impl ToString) -> Self {
+	pub(crate) fn line_suffix(suffix: impl ToString) -> Self {
 		Self(ElementData::LineSuffix(suffix.to_string()))
 	}
 
 	/// A line break, which forces parent groups to break.
-	pub fn line_break() -> Self {
+	pub(crate) fn line_break() -> Self {
 		Self(ElementData::LineBreak { literal: false })
 	}
 
 	/// Empty if the group is not broken, otherwise breaks here.
-	pub fn line_break_or_empty() -> Self {
+	pub(crate) fn line_break_or_empty() -> Self {
 		Self::if_broken(Self::line_break())
 	}
 
 	/// A single space if the group is not broken, otherwise breaks here.
-	pub fn line_break_or_space() -> Self {
+	pub(crate) fn line_break_or_space() -> Self {
 		Self::if_broken_else(Self::line_break(), Self::text(" "))
 	}
 
 	/// A line break which doesn't indent afterwards.
-	#[allow(dead_code)]
-	pub fn literal_line_break() -> Self {
+	#[allow(dead_code, reason = "May be needed in the future")]
+	pub(crate) fn literal_line_break() -> Self {
 		Self(ElementData::LineBreak { literal: true })
 	}
 
 	/// Force all parent groups to break
-	pub fn break_parent() -> Self {
+	pub(crate) fn break_parent() -> Self {
 		Self(ElementData::BreakParent)
 	}
 
 	/// Format this element
-	pub fn format(&self, options: &impl FormatOptions) -> String {
+	pub(crate) fn format(&self, options: &impl FormatOptions) -> String {
 		Formatter::default().pretty_print(self, options)
 	}
 }
@@ -416,7 +416,7 @@ impl Formatter {
 							.map(|item| item.group_level >= self.current_level)
 							.unwrap_or_default()
 						{
-							self.breaks.pop_front();
+							let _ = self.breaks.pop_front();
 						}
 						let line_break = BreakItem {
 							items_enqueued: self.total_items_enqueued,

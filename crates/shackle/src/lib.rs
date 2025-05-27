@@ -25,24 +25,27 @@ use data::{
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserializer;
-// Export OptType enumeration used in [`Type`]
-pub use shackle_compiler::ty::OptType;
-use shackle_compiler::{
-	db::{CompilerDatabase, Inputs, InternedString, Interner},
-	file::InputFile,
-	hir::db::Hir,
-	thir::{self, db::Thir, pretty_print::PrettyPrinter, Declaration},
-	ty::{Ty, TyData},
-};
 // Result type for Shackle operations
 pub use shackle_diagnostics::{Error, FileError, Result, SourceFile};
-use shackle_syntax::{ast::AstNode, minizinc::Identifier, InputLang};
+use shackle_hir::{
+	CompilerDatabase, Db,
+	constants::IdentifierRegistry,
+	db::Setter,
+	input::{InlineModelFile, InputFiles, NamedModelFile},
+	run_hir_phase,
+};
+use shackle_syntax::{InputLang, ast::AstNode, minizinc::Identifier};
+use shackle_thir::{db::final_thir, lower::lower_model, pretty_print::PrettyPrinter};
+// Export OptType enumeration used in [`Type`]
+pub use shackle_ty::OptType;
+use shackle_ty::{Ty, TyData};
+use shackle_utils::InternedString;
 use value::EnumInner;
 pub use value::{Enum, Value};
 
 /// Shackle errors
 pub mod error {
-	pub use shackle_diagnostics::{error::*, Result};
+	pub use shackle_diagnostics::{Result, error::*};
 }
 
 /// Shackle warnings
@@ -59,25 +62,27 @@ impl Model {
 	/// Create a Model from the file at the given path
 	pub fn from_file(path: PathBuf) -> Model {
 		let mut db = CompilerDatabase::default();
-		let l = InputLang::from_path(&path);
-		db.set_input_files(Arc::new(vec![InputFile::Path(path, l)]));
+		let model_file = NamedModelFile::new(&db, path).into();
+		InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		Model { db }
 	}
 
 	/// Create a Model from the given string
 	pub fn from_string(m: String, l: InputLang) -> Model {
 		let mut db = CompilerDatabase::default();
-		db.set_input_files(Arc::new(vec![InputFile::String(m, l)]));
+		let model_file = InlineModelFile::new(&db, m, l).into();
+		InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		Model { db }
 	}
 
 	/// Check whether a model contains any (non-runtime) errors
 	pub fn check(&self, _slv: &Solver, _data: &[PathBuf], _complete: bool) -> Vec<Error> {
 		// TODO: Check data files
-		self.db
-			.run_hir_phase()
-			.map(|_| Vec::new())
-			.unwrap_or_else(|e| e.iter().cloned().collect())
+		run_hir_phase(&self.db)
+			.errors
+			.into_iter()
+			.cloned()
+			.collect()
 	}
 
 	/// Compile current model into a [`Program`] that can be used by the Shackle interpreter
@@ -102,12 +107,18 @@ impl Model {
 			})
 			.collect();
 
-		let prg_model = self.db.final_thir()?;
+		let hir_result = run_hir_phase(&self.db);
+		if !hir_result.errors.is_empty() {
+			return Err(Error::try_from(
+				hir_result.errors.into_iter().cloned().collect::<Vec<_>>(),
+			)
+			.unwrap());
+		}
+		let _ = final_thir(&self.db)?;
 
 		Ok(Program {
 			db: self.db,
 			slv: slv.clone(),
-			code: prg_model,
 			input_types: input,
 			input_data: FxHashMap::default(),
 			enum_types: enums,
@@ -140,7 +151,6 @@ impl Solver {
 pub struct Program {
 	// FIXME: CompilerDatabase should (probably) not be part of Program anymore
 	db: CompilerDatabase,
-	code: Arc<thir::Model>,
 	slv: Solver,
 
 	// Model instance data
@@ -207,28 +217,28 @@ pub enum Type {
 }
 
 impl Type {
-	fn from_compiler<S: FnMut(InternedString) -> Arc<str>>(
-		db: &dyn Interner,
+	fn from_compiler<'db, S: FnMut(InternedString<'db>) -> Arc<str>>(
+		db: &'db dyn Db,
 		str_interner: &mut S,
-		type_map: &mut FxHashMap<Ty, Type>,
+		type_map: &mut FxHashMap<Ty<'db>, Type>,
 		enum_map: &FxHashMap<Arc<str>, Arc<Enum>>,
-		value: Ty,
+		value: Ty<'db>,
 	) -> Self {
 		let data = value.lookup(db);
 		match data {
-			TyData::Boolean(_, opt) => Type::Boolean(opt),
-			TyData::Integer(_, opt) => Type::Integer(opt),
-			TyData::Float(_, opt) => Type::Float(opt),
-			TyData::Enum(_, opt, e) => Type::Enum(opt, enum_map[&str_interner(e.name(db))].clone()),
-			TyData::String(opt) => Type::String(opt),
-			TyData::Annotation(opt) => Type::Annotation(opt),
+			TyData::Boolean(_, opt) => Type::Boolean(*opt),
+			TyData::Integer(_, opt) => Type::Integer(*opt),
+			TyData::Float(_, opt) => Type::Float(*opt),
+			TyData::Enum(_, opt, e) => Type::Enum(*opt, enum_map[&str_interner(e.name())].clone()),
+			TyData::String(opt) => Type::String(*opt),
+			TyData::Annotation(opt) => Type::Annotation(*opt),
 			TyData::Array { opt, dim, element } => {
-				let elem = Type::from_compiler(db, str_interner, type_map, enum_map, element);
-				let mut index_conv = |nty| -> Type {
+				let elem = Type::from_compiler(db, str_interner, type_map, enum_map, *element);
+				let mut index_conv = |nty: &TyData<'db>| -> Type {
 					match nty {
 						TyData::Integer(_, _) => Type::Integer(OptType::NonOpt),
 						TyData::Enum(_, _, e) => {
-							Type::Enum(OptType::NonOpt, enum_map[&str_interner(e.name(db))].clone())
+							Type::Enum(OptType::NonOpt, enum_map[&str_interner(e.name())].clone())
 						}
 						_ => {
 							unreachable!("invalid index set type {:?}", nty)
@@ -244,23 +254,23 @@ impl Type {
 					}
 				};
 				Type::Array {
-					opt,
+					opt: *opt,
 					dim: ndim.into_boxed_slice(),
 					element: Box::new(elem),
 				}
 			}
 			TyData::Set(_, opt, elem) => Type::Set(
-				opt,
+				*opt,
 				Box::new(Type::from_compiler(
 					db,
 					str_interner,
 					type_map,
 					enum_map,
-					elem,
+					*elem,
 				)),
 			),
 			TyData::Tuple(opt, li) => {
-				let tmp = if opt == OptType::NonOpt {
+				let tmp = if *opt == OptType::NonOpt {
 					value
 				} else {
 					todo!()
@@ -278,15 +288,15 @@ impl Type {
 							*ty,
 						))
 					}
-					type_map.insert(tmp, Type::Tuple(opt, v.into_boxed_slice().into()));
+					type_map.insert(tmp, Type::Tuple(*opt, v.into_boxed_slice().into()));
 					&type_map[&tmp]
 				}) else {
 					unreachable!()
 				};
-				Type::Tuple(opt, li.clone())
+				Type::Tuple(*opt, li.clone())
 			}
 			TyData::Record(opt, li) => {
-				let tmp = if opt == OptType::NonOpt {
+				let tmp = if *opt == OptType::NonOpt {
 					value
 				} else {
 					todo!()
@@ -301,12 +311,12 @@ impl Type {
 							Type::from_compiler(db, str_interner, type_map, enum_map, *ty),
 						))
 					}
-					type_map.insert(tmp, Type::Record(opt, v.into_boxed_slice().into()));
+					type_map.insert(tmp, Type::Record(*opt, v.into_boxed_slice().into()));
 					&type_map[&tmp]
 				}) else {
 					unreachable!()
 				};
-				Type::Record(opt, li.clone())
+				Type::Record(*opt, li.clone())
 			}
 			_ => unreachable!("invalid user facing type {:?}", data),
 		}
@@ -413,7 +423,8 @@ impl Program {
 
 	/// Output the [`Program`] using the given output interface, using the [`Write`] trait
 	pub fn write<W: Write>(&self, out: &mut W) -> Result<(), std::io::Error> {
-		let printer = PrettyPrinter::new_compat(&self.db, &self.code);
+		let model = final_thir(&self.db).unwrap();
+		let printer = PrettyPrinter::new_compat(&self.db, model);
 		out.write_all(printer.pretty_print().as_bytes())
 	}
 
@@ -440,35 +451,39 @@ impl Program {
 			match f.extension().and_then(OsStr::to_str) {
 				Some("dzn") => {
 					// Parse the DZN file
-					let assignments = parse_dzn(&src)?;
+					let dzn = parse_dzn(&src)?;
+					let assignments = dzn.items().collect::<Vec<_>>();
 					data.reserve(assignments.len());
 					names.reserve(assignments.len());
 					// Match the parser
 					for asg in assignments {
 						let ident = asg.assignee().cast::<Identifier>().unwrap();
-						if let Some((k, ty)) = self.input_types.get_key_value::<str>(&ident.name())
+						if let Some((k, ty)) = self
+							.input_types
+							.get_key_value::<str>(&ident.name(src.contents()))
 						{
 							let val = collect_dzn_value(&src, &asg.definition(), ty)?;
 							data.push((k, ty, val));
 							// Identifier already seen
 							if names.contains(k) || self.input_data.contains_key(k) {
 								return Err(error::IdentifierAlreadyDefined {
-									src,
+									src: src.clone(),
 									span: asg.cst_node().as_ref().byte_range().into(),
 									identifier: k.to_string(),
 								}
 								.into());
 							}
 							names.insert(k);
-						} else if let Some((k, e)) =
-							self.enum_types.get_key_value::<str>(&ident.name())
+						} else if let Some((k, e)) = self
+							.enum_types
+							.get_key_value::<str>(&ident.name(src.contents()))
 						{
 							let mut inner = e.state.lock().unwrap();
 							if matches!(*inner, EnumInner::NoDefinition) {
 								(*inner).collect_definition(&src, &asg.definition())?
 							} else {
 								return Err(error::IdentifierAlreadyDefined {
-									src,
+									src: src.clone(),
 									span: asg.cst_node().as_ref().byte_range().into(),
 									identifier: k.to_string(),
 								}
@@ -477,9 +492,9 @@ impl Program {
 						} else {
 							// Unknown identifier
 							return Err(error::UndefinedIdentifier {
-								src,
+								src: src.clone(),
 								span: ident.cst_node().as_ref().byte_range().into(),
-								identifier: ident.name().to_string(),
+								identifier: ident.name(src.contents()).to_string(),
 							}
 							.into());
 						}
@@ -544,27 +559,30 @@ struct ModelIoInterface {
 }
 
 impl ModelIoInterface {
-	fn new(db: &dyn Thir) -> Self {
-		let sh = db.model_thir();
+	fn new<'db>(db: &'db dyn Db) -> Self {
+		let sh = lower_model(db);
 		let val = sh.get();
 		let model = val.as_ref();
 
 		// Local interner
-		let mut interner: FxHashMap<InternedString, Arc<str>> = FxHashMap::default();
+		let mut interner: FxHashMap<InternedString<'db>, Arc<str>> = FxHashMap::default();
 		let mut resolve_name = |s| {
 			interner
 				.entry(s)
-				.or_insert_with(|| Arc::from(s.value(db.upcast())))
+				.or_insert_with(|| Arc::from(s.lookup(db)))
 				.clone()
 		};
-		let mut type_map = FxHashMap::default();
+		let mut type_map: FxHashMap<Ty<'db>, Type> = FxHashMap::default();
 
 		// Create a map of enumerations
 		let mut enums = FxHashMap::default();
 		for (_, e) in model.enumerations() {
-			let name = resolve_name(e.enum_type().name(db.upcast()));
+			let name = resolve_name(e.enum_type().name());
 			if let Some(_ctor) = e.definition() {
-				log::warn!("TODO: enumerated type {} is defined in the model and member can currently not be constructed in data", name);
+				log::warn!(
+					"TODO: enumerated type {} is defined in the model and member can currently not be constructed in data",
+					name
+				);
 				// TODO: determine dependencies or directly initialize the enumerated type
 				enums.insert(name.clone(), Arc::new(Enum::model_defined(name, [])));
 			} else {
@@ -573,31 +591,25 @@ impl ModelIoInterface {
 		}
 
 		// Find the annotation identifiers
-		let reg = db.identifier_registry();
+		let reg = IdentifierRegistry::lookup(db);
 		let output_ann = reg.annotations.output;
 		let no_output_ann = reg.annotations.no_output;
 
 		// Determine input and output from declarations
 		let mut input = FxHashMap::default();
 		let mut output = FxHashMap::default();
-		let mut insert_decl = |map: &mut FxHashMap<Arc<str>, crate::Type>, decl: &Declaration| {
-			let name = resolve_name(decl.name().unwrap().0);
-			let ty = crate::Type::from_compiler(
-				db.upcast(),
-				&mut resolve_name,
-				&mut type_map,
-				&enums,
-				decl.domain().ty(),
-			);
-			map.insert(name, ty);
-		};
 		for (_, decl) in model.all_declarations() {
 			// Determine whether declaration is part of input
-			if decl.top_level()
-				&& decl.domain().ty().known_par(db.upcast())
-				&& decl.definition().is_none()
-			{
-				insert_decl(&mut input, decl)
+			if decl.top_level() && decl.domain().ty().known_par(db) && decl.definition().is_none() {
+				let name = resolve_name(decl.name().unwrap().0);
+				let ty = crate::Type::from_compiler(
+					db,
+					&mut resolve_name,
+					&mut type_map,
+					&enums,
+					decl.domain().ty(),
+				);
+				input.insert(name, ty);
 			}
 
 			// Determine whether declaration is part of output
@@ -610,10 +622,18 @@ impl ModelIoInterface {
 			if should_output == Some(true)
 				|| (should_output.is_none()
 					&& decl.top_level()
-					&& !decl.domain().ty().known_par(db.upcast())
+					&& !decl.domain().ty().known_par(db)
 					&& decl.definition().is_none())
 			{
-				insert_decl(&mut output, decl)
+				let name = resolve_name(decl.name().unwrap().0);
+				let ty = crate::Type::from_compiler(
+					db,
+					&mut resolve_name,
+					&mut type_map,
+					&enums,
+					decl.domain().ty(),
+				);
+				output.insert(name, ty);
 			}
 		}
 

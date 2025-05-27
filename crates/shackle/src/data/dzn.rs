@@ -10,16 +10,16 @@ use shackle_diagnostics::{
 	Error, InvalidArrayLiteral, InvalidNumericLiteral, SourceFile, SyntaxError, TypeMismatch,
 };
 use shackle_syntax::{
-	ast::{AstNode, Children},
+	InputLang,
+	ast::AstNode,
 	cst::{Cst, CstNode},
-	minizinc::{Assignment, Expression, Identifier, InfixOperator, RecordLiteralMember},
+	minizinc::{DznFile, Expression, Identifier, InfixOperator, RecordLiteralMember},
 };
-use tree_sitter::Parser;
 
 use crate::{
+	Enum, OptType, Type, Value,
 	data::ParserVal,
 	value::{EnumInner, Index, Polarity, Set},
-	Enum, OptType, Type, Value,
 };
 
 /// Parses a DataZinc file, returning a mapping of the name of the left hand
@@ -27,24 +27,13 @@ use crate::{
 ///
 /// An optional filename can be given that will be used to indicate the location
 /// if an error occurs
-pub(crate) fn parse_dzn(src: &SourceFile) -> Result<Vec<Assignment>, Error> {
-	let mut parser = Parser::new();
-	parser
-		.set_language(&tree_sitter_datazinc::LANGUAGE.into())
-		.expect("Failed to set Tree Sitter parser language");
-	let tree = parser
-		.parse(src.contents().as_bytes(), None)
-		.expect("DataZinc Tree Sitter parser did not return tree object");
-
-	let cst = Cst::new(tree, src.clone());
+pub(crate) fn parse_dzn(src: &SourceFile) -> Result<DznFile, Error> {
+	let cst = Cst::new(src.contents(), InputLang::DataZinc);
 
 	// Check for any syntax errors
-	cst.check()?;
+	cst.check(src)?;
 
-	let root = cst.node(cst.root_node());
-	let it = Children::from_cst(&root, "item");
-
-	Ok(it.collect())
+	Ok(DznFile::new(cst))
 }
 
 /// Convert an DZN AST expression into a internal value of the given type
@@ -64,11 +53,13 @@ pub(crate) fn collect_dzn_value(
 
 	match val {
 		Expression::IntegerLiteral(v) => {
-			let v = v.value().map_err(|e| InvalidNumericLiteral {
-				src: file.clone(),
-				span: v.cst_node().as_ref().byte_range().into(),
-				msg: e.to_string(),
-			})?;
+			let v = v
+				.value(file.contents())
+				.map_err(|e| InvalidNumericLiteral {
+					src: file.clone(),
+					span: v.cst_node().as_ref().byte_range().into(),
+					msg: e.to_string(),
+				})?;
 			match ty {
 				Type::Integer(_) => Ok(ParserVal::Integer(v)),
 				Type::Float(_) => Ok(ParserVal::Float(v as f64)),
@@ -77,7 +68,7 @@ pub(crate) fn collect_dzn_value(
 		}
 		Expression::FloatLiteral(v) => {
 			if matches!(ty, Type::Float(_)) {
-				Ok(ParserVal::Float(v.value().map_err(|e| {
+				Ok(ParserVal::Float(v.value(file.contents()).map_err(|e| {
 					InvalidNumericLiteral {
 						src: file.clone(),
 						span: v.cst_node().as_ref().byte_range().into(),
@@ -112,13 +103,14 @@ pub(crate) fn collect_dzn_value(
 				// Sort the AST record literal based on the identifiers
 				let exprs: Vec<RecordLiteralMember> = r
 					.members()
-					.sorted_by_key(|x| x.name().name().to_string())
+					.sorted_by_key(|x| x.name().name(file.contents()).to_string())
 					.collect();
 				// Now walk the types and expressions together, if there are less expressions or if
 				// the names do not match, then one of the keys is missing from the data
 				let mut vals = Vec::with_capacity(elem_tys.len());
 				for i in 0..elem_tys.len() {
-					if exprs.len() <= i || exprs[i].name().name().as_ref() != elem_tys[i].0.as_ref()
+					if exprs.len() <= i
+						|| exprs[i].name().name(file.contents()).as_ref() != elem_tys[i].0.as_ref()
 					{
 						return Err(TypeMismatch {
 							src: file.clone(),
@@ -145,7 +137,7 @@ pub(crate) fn collect_dzn_value(
 							ty,
 							if additional.len() > 1 { "s" } else { "" },
 							additional.iter().format_with(", ", |key, f| {
-								f(&format_args!("'{}'", key.name().name()))
+								f(&format_args!("'{}'", key.name().name(file.contents())))
 							})
 						),
 						span: val.cst_node().as_ref().byte_range().into(),
@@ -174,14 +166,20 @@ pub(crate) fn collect_dzn_value(
 		},
 		Expression::StringLiteral(s) => {
 			if matches!(ty, Type::String(_)) {
-				Ok(ParserVal::String(s.value()))
+				Ok(ParserVal::String(s.value(file.contents())))
 			} else {
 				type_err("a string literal")
 			}
 		}
 		Expression::Identifier(ident) => match ty {
-			Type::Enum(_, _) => Ok(ParserVal::Enum(ident.name().to_string(), Vec::new())),
-			Type::Annotation(_) => Ok(ParserVal::Ann(ident.name().to_string(), Vec::new())),
+			Type::Enum(_, _) => Ok(ParserVal::Enum(
+				ident.name(file.contents()).to_string(),
+				Vec::new(),
+			)),
+			Type::Annotation(_) => Ok(ParserVal::Ann(
+				ident.name(file.contents()).to_string(),
+				Vec::new(),
+			)),
 			_ => type_err("an identifier"),
 		},
 		Expression::Absent(_) => {
@@ -193,12 +191,17 @@ pub(crate) fn collect_dzn_value(
 		}
 		Expression::Infinity(v) => {
 			if matches!(ty, Type::Integer(_) | Type::Float(_)) {
-				debug_assert_eq!(v.cst_text().trim_start(), v.cst_text());
-				Ok(ParserVal::Infinity(if v.cst_text().starts_with('-') {
-					Polarity::Neg
-				} else {
-					Polarity::Pos
-				}))
+				debug_assert_eq!(
+					v.cst_text(file.contents()).trim_start(),
+					v.cst_text(file.contents())
+				);
+				Ok(ParserVal::Infinity(
+					if v.cst_text(file.contents()).starts_with('-') {
+						Polarity::Neg
+					} else {
+						Polarity::Pos
+					},
+				))
 			} else {
 				type_err("infinity")
 			}
@@ -221,7 +224,10 @@ pub(crate) fn collect_dzn_value(
 					if dim.len() != 1 {
 						return Err(TypeMismatch {
 							src: file.clone(),
-							msg: format!("Indexed array literal with {} dimensions must be fully indexes using tuples", dim.len()),
+							msg: format!(
+								"Indexed array literal with {} dimensions must be fully indexes using tuples",
+								dim.len()
+							),
 							span: al.cst_node().as_ref().byte_range().into(),
 						}
 						.into());
@@ -403,7 +409,7 @@ pub(crate) fn collect_dzn_value(
 				let ident: Identifier = c.function().cast().unwrap();
 				let args = c.arguments().map( |expr |
 					match expr {
-						Expression::IntegerLiteral(v) => Ok(ParserVal::Integer(v.value().map_err(|e| InvalidNumericLiteral {
+						Expression::IntegerLiteral(v) => Ok(ParserVal::Integer(v.value(file.contents()).map_err(|e| InvalidNumericLiteral {
 							src: file.clone(),
 							span: v.cst_node().as_ref().byte_range().into(),
 							msg: e.to_string(),
@@ -419,7 +425,10 @@ pub(crate) fn collect_dzn_value(
 						}.into())
 					}
 				).collect::<Result<Vec<_>, _>>()?;
-				Ok(ParserVal::Enum(ident.name().to_string(), args))
+				Ok(ParserVal::Enum(
+					ident.name(file.contents()).to_string(),
+					args,
+				))
 			}
 			Type::Annotation(_) => todo!(),
 			Type::Array {
@@ -510,7 +519,11 @@ impl EnumInner {
 				Expression::SetLiteral(v) => {
 					for el in v.members() {
 						if let Expression::Identifier(ident) = el {
-							ctors.push((ident.name().into(), Vec::new().into_boxed_slice(), 1))
+							ctors.push((
+								ident.name(file.contents()).into(),
+								Vec::new().into_boxed_slice(),
+								1,
+							))
 						} else {
 							return Err(SyntaxError {
 							src: file.clone(),
@@ -523,7 +536,12 @@ impl EnumInner {
 					}
 				}
 				Expression::Call(c) => {
-					let name: Arc<str> = c.function().cast::<Identifier>().unwrap().name().into();
+					let name: Arc<str> = c
+						.function()
+						.cast::<Identifier>()
+						.unwrap()
+						.name(file.contents())
+						.into();
 
 					let mut args = Vec::new();
 					let mut len = 0;
@@ -566,7 +584,7 @@ impl EnumInner {
 							),
 							span: op.cst_node().as_ref().byte_range().into(),
 						}
-						.into())
+						.into());
 					}
 				},
 				_ => {
@@ -576,7 +594,7 @@ impl EnumInner {
 							.to_string(),
 						span: expr.cst_node().as_ref().byte_range().into(),
 					}
-					.into())
+					.into());
 				}
 			}
 		}
@@ -589,15 +607,16 @@ impl EnumInner {
 mod tests {
 	use std::sync::Arc;
 
-	use expect_test::{expect, Expect};
+	use expect_test::{Expect, expect};
 	use shackle_diagnostics::SourceFile;
 
 	use super::parse_dzn;
-	use crate::{data::dzn::collect_dzn_value, Enum, OptType, Type};
+	use crate::{Enum, OptType, Type, data::dzn::collect_dzn_value};
 
 	fn check_serialization(input: &str, ty: &Type, expected: &Expect) {
 		let src = SourceFile::unnamed(format!("x = {input};"));
-		let assignments = parse_dzn(&src).expect("unexpected syntax error");
+		let dzn = parse_dzn(&src).expect("unexpected syntax error");
+		let assignments = dzn.items().collect::<Vec<_>>();
 		assert_eq!(assignments.len(), 1);
 
 		let val = collect_dzn_value(&src, &assignments[0].definition(), ty)
@@ -607,7 +626,8 @@ mod tests {
 
 		// Serialize as DZN and then deserialize again ensuring it is equal
 		let src = SourceFile::unnamed(format!("x = {val};"));
-		let assignments = parse_dzn(&src).expect("unexpected syntax error");
+		let dzn = parse_dzn(&src).expect("unexpected syntax error");
+		let assignments = dzn.items().collect::<Vec<_>>();
 		assert_eq!(assignments.len(), 1);
 		let val2 = collect_dzn_value(&src, &assignments[0].definition(), ty)
 			.expect("unexpected type error");
@@ -623,7 +643,8 @@ mod tests {
 	) {
 		let a = Arc::new(Enum::from_data("A".into()));
 		let src = SourceFile::unnamed(format!("A = {ty_input};"));
-		let assignments = parse_dzn(&src).expect("unexpected syntax error");
+		let dzn = parse_dzn(&src).expect("unexpected syntax error");
+		let assignments = dzn.items().collect::<Vec<_>>();
 		assert_eq!(assignments.len(), 1);
 		{
 			let mut inner = a.state.lock().unwrap();
@@ -635,7 +656,8 @@ mod tests {
 
 		let b = Arc::new(Enum::from_data("A".into()));
 		let src = SourceFile::unnamed(format!("{a};"));
-		let assignments = parse_dzn(&src).expect("unexpected syntax error");
+		let dzn = parse_dzn(&src).expect("unexpected syntax error");
+		let assignments = dzn.items().collect::<Vec<_>>();
 		assert_eq!(assignments.len(), 1);
 		{
 			let mut inner = b.state.lock().unwrap();

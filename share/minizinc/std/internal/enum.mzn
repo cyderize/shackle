@@ -13,29 +13,29 @@ function array [$X] of var bool: enum2int(array [$X] of var bool: x) :: mzn_inte
 
 function array [$X] of opt bool: enum2int(array [$X] of opt bool: x) :: mzn_internal_representation;
 function array [$X] of var opt bool: enum2int(array [$X] of var opt bool: x)
-  :: mzn_internal_representation;
+	:: mzn_internal_representation;
 
 function array [$X] of opt set of bool: enum2int(array [$X] of opt set of bool: x)
-  :: mzn_internal_representation;
+	:: mzn_internal_representation;
 function array [$X] of set of bool: enum2int(array [$X] of set of bool: x)
-  :: mzn_internal_representation;
+	:: mzn_internal_representation;
 function array [$X] of var set of bool: enum2int(array [$X] of var set of bool: x)
-  :: mzn_internal_representation;
+	:: mzn_internal_representation;
 
-type MznEnum = tuple(
-	int,
-	array [int] of tuple(string, array [int] of tuple(int, set of int), int),
-);
+type MznEnum = tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int));
 
 function MznEnum: mzn_get_enum(
 	array [int] of tuple(string, array [int] of tuple(int, set of int)): e,
 ) = (
-	sum (x in e) (product (y in x.2) (card(y.2))),
+	sum (
+		x in e,
+	) (
+		product (y in x.2) (card(y.2))
+	),
 	[
 		let {
 			any: (name, params) = e[i];
-			any: offset =
-				sum (x in e[1..i - 1]) (product (y in x.2) (card(y.2)));
+			any: offset = sum (x in e[1..i - 1]) (product (y in x.2) (card(y.2)));
 		} in (name, params, offset) |
 			i in 1..length(e),
 	],
@@ -59,10 +59,7 @@ function int: mzn_construct_enum(MznEnum: e, int: i, array [int] of int: args) =
 		any: value =
 			sum (a in index_set(args)) (
 				let {
-					any: p =
-						product (b in a + 1..max(index_set(args))) (
-							card(params[b].2)
-						);
+					any: p = product (b in a + 1..max(index_set(args))) (card(params[b].2));
 					any: v =
 						if mzn_set_is_contiguous(params[a].2) then
 							args[a] - min(params[a].2)
@@ -73,35 +70,21 @@ function int: mzn_construct_enum(MznEnum: e, int: i, array [int] of int: args) =
 			);
 	} in offset + value + 1;
 
-function opt int: mzn_construct_enum(
-	MznEnum: e,
-	int: i,
-	array [int] of opt int: args,
-) =
+function opt int: mzn_construct_enum(MznEnum: e, int: i, array [int] of opt int: args) =
 	if forall (a in args) (occurs(a)) then
 		mzn_construct_enum(e, i, [deopt(a) | a in args])
 	else
 		<>
 	endif;
 
-function var int: mzn_construct_enum(
-	MznEnum: e,
-	int: i,
-	array [int] of var int: args,
-) =
+function var int: mzn_construct_enum(MznEnum: e, int: i, array [int] of var int: args) =
 	let {
 		any: (name, params, offset) = e.2[i];
-		constraint
-			forall (a in index_set(args) where params[a].1 == 0) (
-				args[a] in params[a].2
-			);
+		constraint forall (a in index_set(args) where params[a].1 == 0) (args[a] in params[a].2);
 		any: value =
 			sum (a in index_set(args)) (
 				let {
-					any: p =
-						product (b in a + 1..max(index_set(args))) (
-							card(params[b].2)
-						);
+					any: p = product (b in a + 1..max(index_set(args))) (card(params[b].2));
 					any: v =
 						if mzn_set_is_contiguous(params[a].2) then
 							args[a] - min(params[a].2)
@@ -112,22 +95,17 @@ function var int: mzn_construct_enum(
 			);
 	} in offset + value + 1;
 
-function var opt int: mzn_construct_enum(
-	MznEnum: e,
-	int: i,
-	array [int] of var opt int: args,
-) =
+function var opt int: mzn_construct_enum(MznEnum: e, int: i, array [int] of var opt int: args) =
 	if forall (a in args) (occurs(a)) then
 		mzn_construct_enum(e, i, [deopt(a) | a in args])
 	else
 		<>
 	endif;
 
-function set of int: mzn_construct_enum(
-	MznEnum: e,
-	int: i,
-	array [int] of set of int: args,
-) = {mzn_construct_enum(e, i, v) | (v,) in mzn_cartesian_product(args)};
+function set of int: mzn_construct_enum(MznEnum: e, int: i, array [int] of set of int: args) = {
+	mzn_construct_enum(e, i, v) |
+		(v,) in mzn_cartesian_product(args),
+};
 
 function var set of int: mzn_construct_enum(
 	MznEnum: e,
@@ -157,9 +135,7 @@ function array [int] of int: mzn_destruct_enum(MznEnum: e, int: i, int: v) =
 		let {
 			any: d =
 				(v - offset - 1) div
-					product (j in p + 1..max(index_set(params))) (
-						card(params[j].2)
-					) mod
+					product (j in p + 1..max(index_set(params))) (card(params[j].2)) mod
 					card(params[p].2);
 			any: r =
 				if mzn_set_is_contiguous(params[p].2) then
@@ -171,11 +147,7 @@ function array [int] of int: mzn_destruct_enum(MznEnum: e, int: i, int: v) =
 			p in index_set(params),
 	];
 
-function array [int] of var int: mzn_destruct_enum(
-	MznEnum: e,
-	int: i,
-	var int: v,
-) =
+function array [int] of var int: mzn_destruct_enum(MznEnum: e, int: i, var int: v) =
 	let {
 		any: (name, params, offset) = e.2[i];
 		any: lower = offset + 1;
@@ -185,9 +157,7 @@ function array [int] of var int: mzn_destruct_enum(
 		let {
 			any: d =
 				(v - offset - 1) div
-					product (j in p + 1..max(index_set(params))) (
-						card(params[j].2)
-					) mod
+					product (j in p + 1..max(index_set(params))) (card(params[j].2)) mod
 					card(params[p].2);
 			any: r =
 				if mzn_set_is_contiguous(params[p].2) then
@@ -199,42 +169,25 @@ function array [int] of var int: mzn_destruct_enum(
 			p in index_set(params),
 	];
 
-function array [int] of opt int: mzn_destruct_enum(
-	MznEnum: e,
-	int: i,
-	opt int: v,
-) =
-	if occurs(v) then
-		mzn_destruct_enum(e, i, deopt(v))
-	else
-		[<> | p in e.2[i].2]
-	endif;
+function array [int] of opt int: mzn_destruct_enum(MznEnum: e, int: i, opt int: v) =
+	if occurs(v) then mzn_destruct_enum(e, i, deopt(v)) else [<> | p in e.2[i].2] endif;
 
-function array [int] of var opt int: mzn_destruct_enum(
-	MznEnum: e,
-	int: i,
-	var opt int: v,
-) = [
+function array [int] of var opt int: mzn_destruct_enum(MznEnum: e, int: i, var opt int: v) = [
 	if occurs(v) then mzn_destruct_enum(e, i, deopt(v))[p] else <> endif |
 		p in index_set(e.2[i].2),
 ];
 
-function array [int] of set of int: mzn_destruct_enum(
-	MznEnum: e,
-	int: i,
-	set of int: v,
-) = [{mzn_destruct_enum(e, i, v_i)[p] | v_i in v} | p in index_set(e.2[i].2)];
+function array [int] of set of int: mzn_destruct_enum(MznEnum: e, int: i, set of int: v) = [
+	{mzn_destruct_enum(e, i, v_i)[p] | v_i in v} |
+		p in index_set(e.2[i].2),
+];
 
-function array [int] of var set of int: mzn_destruct_enum(
-	MznEnum: e,
-	int: i,
-	var set of int: v,
-) = [{mzn_destruct_enum(e, i, v_i)[p] | v_i in v} | p in index_set(e.2[i].2)];
+function array [int] of var set of int: mzn_destruct_enum(MznEnum: e, int: i, var set of int: v) = [
+	{mzn_destruct_enum(e, i, v_i)[p] | v_i in v} |
+		p in index_set(e.2[i].2),
+];
 
-function tuple(string, array [int] of tuple(int, int)): mzn_unpack_enum(
-	MznEnum: e,
-	int: v,
-) =
+function tuple(string, array [int] of tuple(int, int)): mzn_unpack_enum(MznEnum: e, int: v) =
 	let {
 		any: i = arg_max([v <= i.3 | i in e.2] ++ [true]) - 1;
 		any: (name, def, offset) = e.2[i];

@@ -473,6 +473,50 @@ impl<'a, T: Marker> PrettyPrinter<'a, T> {
 				}
 			}
 			ExpressionData::Call(c) => {
+				if c.arguments.len() == 1 || c.arguments.len() == 2 {
+					if let Callable::Function(f) = &c.function {
+						if self.model[*f].specialised_from().is_none() {
+							let name = self.model[*f]
+								.name()
+								.as_identifier(self.db)
+								.lookup(self.db.upcast());
+							if c.arguments.len() == 1 {
+								if matches!(&name[..], "o.." | "o<.." | "o..<" | "o<..<") {
+									return format!(
+										"({}({}))",
+										name[1..].to_string(),
+										self.pretty_print_expression(&c.arguments[0])
+									);
+								}
+								if tree_sitter_minizinc::is_prefix_operator(&name) {
+									return format!(
+										"({}({}))",
+										name,
+										self.pretty_print_expression(&c.arguments[0])
+									);
+								}
+								if name.len() > 1
+									&& tree_sitter_minizinc::is_postfix_operator(
+										&name[..name.len() - 1],
+									) {
+									return format!(
+										"(({}){})",
+										self.pretty_print_expression(&c.arguments[0]),
+										name[..name.len() - 1].to_string(),
+									);
+								};
+							} else if tree_sitter_minizinc::is_infix_operator(&name) {
+								return format!(
+									"(({}) {} ({}))",
+									self.pretty_print_expression(&c.arguments[0]),
+									name,
+									self.pretty_print_expression(&c.arguments[1])
+								);
+							}
+						}
+					}
+				}
+
 				let f = match &c.function {
 					Callable::Annotation(a) => self.model[*a]
 						.name

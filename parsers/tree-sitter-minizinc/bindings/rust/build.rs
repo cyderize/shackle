@@ -114,7 +114,7 @@ fn get_precendences(
 		writeln!(&mut buf, "\tpub fn {}() -> Precedence {{ {} }}", k, prec)?;
 	}
 
-	for (k, v) in operator_precedences {
+	for (k, v) in operator_precedences.iter() {
 		writeln!(&mut buf, "\t/// Get precedence for the given `{}`", k)?;
 		writeln!(&mut buf, "\tpub fn {}(operator: &str) -> Precedence {{", k)?;
 		writeln!(&mut buf, "\t\tmatch operator {{")?;
@@ -141,5 +141,32 @@ fn get_precendences(
 		writeln!(&mut buf, "\t}}")?;
 	}
 	writeln!(&mut buf, "}}")?;
+
+	for (k, v) in operator_precedences.iter() {
+		writeln!(
+			&mut buf,
+			"/// Whether or not this operator is {} `{}`",
+			if ['a', 'e', 'i', 'o', 'u']
+				.into_iter()
+				.any(|v| k.starts_with(v))
+			{
+				"an"
+			} else {
+				"a"
+			},
+			k
+		)?;
+		writeln!(&mut buf, "pub fn is_{}(op: &str) -> bool {{", k)?;
+		writeln!(
+			&mut buf,
+			"\tmatches!(op, {})",
+			v.keys()
+				.map(|op| format!("{:?}", op))
+				.collect::<Vec<_>>()
+				.join(" | ")
+		)?;
+		writeln!(&mut buf, "}}")?;
+	}
+
 	Ok(buf)
 }

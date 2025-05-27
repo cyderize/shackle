@@ -1,11 +1,11 @@
-use std::panic::{catch_unwind, UnwindSafe};
+use std::panic::{UnwindSafe, catch_unwind};
 
 use lsp_server::{
 	ErrorCode, ExtractError, Message, Notification, Request, Response, ResponseError,
 };
-use shackle_compiler::db::CompilerDatabase;
+use shackle_hir::db::CompilerDatabase;
 
-use crate::{db::LanguageServerContext, LanguageServerDatabase};
+use crate::{LanguageServerDatabase, db::LanguageServerContext};
 
 enum RequestState<'a> {
 	Unhandled {
@@ -15,7 +15,7 @@ enum RequestState<'a> {
 	Handled(Result<(), ExtractError<Request>>),
 }
 
-pub trait RequestHandler<R: lsp_types::request::Request, T> {
+pub(crate) trait RequestHandler<R: lsp_types::request::Request, T> {
 	/// Run on the main thread to prepare the argument passed to the `execute` function.
 	/// Usually needs to call `set_input_files` on the database.
 	fn prepare(db: &mut impl LanguageServerContext, params: R::Params) -> Result<T, ResponseError>;
@@ -23,15 +23,15 @@ pub trait RequestHandler<R: lsp_types::request::Request, T> {
 	fn execute(db: &CompilerDatabase, data: T) -> Result<R::Result, ResponseError>;
 }
 
-pub struct DispatchRequest<'a>(RequestState<'a>);
+pub(crate) struct DispatchRequest<'a>(RequestState<'a>);
 
 impl<'a> DispatchRequest<'a> {
-	pub fn new(request: Request, db: &'a mut LanguageServerDatabase) -> Self {
+	pub(crate) fn new(request: Request, db: &'a mut LanguageServerDatabase) -> Self {
 		log::info!("got {} request #{}", request.method, request.id);
 		Self(RequestState::Unhandled { request, db })
 	}
 
-	pub fn on<H, R, T>(self) -> Self
+	pub(crate) fn on<H, R, T>(self) -> Self
 	where
 		R: lsp_types::request::Request,
 		H: RequestHandler<R, T>,
@@ -97,7 +97,7 @@ impl<'a> DispatchRequest<'a> {
 		}
 	}
 
-	pub fn finish(self) -> Result<(), ExtractError<Request>> {
+	pub(crate) fn finish(self) -> Result<(), ExtractError<Request>> {
 		match self.0 {
 			RequestState::Handled(result) => result,
 			RequestState::Unhandled { request, .. } => Err(ExtractError::MethodMismatch(request)),
@@ -113,15 +113,15 @@ enum NotificationState<'a> {
 	Handled(Result<(), ExtractError<Notification>>),
 }
 
-pub struct DispatchNotification<'a>(NotificationState<'a>);
+pub(crate) struct DispatchNotification<'a>(NotificationState<'a>);
 
 impl<'a> DispatchNotification<'a> {
-	pub fn new(notification: Notification, db: &'a mut LanguageServerDatabase) -> Self {
+	pub(crate) fn new(notification: Notification, db: &'a mut LanguageServerDatabase) -> Self {
 		log::info!("got {} notification", notification.method);
 		Self(NotificationState::Unhandled { notification, db })
 	}
 
-	pub fn on<N, F>(self, mut f: F) -> Self
+	pub(crate) fn on<N, F>(self, mut f: F) -> Self
 	where
 		N: lsp_types::notification::Notification,
 		F: FnMut(&mut LanguageServerDatabase, N::Params),
@@ -149,7 +149,7 @@ impl<'a> DispatchNotification<'a> {
 		}
 	}
 
-	pub fn finish(self) -> Result<(), ExtractError<Notification>> {
+	pub(crate) fn finish(self) -> Result<(), ExtractError<Notification>> {
 		match self.0 {
 			NotificationState::Handled(result) => result,
 			NotificationState::Unhandled { notification, .. } => {

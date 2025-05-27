@@ -9,24 +9,26 @@ use crate::{
 	ir::Element,
 };
 
-impl Format for minizinc::Expression {
-	fn format(&self, formatter: &mut MiniZincFormatter) -> crate::ir::Element {
+impl<'tree> Format for minizinc::Expression<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let e = match self {
-			minizinc::Expression::IntegerLiteral(i) => Element::text(i.cst_text()),
-			minizinc::Expression::FloatLiteral(f) => Element::text(f.cst_text()),
+			minizinc::Expression::IntegerLiteral(i) => {
+				Element::text(i.cst_text(formatter.source()))
+			}
+			minizinc::Expression::FloatLiteral(f) => Element::text(f.cst_text(formatter.source())),
 			minizinc::Expression::TupleLiteral(t) => t.format(formatter),
 			minizinc::Expression::RecordLiteral(r) => r.format(formatter),
 			minizinc::Expression::SetLiteral(s) => s.format(formatter),
 			minizinc::Expression::BooleanLiteral(b) => {
 				Element::text(if b.value() { "true" } else { "false" })
 			}
-			minizinc::Expression::StringLiteral(s) => Element::text(s.cst_text()),
+			minizinc::Expression::StringLiteral(s) => Element::text(s.cst_text(formatter.source())),
 			minizinc::Expression::Identifier(i) => {
-				Element::text(pretty_print_identifier(&i.name()))
+				Element::text(pretty_print_identifier(&i.name(formatter.source())))
 			}
-			minizinc::Expression::Absent(a) => Element::text(a.cst_text()),
-			minizinc::Expression::Infinity(i) => Element::text(i.cst_text()),
-			minizinc::Expression::Anonymous(a) => Element::text(a.cst_text()),
+			minizinc::Expression::Absent(a) => Element::text(a.cst_text(formatter.source())),
+			minizinc::Expression::Infinity(i) => Element::text(i.cst_text(formatter.source())),
+			minizinc::Expression::Anonymous(a) => Element::text(a.cst_text(formatter.source())),
 			minizinc::Expression::ArrayLiteral(a) => a.format(formatter),
 			minizinc::Expression::ArrayLiteral2D(a) => a.format(formatter),
 			minizinc::Expression::ArrayAccess(a) => a.format(formatter),
@@ -75,7 +77,7 @@ impl Format for minizinc::Expression {
 	}
 }
 
-impl Format for minizinc::AnnotatedExpression {
+impl<'tree> Format for minizinc::AnnotatedExpression<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let prec = Precedence::annotated_expression();
 		let mut needs_parentheses = false;
@@ -99,7 +101,7 @@ impl Format for minizinc::AnnotatedExpression {
 	}
 }
 
-impl Format for minizinc::Call {
+impl<'tree> Format for minizinc::Call<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let needs_parentheses = !formatter.options().keep_parentheses
 			&& Precedence::call().get() > formatter.precedence(&self.function()).get();
@@ -114,7 +116,7 @@ impl Format for minizinc::Call {
 	}
 }
 
-impl Format for minizinc::GeneratorCall {
+impl<'tree> Format for minizinc::GeneratorCall<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let needs_parentheses = !formatter.options().keep_parentheses
 			&& Precedence::generator_call().get() > formatter.precedence(&self.function()).get();
@@ -130,7 +132,7 @@ impl Format for minizinc::GeneratorCall {
 	}
 }
 
-impl Format for minizinc::PrefixOperator {
+impl<'tree> Format for minizinc::PrefixOperator<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let needs_parentheses = !formatter.options().keep_parentheses
 			&& Precedence::prefix_operator(self.operator().name()).get()
@@ -150,14 +152,14 @@ impl Format for minizinc::PrefixOperator {
 	}
 }
 
-enum InfixOperatorPart {
-	Left(minizinc::Expression),
-	Operator(minizinc::Operator),
-	Right(minizinc::Expression),
+enum InfixOperatorPart<'tree> {
+	Left(minizinc::Expression<'tree>),
+	Operator(minizinc::Operator<'tree>),
+	Right(minizinc::Expression<'tree>),
 	Comments(Vec<Element>),
 }
 
-impl Format for minizinc::InfixOperator {
+impl<'tree> Format for minizinc::InfixOperator<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let prec = Precedence::infix_operator(self.operator().name());
 		let mut todo = vec![
@@ -242,7 +244,7 @@ impl Format for minizinc::InfixOperator {
 	}
 }
 
-impl Format for minizinc::PostfixOperator {
+impl<'tree> Format for minizinc::PostfixOperator<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let needs_parentheses = !formatter.options().keep_parentheses
 			&& Precedence::postfix_operator(self.operator().name()).get()
@@ -258,7 +260,7 @@ impl Format for minizinc::PostfixOperator {
 	}
 }
 
-impl Format for minizinc::IfThenElse {
+impl<'tree> Format for minizinc::IfThenElse<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
 		for (i, b) in self.branches().enumerate() {
@@ -289,7 +291,7 @@ impl Format for minizinc::IfThenElse {
 	}
 }
 
-impl Format for minizinc::Case {
+impl<'tree> Format for minizinc::Case<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::text("case "),
@@ -302,7 +304,7 @@ impl Format for minizinc::Case {
 	}
 }
 
-impl Format for minizinc::CaseItem {
+impl<'tree> Format for minizinc::CaseItem<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::line_break(),
@@ -321,7 +323,7 @@ impl Format for minizinc::CaseItem {
 	}
 }
 
-impl Format for minizinc::Let {
+impl<'tree> Format for minizinc::Let<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let it = self.items().collect::<Vec<_>>();
 		if it.is_empty() {
@@ -360,20 +362,23 @@ impl Format for minizinc::Let {
 	}
 }
 
-impl Format for minizinc::StringInterpolation {
+impl<'tree> Format for minizinc::StringInterpolation<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![Element::text("\"")];
 		for p in self.contents() {
-			if let Some(e) = p.expression() {
-				elements.push(Element::text("\\("));
-				elements.push(Element::group(vec![
-					Element::indent(vec![Element::line_break_or_empty(), e.format(formatter)]),
-					Element::line_break_or_empty(),
-				]));
-				elements.push(Element::text(")"));
-			} else {
-				let c = format!("{:?}", p.string().unwrap());
-				elements.push(Element::text(&c[1..c.len() - 1]));
+			match p.value(formatter.source()) {
+				minizinc::InterpolationValue::String(s) => {
+					let c = format!("{:?}", s);
+					elements.push(Element::text(&c[1..c.len() - 1]));
+				}
+				minizinc::InterpolationValue::Expression(e) => {
+					elements.push(Element::text("\\("));
+					elements.push(Element::group(vec![
+						Element::indent(vec![Element::line_break_or_empty(), e.format(formatter)]),
+						Element::line_break_or_empty(),
+					]));
+					elements.push(Element::text(")"));
+				}
 			}
 		}
 		elements.push(Element::text("\""));
@@ -381,7 +386,7 @@ impl Format for minizinc::StringInterpolation {
 	}
 }
 
-impl Format for minizinc::Lambda {
+impl<'tree> Format for minizinc::Lambda<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![Element::text("lambda ")];
 		if let Some(r) = self.return_type() {

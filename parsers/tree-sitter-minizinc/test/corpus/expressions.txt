@@ -354,9 +354,9 @@ under_score = 1;
 'foo/bar' = 1;
 '++' = 1;
 '∪' = 1;
-✔️ = 1;
+今日 = 1;
 Δ = 1;
-🥳 = "party";
+один = 1;
 
 ---
 
@@ -369,7 +369,7 @@ under_score = 1;
   (assignment (quoted_identifier) (integer_literal))
   (assignment (identifier) (integer_literal))
   (assignment (identifier) (integer_literal))
-  (assignment (identifier) (string_literal (string_characters))))
+  (assignment (identifier) (integer_literal)))
 
 ============
 Tuple access
@@ -395,7 +395,7 @@ Record access
 =============
 
 simple = my_record.foo;
-unicode = my_record.✔️;
+unicode = my_record.Δ;
 quoted = my_record.'foo/bar';
 double = my_record.foo.bar;
 call = my_record.foo(3).bar;

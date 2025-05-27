@@ -4,7 +4,7 @@
 //! methods. No desugaring is performed at this stage, so all language constructs
 //! are available other than parentheses which are implicit in the tree structure.
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
 use super::{ast::Children, cst::Cst};
 
@@ -38,18 +38,8 @@ impl EPrimeModel {
 	}
 
 	/// Get the top level items in the model
-	pub fn items(&self) -> Children<'_, Item> {
-		let tree = &self.cst;
-		let id = tree.language().field_id_for_name("item").unwrap();
-		let mut cursor = tree.root_node().walk();
-		let done = !cursor.goto_first_child();
-		Children {
-			field: id,
-			tree,
-			cursor,
-			done,
-			phantom: PhantomData,
-		}
+	pub fn items(&self) -> Children<'_, Item<'_>> {
+		self.cst().root().children_with_field_name("item").into()
 	}
 }
 

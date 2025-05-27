@@ -1,26 +1,20 @@
 use lsp_server::ResponseError;
-use lsp_types::{request::References, Location, ReferenceParams};
-use shackle_compiler::{
-	db::CompilerDatabase,
-	file::ModelRef,
-	hir::{
-		db::Hir,
-		ids::{LocalEntityRef, NodeRef, PatternRef},
-		source::{find_node, Point},
-	},
-	syntax::db::SourceParser,
+use lsp_types::{Location, Position, ReferenceParams, request::References};
+use shackle_hir::{db::CompilerDatabase, input::ModelFile, source::find_leaf};
+
+use crate::{
+	db::LanguageServerContext,
+	dispatch::RequestHandler,
+	utils::{node_ref_to_location, position_to_byte_offset},
 };
-use streaming_iterator::StreamingIterator;
-
-use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::node_ref_to_location};
 
 #[derive(Debug)]
-pub struct ReferencesHandler;
+pub(crate) struct ReferencesHandler;
 
 #[derive(Debug)]
-pub struct ReferencesHandlerData {
-	model_ref: ModelRef,
-	point: Point,
+pub(crate) struct ReferencesHandlerData {
+	model_ref: ModelFile,
+	point: Position,
 	include_decl: bool,
 }
 
@@ -31,13 +25,9 @@ impl RequestHandler<References, ReferencesHandlerData> for ReferencesHandler {
 	) -> Result<ReferencesHandlerData, ResponseError> {
 		let model_ref =
 			db.set_active_file_from_document(&params.text_document_position.text_document)?;
-		let point = Point {
-			row: params.text_document_position.position.line as usize,
-			column: params.text_document_position.position.character as usize,
-		};
 		Ok(ReferencesHandlerData {
 			model_ref,
-			point,
+			point: params.text_document_position.position,
 			include_decl: params.context.include_declaration,
 		})
 	}
@@ -46,76 +36,39 @@ impl RequestHandler<References, ReferencesHandlerData> for ReferencesHandler {
 		db: &CompilerDatabase,
 		config: ReferencesHandlerData,
 	) -> Result<Option<Vec<Location>>, ResponseError> {
-		Ok((|| {
-			let node = find_node(db, *config.model_ref, config.point, config.point)?;
-			let pattern = match node {
-				NodeRef::Entity(e) => {
-					let item = e.item(db);
-					match e.entity(db) {
-						LocalEntityRef::Expression(e) => {
-							let types = db.lookup_item_types(item);
-							types.name_resolution(e)
-						}
-						LocalEntityRef::Pattern(p) => {
-							let types = db.lookup_item_types(item);
-							Some(
-								types
-									.pattern_resolution(p)
-									.unwrap_or_else(|| PatternRef::new(item, p)),
-							)
-						}
-						_ => None,
-					}
-				}
-				_ => None,
-			}?;
-			let models = db.resolve_includes().ok()?;
-			let mut locations = Vec::new();
-			for m in models.iter().copied() {
-				let cst = db.cst(*m).ok()?;
-				let query = tree_sitter::Query::new(
-					&tree_sitter_minizinc::LANGUAGE.into(),
-					tree_sitter_minizinc::IDENTIFIERS_QUERY,
-				)
-				.expect("Failed to create query");
-				let mut cursor = tree_sitter::QueryCursor::new();
-				let mut nodes = cursor
-					.captures(&query, cst.root_node(), cst.text().as_bytes())
-					.map(|(c, _)| c.captures[0].node);
-				let source_map = db.lookup_source_map(m);
-				while let Some(node) = nodes.next() {
-					if let Some(node_ref @ NodeRef::Entity(entity)) = source_map.find_node(*node) {
-						let item = entity.item(db);
-						let types = db.lookup_item_types(item);
-						let def = match entity.entity(db) {
-							LocalEntityRef::Expression(e) => types.name_resolution(e),
-							LocalEntityRef::Pattern(p) if config.include_decl => {
-								Some(PatternRef::new(item, p))
-							}
-							_ => None,
-						};
-						if def == Some(pattern) {
-							if let Some(loc) = node_ref_to_location(db, node_ref) {
-								locations.push(loc);
-							}
-						}
-					}
-				}
-			}
-			Some(locations)
-		})())
+		let byte_offset = position_to_byte_offset(&config.model_ref.contents(db), config.point)
+			.ok_or_else(|| ResponseError {
+				code: lsp_server::ErrorCode::InvalidParams as i32,
+				message: "Invalid position".to_owned(),
+				data: None,
+			})?;
+
+		let Some(entity) = find_leaf(db, config.model_ref, byte_offset) else {
+			return Ok(None);
+		};
+		let Some(declaration) = entity.declaration(db) else {
+			return Ok(None);
+		};
+		let mut references = declaration.references(db);
+		if config.include_decl {
+			references.insert(0, declaration.into_entity(db));
+		}
+		Ok(references
+			.into_iter()
+			.map(|reference| node_ref_to_location(db, reference))
+			.collect::<Option<Vec<_>>>())
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::ReferencesHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_references() {

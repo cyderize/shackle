@@ -1,0 +1,16 @@
+[package]
+authors = {workspace = true}
+edition = {workspace = true}
+license = {workspace = true}
+name = "shackle-ty"
+version = "0.1.0"
+
+[dependencies]
+log = {workspace = true}
+rustc-hash = {workspace = true}
+salsa = {workspace = true}
+shackle-syntax = {path = "../shackle-syntax"}
+shackle-utils = {path = "../shackle-utils"}
+
+[lints]
+workspace = true

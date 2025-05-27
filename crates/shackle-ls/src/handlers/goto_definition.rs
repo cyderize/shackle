@@ -1,81 +1,60 @@
 use lsp_server::ResponseError;
-use lsp_types::{request::GotoDefinition, GotoDefinitionParams, GotoDefinitionResponse};
-use shackle_compiler::{
-	db::CompilerDatabase,
-	file::ModelRef,
-	hir::{
-		db::Hir,
-		ids::{LocalEntityRef, NodeRef, PatternRef},
-		source::{find_node, Point},
-	},
+use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Position, request::GotoDefinition};
+use shackle_hir::{db::CompilerDatabase, input::ModelFile, source::find_leaf};
+
+use crate::{
+	db::LanguageServerContext,
+	dispatch::RequestHandler,
+	utils::{node_ref_to_location, position_to_byte_offset},
 };
 
-use crate::{db::LanguageServerContext, dispatch::RequestHandler, utils::node_ref_to_location};
-
 #[derive(Debug)]
-pub struct GotoDefinitionHandler;
+pub(crate) struct GotoDefinitionHandler;
 
-impl RequestHandler<GotoDefinition, (ModelRef, Point)> for GotoDefinitionHandler {
+impl RequestHandler<GotoDefinition, (ModelFile, Position)> for GotoDefinitionHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: GotoDefinitionParams,
-	) -> Result<(ModelRef, Point), ResponseError> {
+	) -> Result<(ModelFile, Position), ResponseError> {
 		let model =
 			db.set_active_file_from_document(&params.text_document_position_params.text_document)?;
-		let start = Point {
-			row: params.text_document_position_params.position.line as usize,
-			column: params.text_document_position_params.position.character as usize,
-		};
-		Ok((model, start))
+		Ok((model, params.text_document_position_params.position))
 	}
 
 	fn execute(
 		db: &CompilerDatabase,
-		(model_ref, start): (ModelRef, Point),
+		(model_ref, start): (ModelFile, Position),
 	) -> Result<Option<GotoDefinitionResponse>, ResponseError> {
-		let found = find_node(db, *model_ref, start, start);
-		Ok((|| {
-			let node = found?;
-			match node {
-				NodeRef::Entity(e) => {
-					let item = e.item(db);
-					match e.entity(db) {
-						LocalEntityRef::Expression(e) => {
-							let types = db.lookup_item_types(item);
-							let resolution = types.name_resolution(e)?;
-							Some(GotoDefinitionResponse::Scalar(node_ref_to_location(
-								db,
-								resolution.into_entity(db),
-							)?))
-						}
-						LocalEntityRef::Pattern(p) => {
-							let types = db.lookup_item_types(item);
-							let resolution = types
-								.pattern_resolution(p)
-								.unwrap_or_else(|| PatternRef::new(item, p));
-							Some(GotoDefinitionResponse::Scalar(node_ref_to_location(
-								db,
-								resolution.into_entity(db),
-							)?))
-						}
-						_ => None,
-					}
+		let byte_offset =
+			position_to_byte_offset(&model_ref.contents(db), start).ok_or_else(|| {
+				ResponseError {
+					code: lsp_server::ErrorCode::InvalidParams as i32,
+					message: "Invalid position".to_owned(),
+					data: None,
 				}
-				_ => None,
-			}
-		})())
+			})?;
+
+		let Some(entity) = find_leaf(db, model_ref, byte_offset) else {
+			return Ok(None);
+		};
+		let Some(declaration) = entity.declaration(db) else {
+			return Ok(None);
+		};
+
+		Ok(node_ref_to_location(db, declaration.into_entity(db))
+			.map(GotoDefinitionResponse::Scalar))
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::GotoDefinitionHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_goto_definition_1() {

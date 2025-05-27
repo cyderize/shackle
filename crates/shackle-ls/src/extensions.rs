@@ -1,7 +1,7 @@
-use lsp_types::{request::Request, TextDocumentPositionParams};
+use lsp_types::{TextDocumentPositionParams, request::Request};
 
 /// Request to view CST for a file
-pub enum ViewCst {}
+pub(crate) enum ViewCst {}
 
 impl Request for ViewCst {
 	type Params = TextDocumentPositionParams;
@@ -11,7 +11,7 @@ impl Request for ViewCst {
 }
 
 /// Request to view AST for a file
-pub enum ViewAst {}
+pub(crate) enum ViewAst {}
 
 impl Request for ViewAst {
 	type Params = TextDocumentPositionParams;
@@ -21,7 +21,7 @@ impl Request for ViewAst {
 }
 
 /// Request to view formatting IR for a file
-pub enum ViewFormatIr {}
+pub(crate) enum ViewFormatIr {}
 
 impl Request for ViewFormatIr {
 	type Params = TextDocumentPositionParams;
@@ -31,7 +31,7 @@ impl Request for ViewFormatIr {
 }
 
 /// Request to view HIR for an item
-pub enum ViewHir {}
+pub(crate) enum ViewHir {}
 
 impl Request for ViewHir {
 	type Params = TextDocumentPositionParams;
@@ -41,7 +41,7 @@ impl Request for ViewHir {
 }
 
 /// Request to view identifiers in scope for an expression
-pub enum ViewScope {}
+pub(crate) enum ViewScope {}
 
 impl Request for ViewScope {
 	type Params = TextDocumentPositionParams;
@@ -51,7 +51,7 @@ impl Request for ViewScope {
 }
 
 /// Request to view pretty printed MiniZinc for a file
-pub enum ViewPrettyPrint {}
+pub(crate) enum ViewPrettyPrint {}
 
 impl Request for ViewPrettyPrint {
 	type Params = TextDocumentPositionParams;
@@ -61,7 +61,7 @@ impl Request for ViewPrettyPrint {
 }
 
 /// Request to view pretty printed MIR for a file
-pub enum ViewMir {}
+pub(crate) enum ViewMir {}
 
 impl Request for ViewMir {
 	type Params = TextDocumentPositionParams;

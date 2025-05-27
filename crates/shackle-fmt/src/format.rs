@@ -7,10 +7,10 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor};
 use tree_sitter_minizinc::Precedence;
 
-use crate::{ir::Element, MiniZincFormatOptions};
+use crate::{MiniZincFormatOptions, ir::Element};
 
 /// Trait for formatting nodes
-pub trait Format {
+pub(crate) trait Format {
 	/// Format this node
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element;
 
@@ -31,7 +31,8 @@ impl Format for MznModel {
 }
 
 /// Formatter for MiniZinc
-pub struct MiniZincFormatter<'a> {
+pub(crate) struct MiniZincFormatter<'a> {
+	source: &'a str,
 	model: &'a MznModel,
 	options: &'a MiniZincFormatOptions,
 	comments: CommentMap,
@@ -39,16 +40,26 @@ pub struct MiniZincFormatter<'a> {
 
 impl<'a> MiniZincFormatter<'a> {
 	/// Create a new formatter
-	pub fn new(model: &'a MznModel, options: &'a MiniZincFormatOptions) -> Self {
+	pub(crate) fn new(
+		source: &'a str,
+		model: &'a MznModel,
+		options: &'a MiniZincFormatOptions,
+	) -> Self {
 		Self {
+			source,
 			model,
 			options,
-			comments: CommentMap::new(model),
+			comments: CommentMap::new(source, model),
 		}
 	}
 
+	/// Get the model text
+	pub(crate) fn source(&self) -> &str {
+		self.source
+	}
+
 	/// Run the formatter
-	pub fn format(&mut self) -> String {
+	pub(crate) fn format(&mut self) -> String {
 		let element = self.model.format(self);
 		assert!(
 			self.comments.map.is_empty(),
@@ -59,16 +70,16 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Get the formatting options
-	pub fn options(&'a self) -> &'a MiniZincFormatOptions {
+	pub(crate) fn options(&'a self) -> &'a MiniZincFormatOptions {
 		self.options
 	}
 
 	/// Attach model comments to these elements
-	pub fn attach_model_comments(
+	pub(crate) fn attach_model_comments(
 		&mut self,
 		elements: impl IntoIterator<Item = Element>,
 	) -> Element {
-		if let Some(c) = self.comments.map.remove(&self.model.cst().root_node().id()) {
+		if let Some(c) = self.comments.map.remove(&self.model.cst().root().id()) {
 			vec![
 				Element::sequence(c.before),
 				Element::sequence(elements),
@@ -81,13 +92,13 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Attach comments to these elements
-	pub fn attach_comments(
+	pub(crate) fn attach_comments<'b>(
 		&mut self,
-		node: &impl AstNode,
+		node: &impl AstNode<'b>,
 		elements: impl IntoIterator<Item = Element>,
 	) -> Element {
-		if let Some(c) = self.comments.map.remove(&node.cst_node().as_ref().id()) {
-			log::debug!("Attached comments to {}", &node.cst_node().as_ref().id());
+		if let Some(c) = self.comments.map.remove(&node.cst_node().id()) {
+			log::debug!("Attached comments to {:?}", &node.cst_node().id());
 			vec![
 				Element::sequence(c.before),
 				Element::sequence(elements),
@@ -100,12 +111,12 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Take the comments for this node
-	pub fn take_comments(&mut self, node: &impl AstNode) -> Option<Comments> {
-		self.comments.map.remove(&node.cst_node().as_ref().id())
+	pub(crate) fn take_comments<'b>(&mut self, node: &impl AstNode<'b>) -> Option<Comments> {
+		self.comments.map.remove(&node.cst_node().id())
 	}
 
 	/// Format items as a list
-	pub fn format_list(
+	pub(crate) fn format_list(
 		&mut self,
 		open: &str,
 		close: &str,
@@ -142,7 +153,7 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Format annotations
-	pub fn format_annotations(
+	pub(crate) fn format_annotations(
 		&mut self,
 		annotations: impl Iterator<Item = impl Format>,
 	) -> Element {
@@ -163,7 +174,7 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Parenthesise a node
-	pub fn parenthesise(&mut self, node: impl Format) -> Element {
+	pub(crate) fn parenthesise(&mut self, node: impl Format) -> Element {
 		if node.has_brackets(self) {
 			return vec![Element::text("("), node.format(self), Element::text(")")].into();
 		}
@@ -176,7 +187,7 @@ impl<'a> MiniZincFormatter<'a> {
 	}
 
 	/// Get precedence for the given expression
-	pub fn precedence(&self, expression: &Expression) -> Precedence {
+	pub(crate) fn precedence(&self, expression: &Expression) -> Precedence {
 		match expression {
 			Expression::Call(_) => Precedence::call(),
 			Expression::GeneratorCall(_) => Precedence::generator_call(),
@@ -195,7 +206,7 @@ impl<'a> MiniZincFormatter<'a> {
 
 /// Comments to attach to a node
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct Comments {
+pub(crate) struct Comments {
 	/// Comments to place before the node
 	pub before: Vec<Element>,
 	/// Comments to place after the node
@@ -204,13 +215,13 @@ pub struct Comments {
 
 /// Keeps track of where to attach comments
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommentMap {
+pub(crate) struct CommentMap {
 	map: FxHashMap<usize, Comments>,
 }
 
 impl CommentMap {
 	/// Create a comment map from the given model
-	pub fn new(model: &MznModel) -> Self {
+	pub(crate) fn new(source: &str, model: &MznModel) -> Self {
 		let mut map: FxHashMap<usize, Comments> = FxHashMap::default();
 
 		let query = Query::new(
@@ -218,9 +229,9 @@ impl CommentMap {
 			tree_sitter_minizinc::COMMENTS_QUERY,
 		)
 		.expect("Failed to create query");
-		let text = model.cst().text().as_bytes();
+		let text = source.as_bytes();
 		let mut cursor = QueryCursor::new();
-		let mut captures = cursor.captures(&query, model.cst().root_node(), text);
+		let mut captures = cursor.captures(&query, *model.cst().root().as_ref(), text);
 
 		while let Some((c, _)) = captures.next() {
 			let node = c.captures[0].node;

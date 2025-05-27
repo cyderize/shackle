@@ -18,8 +18,8 @@ rangelist = { version = "0.4.0" }
 nom = "8.0.0"
 
 [dev-dependencies]
-quick-xml = { version = "0.39.0", features = ["serialize", "overlapped-lists"] }
-expect-test = "1.4"
+quick-xml = { version = "0.39.3", features = ["serialize", "overlapped-lists"] }
+expect-test = "1.5"
 
 [lints]
 workspace = true

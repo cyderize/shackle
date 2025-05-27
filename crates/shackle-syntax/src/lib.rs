@@ -10,10 +10,6 @@
 //! The AST is then lowered into HIR, which is the main representation used by the compiler.
 //!
 
-#![warn(missing_docs)]
-#![warn(unused_crate_dependencies, unused_extern_crates)]
-#![warn(variant_size_differences)]
-
 use std::path::Path;
 
 pub mod ast;
@@ -24,7 +20,7 @@ pub mod eprime;
 pub mod minizinc;
 
 /// Input languages
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum InputLang {
 	/// MiniZinc modelling language
 	MiniZinc,
@@ -63,3 +59,8 @@ impl InputLang {
 		}
 	}
 }
+
+pub use tree_sitter_minizinc::{
+	Precedence, is_absent, is_anonymous, is_any_type, is_infix_operator, is_postfix_operator,
+	is_prefix_operator,
+};

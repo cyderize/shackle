@@ -1,0 +1,15 @@
+[package]
+authors = {workspace = true}
+edition = {workspace = true}
+license = {workspace = true}
+name = "shackle-utils"
+version = "0.1.0"
+
+[dependencies]
+rustc-hash = {workspace = true}
+salsa = {workspace = true}
+shackle-utils-derive = {path = "../shackle-utils-derive"}
+stacker = {workspace = true}
+
+[lints]
+workspace = true

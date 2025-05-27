@@ -1,18 +1,7 @@
 v = (
 	foo,
 	bar,
-	three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
+	three + two + one + four + five + six + three + two + one + four + five + six,
 	one,
 	two,
 	three,
@@ -43,18 +32,7 @@ v = {
 	1,
 	2.5,
 	5,
-	three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
+	three + two + one + four + five + six + three + two + one + four + five + six,
 	one,
 	two,
 	three,
@@ -66,18 +44,7 @@ v = [
 	world,
 	1,
 	2,
-	three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
+	three + two + one + four + five + six + three + two + one + four + five + six,
 	one,
 	two,
 	three,
@@ -86,24 +53,7 @@ v = [
 ];
 v = [
 	a: hello,
-	(
-		hello,
-		world,
-		1,
-		2,
-		hello,
-		world,
-		1,
-		2,
-		hello,
-		world,
-		1,
-		2,
-		hello,
-		world,
-		1,
-		2,
-	): three +
+	(hello, world, 1, 2, hello, world, 1, 2, hello, world, 1, 2, hello, world, 1, 2): three +
 		two +
 		one +
 		four +
@@ -115,30 +65,8 @@ v = [
 		four +
 		five +
 		six,
-	c: three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
-	d: three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
+	c: three + two + one + four + five + six + three + two + one + four + five + six,
+	d: three + two + one + four + five + six + three + two + one + four + five + six,
 ];
 v = [|
 	hello, world |
@@ -146,35 +74,11 @@ v = [|
 |];
 v = [|
 	a: b: |
-	c: three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six,
-	one,
-	world |
+	c: three + two + one + four + five + six + three + two + one + four + five + six, one, world |
 	d: one, two
 |];
 v = [
-	three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six |
+	three + two + one + four + five + six + three + two + one + four + five + six |
 		i in bar,
 		j in bar,
 		j in bar,
@@ -191,18 +95,7 @@ v = [
 		j in bar,
 ];
 v = {
-	three +
-		two +
-		one +
-		four +
-		five +
-		six +
-		three +
-		two +
-		one +
-		four +
-		five +
-		six |
+	three + two + one + four + five + six + three + two + one + four + five + six |
 		i in bar,
 		j in bar,
 		j in bar,

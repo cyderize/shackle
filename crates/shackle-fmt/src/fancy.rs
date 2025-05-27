@@ -3,15 +3,14 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use console::{style, Style};
+use console::{Style, style};
 use glob::glob;
 use miette::miette;
 use shackle_diagnostics::{Error, FileError, MultipleErrors, Result, SourceFile};
-use shackle_syntax::{cst::Cst, minizinc::MznModel};
+use shackle_syntax::{InputLang, cst::Cst, minizinc::MznModel};
 use similar::{ChangeTag, TextDiff};
-use tree_sitter::Parser;
 
-use crate::{format::MiniZincFormatter, MiniZincFormatOptions};
+use crate::{MiniZincFormatOptions, format::MiniZincFormatter};
 
 /// Output diffs between formatted and original files
 pub fn check_format<'a>(
@@ -25,7 +24,7 @@ pub fn check_format<'a>(
 	for (source, model) in todo {
 		let path = source.path().unwrap();
 		log::info!("  Checking {}", path.to_string_lossy());
-		let formatted = MiniZincFormatter::new(&model, options).format();
+		let formatted = MiniZincFormatter::new(source.contents(), &model, options).format();
 		if source.contents() != &formatted {
 			is_formatted = false;
 			let diff = TextDiff::from_lines(source.contents(), &formatted);
@@ -72,7 +71,7 @@ pub fn format_files<'a>(
 	for (source, model) in todo {
 		let path = source.path().unwrap();
 		log::info!("  Formatting {}", path.to_string_lossy());
-		let formatted = MiniZincFormatter::new(&model, options).format();
+		let formatted = MiniZincFormatter::new(source.contents(), &model, options).format();
 		if source.contents() == &formatted {
 			log::info!("    (Unchanged)");
 		} else {
@@ -108,7 +107,7 @@ fn parse_files<'a>(
 	for file in resolved_files {
 		log::info!("  Parsing {}", file.to_string_lossy());
 		let source = read_file(&file)?;
-		match parse_model(source.clone()) {
+		match parse_model(&source) {
 			Ok(model) => {
 				todo.push((source, model));
 			}
@@ -133,14 +132,9 @@ fn read_file(file: impl AsRef<Path>) -> Result<SourceFile> {
 	Ok(SourceFile::new(path.to_path_buf(), source))
 }
 
-fn parse_model(source: SourceFile) -> Result<MznModel> {
-	let mut parser = Parser::new();
-	parser
-		.set_language(&tree_sitter_minizinc::language())
-		.unwrap();
-	let tree = parser.parse(source.contents().as_bytes(), None).unwrap();
-	let cst = Cst::new(tree, source);
-	cst.check()?;
+fn parse_model(source: &SourceFile) -> Result<MznModel> {
+	let cst = Cst::new(source.contents(), InputLang::MiniZinc);
+	cst.check(source)?;
 	Ok(MznModel::new(cst))
 }
 

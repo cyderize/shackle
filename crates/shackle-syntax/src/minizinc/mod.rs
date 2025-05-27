@@ -4,7 +4,7 @@
 //! methods. No desugaring is performed at this stage, so all language constructs
 //! are available other than parentheses which are implicit in the tree structure.
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
 pub mod container;
 pub mod expression;
@@ -42,18 +42,8 @@ impl MznModel {
 	}
 
 	/// Get the top level items in the model
-	pub fn items(&self) -> Children<'_, Item> {
-		let tree = &self.cst;
-		let id = tree.language().field_id_for_name("item").unwrap();
-		let mut cursor = tree.root_node().walk();
-		let done = !cursor.goto_first_child();
-		Children {
-			field: id,
-			tree,
-			cursor,
-			done,
-			phantom: PhantomData,
-		}
+	pub fn items(&self) -> Children<'_, Item<'_>> {
+		self.cst().root().children_with_field_name("item").into()
 	}
 }
 
@@ -65,11 +55,44 @@ impl Debug for MznModel {
 	}
 }
 
+/// DznFile (wrapper for a CST).
+///
+/// A single `.dzn` file
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct DznFile {
+	cst: Cst,
+}
+
+impl DznFile {
+	/// Create a DZN file from a CST
+	pub fn new(cst: Cst) -> Self {
+		Self { cst }
+	}
+
+	/// Get the CST
+	pub fn cst(&self) -> &Cst {
+		&self.cst
+	}
+
+	/// Get the assignment items
+	pub fn items(&self) -> Children<'_, Assignment<'_>> {
+		self.cst().root().children_with_field_name("item").into()
+	}
+}
+
+impl Debug for DznFile {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("DznFile")
+			.field("items", &self.items())
+			.finish()
+	}
+}
+
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::{expect, expect_file};
 
-	use crate::ast::test::*;
+	use crate::ast::tests::*;
 
 	#[test]
 	fn test_model() {

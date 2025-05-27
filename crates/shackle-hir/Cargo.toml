@@ -1,0 +1,30 @@
+[package]
+authors = {workspace = true}
+edition = {workspace = true}
+license = {workspace = true}
+name = "shackle-hir"
+version = "0.1.0"
+
+[dependencies]
+derive_more = {workspace = true, features = [
+  "deref",
+  "deref_mut",
+  "from",
+  "into",
+  "index",
+  "unwrap",
+  "try_unwrap",
+]}
+log = {workspace = true}
+rustc-hash = {workspace = true}
+salsa = {workspace = true}
+shackle-diagnostics = {path = "../shackle-diagnostics"}
+shackle-syntax = {path = "../shackle-syntax"}
+shackle-ty = {path = "../shackle-ty"}
+shackle-utils = {path = "../shackle-utils"}
+
+[dev-dependencies]
+expect-test = {workspace = true}
+
+[lints]
+workspace = true

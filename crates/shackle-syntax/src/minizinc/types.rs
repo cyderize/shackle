@@ -1,7 +1,7 @@
 //! AST representation for types
 
 use super::{Children, Expression, Identifier};
-use crate::ast::{ast_enum, ast_node, child_with_field_name, children_with_field_name, AstNode};
+use crate::ast::{AstNode, ast_enum, ast_node, child_with_field_name, children_with_field_name};
 
 ast_enum!(
 	/// Type from a declaration
@@ -22,14 +22,14 @@ ast_node!(
 	element_type
 );
 
-impl ArrayType {
+impl<'tree> ArrayType<'tree> {
 	/// The ranges of the array.
-	pub fn dimensions(&self) -> Children<'_, Type> {
+	pub fn dimensions(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "dimension")
 	}
 
 	/// The type contained in the array
-	pub fn element_type(&self) -> Type {
+	pub fn element_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 }
@@ -42,11 +42,11 @@ ast_node!(
 	element_type
 );
 
-impl SetType {
+impl<'tree> SetType<'tree> {
 	/// Get whether this type is var or par
 	pub fn var_type(&self) -> VarType {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("var_par")
+		self.cst_node()
+			.optional_child_with_field_name("var_par")
 			.map(|c| match c.kind() {
 				"var" => VarType::Var,
 				"par" => VarType::Par,
@@ -57,8 +57,8 @@ impl SetType {
 
 	/// Get optionality of type
 	pub fn opt_type(&self) -> OptType {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("opt")
+		self.cst_node()
+			.optional_child_with_field_name("opt")
 			.map(|c| match c.kind() {
 				"opt" => OptType::Opt,
 				"nonopt" => OptType::NonOpt,
@@ -68,7 +68,7 @@ impl SetType {
 	}
 
 	/// The type contained in the array
-	pub fn element_type(&self) -> Type {
+	pub fn element_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 }
@@ -80,11 +80,11 @@ ast_node!(
 	fields
 );
 
-impl TupleType {
+impl<'tree> TupleType<'tree> {
 	/// Get whether this type is var or par
 	pub fn var_type(&self) -> VarType {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("var_par")
+		self.cst_node()
+			.optional_child_with_field_name("var_par")
 			.map(|c| match c.kind() {
 				"var" => VarType::Var,
 				"par" => VarType::Par,
@@ -94,7 +94,7 @@ impl TupleType {
 	}
 
 	/// The types of the tuple fields
-	pub fn fields(&self) -> Children<'_, Type> {
+	pub fn fields(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "field")
 	}
 }
@@ -106,11 +106,11 @@ ast_node!(
 	fields
 );
 
-impl RecordType {
+impl<'tree> RecordType<'tree> {
 	/// Get whether this type is var or par
 	pub fn var_type(&self) -> VarType {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("var_par")
+		self.cst_node()
+			.optional_child_with_field_name("var_par")
 			.map(|c| match c.kind() {
 				"var" => VarType::Var,
 				"par" => VarType::Par,
@@ -120,7 +120,7 @@ impl RecordType {
 	}
 
 	/// The types of the tuple fields
-	pub fn fields(&self) -> Children<'_, RecordField> {
+	pub fn fields(&self) -> Children<'tree, RecordField<'tree>> {
 		children_with_field_name(self, "field")
 	}
 }
@@ -132,14 +132,14 @@ ast_node!(
 	field_type
 );
 
-impl RecordField {
+impl<'tree> RecordField<'tree> {
 	/// The name of the field
-	pub fn name(&self) -> Identifier {
+	pub fn name(&self) -> Identifier<'tree> {
 		child_with_field_name(self, "name")
 	}
 
 	/// The type of the field
-	pub fn field_type(&self) -> Type {
+	pub fn field_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")
 	}
 }
@@ -151,14 +151,14 @@ ast_node!(
 	parameter_types,
 );
 
-impl OperationType {
+impl<'tree> OperationType<'tree> {
 	/// Function return type
-	pub fn return_type(&self) -> Type {
+	pub fn return_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "return_type")
 	}
 
 	/// Function parameter types
-	pub fn parameter_types(&self) -> Children<'_, Type> {
+	pub fn parameter_types(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "parameter")
 	}
 }
@@ -172,18 +172,19 @@ ast_node!(
 	domain
 );
 
-impl TypeBase {
+impl<'tree> TypeBase<'tree> {
 	/// Get whether this type is var or par.
 	///
 	/// Gives `None` when omitted rather than `Par` since omitting the inst
 	/// when referring to a type-inst alias does not make it par.
 	pub fn var_type(&self) -> Option<VarType> {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("var_par").map(|c| match c.kind() {
-			"var" => VarType::Var,
-			"par" => VarType::Par,
-			_ => unreachable!(),
-		})
+		self.cst_node()
+			.optional_child_with_field_name("var_par")
+			.map(|c| match c.kind() {
+				"var" => VarType::Var,
+				"par" => VarType::Par,
+				_ => unreachable!(),
+			})
 	}
 
 	/// Get optionality of type.
@@ -191,24 +192,24 @@ impl TypeBase {
 	/// Gives `None` when omitted rather than `NonOpt` since omitting optionality
 	/// when referring to a type-inst alias does not make it non-optional.
 	pub fn opt_type(&self) -> Option<OptType> {
-		let node = self.cst_node().as_ref();
-		node.child_by_field_name("opt").map(|c| match c.kind() {
-			"opt" => OptType::Opt,
-			"nonopt" => OptType::NonOpt,
-			_ => unreachable!(),
-		})
+		self.cst_node()
+			.optional_child_with_field_name("opt")
+			.map(|c| match c.kind() {
+				"opt" => OptType::Opt,
+				"nonopt" => OptType::NonOpt,
+				_ => unreachable!(),
+			})
 	}
 
 	/// Get whether this type is any $T
 	pub fn any_type(&self) -> bool {
 		self.cst_node()
-			.as_ref()
-			.child_by_field_name("any")
+			.optional_child_with_field_name("any")
 			.is_some()
 	}
 
 	/// Get the domain of this type (can be `None` if type is `any`)
-	pub fn domain(&self) -> Domain {
+	pub fn domain(&self) -> Domain<'tree> {
 		child_with_field_name(self, "domain")
 	}
 }
@@ -271,10 +272,10 @@ ast_node!(
 	primitive_type
 );
 
-impl UnboundedDomain {
+impl<'tree> UnboundedDomain<'tree> {
 	/// Get the primitive type of this domain
 	pub fn primitive_type(&self) -> PrimitiveType {
-		match self.cst_text() {
+		match self.cst_node().child(0).unwrap().kind() {
 			"ann" => PrimitiveType::Ann,
 			"bool" => PrimitiveType::Bool,
 			"float" => PrimitiveType::Float,
@@ -329,35 +330,33 @@ impl PrimitiveType {
 
 ast_node!(
 	/// Type-inst identifier `$T`
-	TypeInstIdentifier,
-	name
+	TypeInstIdentifier
 );
 
-impl TypeInstIdentifier {
+impl<'tree> TypeInstIdentifier<'tree> {
 	/// Name of identifier
-	pub fn name(&self) -> &str {
-		self.cst_text()
+	pub fn name<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 
 ast_node!(
 	/// Type-inst enum identifier `$$E`
-	TypeInstEnumIdentifier,
-	name
+	TypeInstEnumIdentifier
 );
 
-impl TypeInstEnumIdentifier {
+impl<'tree> TypeInstEnumIdentifier<'tree> {
 	/// Name of identifier
-	pub fn name(&self) -> &str {
-		self.cst_text()
+	pub fn name<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use crate::ast::test::*;
+	use crate::ast::tests::*;
 
 	#[test]
 	fn test_array_type() {
@@ -377,7 +376,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -428,7 +426,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "y",
                                 },
                             ),
                         ),
@@ -447,7 +444,6 @@ mod test {
                                                     UnquotedIdentifier(
                                                         UnquotedIdentifier {
                                                             cst_kind: "identifier",
-                                                            name: "foo",
                                                         },
                                                     ),
                                                 ),
@@ -465,7 +461,6 @@ mod test {
                                                     UnquotedIdentifier(
                                                         UnquotedIdentifier {
                                                             cst_kind: "identifier",
-                                                            name: "bar",
                                                         },
                                                     ),
                                                 ),
@@ -518,7 +513,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -569,7 +563,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "y",
                                 },
                             ),
                         ),
@@ -660,7 +653,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -674,7 +666,6 @@ mod test {
                                         name: UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
                                         field_type: TypeBase(
@@ -697,7 +688,6 @@ mod test {
                                         name: UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "b",
                                             },
                                         ),
                                         field_type: TypeBase(
@@ -729,7 +719,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "y",
                                 },
                             ),
                         ),
@@ -743,7 +732,6 @@ mod test {
                                         name: UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
                                         field_type: TypeBase(
@@ -766,7 +754,6 @@ mod test {
                                         name: UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "b",
                                             },
                                         ),
                                         field_type: RecordType(
@@ -779,7 +766,6 @@ mod test {
                                                         name: UnquotedIdentifier(
                                                             UnquotedIdentifier {
                                                                 cst_kind: "identifier",
-                                                                name: "c",
                                                             },
                                                         ),
                                                         field_type: TypeBase(
@@ -802,7 +788,6 @@ mod test {
                                                         name: UnquotedIdentifier(
                                                             UnquotedIdentifier {
                                                                 cst_kind: "identifier",
-                                                                name: "d",
                                                             },
                                                         ),
                                                         field_type: TypeBase(
@@ -855,7 +840,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -944,7 +928,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "a",
                                 },
                             ),
                         ),
@@ -973,7 +956,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "b",
                                 },
                             ),
                         ),
@@ -1004,7 +986,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "c",
                                 },
                             ),
                         ),
@@ -1037,7 +1018,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "d",
                                 },
                             ),
                         ),
@@ -1059,9 +1039,6 @@ mod test {
                                                     left: IntegerLiteral(
                                                         IntegerLiteral {
                                                             cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                1,
-                                                            ),
                                                         },
                                                     ),
                                                     operator: Operator {
@@ -1071,9 +1048,6 @@ mod test {
                                                     right: IntegerLiteral(
                                                         IntegerLiteral {
                                                             cst_kind: "integer_literal",
-                                                            value: Ok(
-                                                                3,
-                                                            ),
                                                         },
                                                     ),
                                                 },
@@ -1094,7 +1068,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "e",
                                 },
                             ),
                         ),
@@ -1114,7 +1087,6 @@ mod test {
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "Foo",
                                                     },
                                                 ),
                                             ),
@@ -1134,7 +1106,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "f",
                                 },
                             ),
                         ),
@@ -1154,7 +1125,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "g",
                                 },
                             ),
                         ),
@@ -1167,7 +1137,6 @@ mod test {
                                 domain: TypeInstIdentifier(
                                     TypeInstIdentifier {
                                         cst_kind: "type_inst_id",
-                                        name: "$T",
                                     },
                                 ),
                             },
@@ -1183,7 +1152,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "h",
                                 },
                             ),
                         ),
@@ -1198,7 +1166,6 @@ mod test {
                                 domain: TypeInstIdentifier(
                                     TypeInstIdentifier {
                                         cst_kind: "type_inst_id",
-                                        name: "$T",
                                     },
                                 ),
                             },
@@ -1214,7 +1181,6 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "i",
                                 },
                             ),
                         ),
@@ -1229,7 +1195,6 @@ mod test {
                                 domain: TypeInstEnumIdentifier(
                                     TypeInstEnumIdentifier {
                                         cst_kind: "type_inst_enum_id",
-                                        name: "$$E",
                                     },
                                 ),
                             },

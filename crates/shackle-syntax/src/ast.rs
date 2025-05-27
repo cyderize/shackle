@@ -1,34 +1,39 @@
 //! Helper utilities for dealing with AST nodes.
-use std::{fmt::Debug, marker::PhantomData, num::NonZeroU16};
+use std::{fmt::Debug, marker::PhantomData};
 
-use crate::cst::CstNode;
+use crate::cst::{ChildrenWithFieldName, Cst, CstNode};
 
 /// Base trait for AST nodes
-pub trait AstNode: Debug {
+pub trait AstNode<'tree>: Debug {
 	/// Create a new node
-	fn new(node: CstNode) -> Self
+	fn new(node: CstNode<'tree>) -> Self
 	where
-		Self: Sized + From<CstNode>,
+		Self: Sized + From<CstNode<'tree>>,
 	{
 		Self::from(node)
 	}
 
 	/// Get the underlying CST node
-	fn cst_node(&self) -> &CstNode;
+	fn cst_node(&self) -> &CstNode<'tree>;
 
 	/// Get the (concrete) text content of this node
-	fn cst_text(&self) -> &str {
-		self.cst_node().text()
+	fn cst_text<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_node().text(source)
 	}
 
 	/// Get the kind of the CST node
 	fn cst_kind(&self) -> &str {
-		self.cst_node().as_ref().kind()
+		self.cst_node().kind()
+	}
+
+	/// Get the span of this node
+	fn span(&self) -> SourceSpan {
+		self.cst_node().span()
 	}
 
 	/// Whether this node is missing
 	fn is_missing(&self) -> bool {
-		self.cst_node().as_ref().is_missing()
+		self.cst_node().is_missing()
 	}
 
 	/// Convert to T if possible
@@ -49,63 +54,41 @@ pub trait AstNode: Debug {
 }
 
 /// Iterator over child nodes with a particular field name
-#[derive(Clone)]
-pub struct Children<'a, T> {
-	pub(crate) field: NonZeroU16,
-	pub(crate) tree: &'a Cst,
-	pub(crate) cursor: TreeCursor<'a>,
-	pub(crate) done: bool,
-	pub(crate) phantom: PhantomData<T>,
+pub struct Children<'tree, T> {
+	inner: ChildrenWithFieldName<'tree>,
+	phantom: PhantomData<T>,
 }
 
-impl<'a, T: From<CstNode>> Children<'a, T> {
-	/// Get the children of a `CstNode`
-	pub fn from_cst(parent: &'a CstNode, field: &str) -> Self {
-		let tree = parent.cst();
-		let id = tree.language().field_id_for_name(field).unwrap();
-		let mut cursor = parent.as_ref().walk();
-		let done = !cursor.goto_first_child();
+impl<'tree, T> From<ChildrenWithFieldName<'tree>> for Children<'tree, T> {
+	fn from(value: ChildrenWithFieldName<'tree>) -> Self {
 		Children {
-			field: id,
-			tree,
-			cursor,
-			done,
+			inner: value,
 			phantom: PhantomData,
 		}
 	}
 }
 
-impl<T: From<CstNode>> Iterator for Children<'_, T> {
+impl<'tree, T> Clone for Children<'tree, T> {
+	fn clone(&self) -> Self {
+		Children {
+			inner: self.inner.clone(),
+			phantom: PhantomData,
+		}
+	}
+}
+
+impl<'tree, T: From<CstNode<'tree>>> Iterator for Children<'tree, T> {
 	type Item = T;
 
 	fn next(&mut self) -> Option<T> {
-		if self.done {
-			return None;
-		}
-		while self.cursor.field_id() != Some(self.field) {
-			if !self.cursor.goto_next_sibling() {
-				return None;
-			}
-		}
-		let result = self.tree.node(self.cursor.node());
-		self.done = !self.cursor.goto_next_sibling();
-		Some(T::from(result))
+		self.inner.next().map(T::from)
 	}
 }
 
-impl<T: Debug + From<CstNode>> std::fmt::Debug for Children<'_, T> {
+impl<'tree, T: Debug + From<CstNode<'tree>>> Debug for Children<'tree, T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut cursor = self.cursor.clone();
-		cursor.goto_parent();
-		let done = !cursor.goto_first_child();
-
-		let iter: Children<'_, T> = Children {
-			field: self.field,
-			tree: self.tree,
-			cursor,
-			done,
-			phantom: PhantomData,
-		};
+		let mut iter = self.clone();
+		iter.inner.reset();
 		f.debug_list().entries(iter).finish()
 	}
 }
@@ -119,66 +102,52 @@ pub trait TryCastFrom<T>: Sized {
 }
 
 /// Helper to retrieve a child node by its field name
-pub fn child_with_field_name<T: AstNode, U: From<CstNode>>(parent: &T, field: &str) -> U {
-	let tree = parent.cst_node().cst();
-	let node = parent.cst_node().as_ref();
-	let child = node.child_by_field_name(field).unwrap();
-	U::from(tree.node(child))
+pub(crate) fn child_with_field_name<'tree, T: AstNode<'tree>, U: From<CstNode<'tree>>>(
+	parent: &T,
+	field: &str,
+) -> U {
+	parent.cst_node().child_with_field_name(field).into()
 }
 
 /// Helper to retrieve a child node by its field name
-pub fn optional_child_with_field_name<T: AstNode, U: From<CstNode>>(
+pub(crate) fn optional_child_with_field_name<'tree, T: AstNode<'tree>, U: From<CstNode<'tree>>>(
 	parent: &T,
 	field: &str,
 ) -> Option<U> {
-	let tree = parent.cst_node().cst();
-	let node = parent.cst_node().as_ref();
-	node.child_by_field_name(field)
-		.map(|c| U::from(tree.node(c)))
+	parent
+		.cst_node()
+		.optional_child_with_field_name(field)
+		.map(U::from)
 }
 
 /// Helper to retrieve child nodes by field name
-pub fn children_with_field_name<'a, T: AstNode, U: From<CstNode>>(
-	parent: &'a T,
+pub(crate) fn children_with_field_name<'tree, T: AstNode<'tree>, U: From<CstNode<'tree>>>(
+	parent: &T,
 	field: &str,
-) -> Children<'a, U> {
-	let cst_node = parent.cst_node();
-	let tree = cst_node.cst();
-	let id = tree.language().field_id_for_name(field).unwrap();
-	let mut cursor = cst_node.as_ref().walk();
-	let done = !cursor.goto_first_child();
+) -> Children<'tree, U> {
 	Children {
-		field: id,
-		tree,
-		cursor,
-		done,
+		inner: parent.cst_node().children_with_field_name(field),
 		phantom: PhantomData,
 	}
 }
 
 /// Helper to decode the string contained in a CST node
-pub fn decode_string(cst_node: &CstNode) -> String {
-	let tree = cst_node.cst();
-	let node = cst_node.as_ref();
-	let mut cursor = node.walk();
-	node.children_by_field_name("content", &mut cursor)
+pub(crate) fn decode_string_literal(cst_node: &CstNode, source: &str) -> String {
+	cst_node
+		.children_with_field_name("content")
 		.map(|c| match c.kind() {
-			"string_characters" => c.utf8_text(tree.text().as_bytes()).unwrap().to_owned(),
+			"string_characters" => c.text(source).to_owned(),
 			"escape_sequence" => {
-				let e = c.child_by_field_name("escape").unwrap();
+				let e = c.child_with_field_name("escape");
 				match e.kind() {
-					"octal" => char::from_u32(
-						u32::from_str_radix(e.utf8_text(tree.text().as_bytes()).unwrap(), 8)
-							.unwrap(),
-					)
-					.unwrap()
-					.to_string(),
-					"hexadecimal" => char::from_u32(
-						u32::from_str_radix(e.utf8_text(tree.text().as_bytes()).unwrap(), 16)
-							.unwrap(),
-					)
-					.unwrap()
-					.to_string(),
+					"octal" => char::from_u32(u32::from_str_radix(e.text(source), 8).unwrap())
+						.unwrap()
+						.to_string(),
+					"hexadecimal" => {
+						char::from_u32(u32::from_str_radix(e.text(source), 16).unwrap())
+							.unwrap()
+							.to_string()
+					}
 					_ => e.kind().to_owned(),
 				}
 			}
@@ -198,25 +167,24 @@ macro_rules! ast_node {
 		$(,)*
 	) => (
         $(#[$meta])*
-		#[allow(missing_docs)]
 		#[derive(Clone, Eq, PartialEq, Hash)]
-		pub struct $name {
-			syntax: $crate::cst::CstNode,
+		pub struct $name<'tree> {
+			syntax: $crate::cst::CstNode<'tree>,
 		}
 
-		impl ::std::convert::From<$crate::cst::CstNode> for $name {
-			fn from(syntax: $crate::cst::CstNode) -> Self {
+		impl<'tree> ::std::convert::From<$crate::cst::CstNode<'tree>> for $name<'tree> {
+			fn from(syntax: $crate::cst::CstNode<'tree>) -> Self {
 				$name { syntax }
 			}
 		}
 
-		impl $crate::ast::AstNode for $name {
-			fn cst_node(&self) -> &$crate::cst::CstNode {
+		impl<'tree> $crate::ast::AstNode<'tree> for $name<'tree> {
+			fn cst_node(&self) -> &$crate::cst::CstNode<'tree> {
 				&self.syntax
 			}
 		}
 
-		impl ::std::fmt::Debug for $name {
+		impl<'tree> ::std::fmt::Debug for $name<'tree> {
 			fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
 				f.debug_struct(stringify!($name))
 					.field("cst_kind", &self.cst_kind())
@@ -237,14 +205,14 @@ macro_rules! ast_enum {
 		$name:ident,
 		$($tail:tt)+
 	) => {
-		ast_enum!(@enum ($($tail)+) ($(#[$meta])* #[derive(Clone, Eq, PartialEq, Hash, Debug)] pub enum $name));
+		ast_enum!(@enum ($($tail)+) ($(#[$meta])* #[derive(Clone, Eq, PartialEq, Hash, Debug)] pub enum $name<'tree>));
 		ast_enum!(@cast $name, $($tail)+);
 
-		impl ::std::convert::From<$crate::cst::CstNode> for $name {
+		impl<'tree> ::std::convert::From<$crate::cst::CstNode<'tree>> for $name<'tree> {
 			ast_enum!(@ast_node $name syntax ($($tail)+));
 		}
 
-		impl $crate::ast::AstNode for $name {
+		impl<'tree> $crate::ast::AstNode<'tree> for $name<'tree> {
 			ast_enum!(@cst_node $name ($($tail)+));
 		}
 	};
@@ -260,15 +228,15 @@ macro_rules! ast_enum {
 			#[doc="`"]
 			#[doc=stringify!($name)]
 			#[doc="` node"]
-			$name($name),
+			$name($name<'tree>),
 		);
 	};
-	(@enum ($pattern:pat => $name:ident($type:ty) $(, $($rest:tt)*)?) $($tail:tt)*) => {
+	(@enum ($pattern:pat => $name:ident($type:ident) $(, $($rest:tt)*)?) $($tail:tt)*) => {
 		ast_enum!(@enum ($($($rest)*)?) $($tail)*
 			#[doc="`"]
 			#[doc=stringify!($type)]
 			#[doc="` node"]
-			$name($type),
+			$name($type<'tree>),
 		);
 	};
 	(@enum ($pattern:pat => $expression:expr $(, $($rest:tt)*)?) $($tail:tt)*) => {
@@ -277,10 +245,10 @@ macro_rules! ast_enum {
 
 	// AstNode impl
 	(@ast_node $enum:ident $syntax:ident ($(,)?) $($tail:tt)*) => {
-		fn from($syntax: $crate::cst::CstNode) -> Self {
-			match $syntax.as_ref().kind() {
+		fn from($syntax: $crate::cst::CstNode<'tree>) -> Self {
+			match $syntax.kind() {
 				$($tail)*
-				#[allow(unreachable_patterns)]
+				#[allow(unreachable_patterns, reason = "May not be unreachable")]
 				x => unreachable!("Cannot create {} from {}", stringify!($enum), x)
 			}
 		}
@@ -288,25 +256,23 @@ macro_rules! ast_enum {
 	(@ast_node $enum:ident $syntax:ident ($pattern:pat => $name:ident $(, $($rest:tt)*)?) $($tail:tt)*) => {
 		ast_enum!(@ast_node $enum $syntax ($($($rest)*)?) $($tail)* $pattern => $enum::$name($name::new($syntax)),);
 	};
-	(@ast_node $enum:ident $syntax:ident ($pattern:pat => $name:ident($type:ty) $(, $($rest:tt)*)?) $($tail:tt)*) => {
+	(@ast_node $enum:ident $syntax:ident ($pattern:pat => $name:ident($type:ident) $(, $($rest:tt)*)?) $($tail:tt)*) => {
 		ast_enum!(@ast_node $enum $syntax ($($($rest)*)?) $($tail)* $pattern => $enum::$name(<$type>::new($syntax)),);
 	};
 	(@ast_node $enum:ident $syntax:ident ($pattern:pat => $expression:expr $(, $($rest:tt)*)?) $($tail:tt)*) => {
 		ast_enum!(@ast_node $enum $syntax ($($($rest)*)?) $($tail)* $pattern => {
-			let tree = $syntax.cst();
-			let node = $syntax.as_ref();
-			let child = tree.node(node.child_by_field_name($expression).unwrap());
+			let child = $syntax.child_with_field_name($expression);
 			$enum::new(child)
 		},);
 	};
 	(@cst_node $enum:ident ($(,)?) $($tail:tt)*) => {
-		fn cst_node(&self) -> &$crate::cst::CstNode {
+		fn cst_node(&self) -> &$crate::cst::CstNode<'tree> {
 			match *self {
 				$($tail)*
 			}
 		}
 	};
-	(@cst_node $enum:ident ($pattern:pat => $name:ident $(($type:ty))? $(, $($rest:tt)*)?) $($tail:tt)*) => {
+	(@cst_node $enum:ident ($pattern:pat => $name:ident $(($type:ident))? $(, $($rest:tt)*)?) $($tail:tt)*) => {
 		ast_enum!(@cst_node $enum ($($($rest)*)?) $($tail)* $enum::$name(ref x) => x.cst_node(),);
 	};
 	(@cst_node $enum:ident ($pattern:pat => $expression:expr $(, $($rest:tt)*)?) $($tail:tt)*) => {
@@ -316,42 +282,40 @@ macro_rules! ast_enum {
 	// Conversions impl
 	(@cast $enum:ident, $(,)?) => {};
 	(@cast $enum:ident, $pattern:pat => $name:ident $(, $($rest:tt)*)?) => {
-		impl $crate::ast::TryCastFrom<$enum> for $name {
-			fn from_ref(value: &$enum) -> Option<&Self> {
+		impl<'tree> $crate::ast::TryCastFrom<$enum<'tree>> for $name<'tree> {
+			fn from_ref<'a>(value: &'a $enum<'tree>) -> Option<&'a Self> {
 				match *value {
 					$enum::$name(ref x) => Some(x),
-					#[allow(unreachable_patterns)]
 					_ => None
 				}
 			}
 
-			fn from(value: $enum) -> Option<Self> {
+			fn from(value: $enum<'tree>) -> Option<Self> {
 				match value {
 					$enum::$name(x) => Some(x),
-					#[allow(unreachable_patterns)]
 					_ => None
 				}
 			}
 		}
 
-		impl ::std::convert::From<$name> for $enum {
-			fn from(v: $name) -> Self {
+		impl<'tree> ::std::convert::From<$name<'tree>> for $enum<'tree> {
+			fn from(v: $name<'tree>) -> Self {
 				$enum::$name(v)
 			}
 		}
 
 		ast_enum!(@cast $enum, $($($rest)*)?);
 	};
-	(@cast $enum:ident, $pattern:pat => $name:ident($type:ty) $(, $($rest:tt)*)?) => {
-		impl $crate::ast::TryCastFrom<$enum> for $type {
-			fn from_ref(value: &$enum) -> Option<&Self> {
+	(@cast $enum:ident, $pattern:pat => $name:ident($type:ident) $(, $($rest:tt)*)?) => {
+		impl<'tree> $crate::ast::TryCastFrom<$enum<'tree>> for $type<'tree> {
+			fn from_ref<'a>(value: &'a $enum<'tree>) -> Option<&'a Self> {
 				match *value {
 					$enum::$name(ref x) => Some(x),
 					_ => None
 				}
 			}
 
-			fn from(value: $enum) -> Option<Self> {
+			fn from(value: $enum<'tree>) -> Option<Self> {
 				match value {
 					$enum::$name(x) => Some(x),
 					_ => None
@@ -359,8 +323,8 @@ macro_rules! ast_enum {
 			}
 		}
 
-		impl ::std::convert::From<$type> for $enum {
-			fn from(v: $type) -> Self {
+		impl<'tree> ::std::convert::From<$type<'tree>> for $enum<'tree> {
+			fn from(v: $type<'tree>) -> Self {
 				$enum::$name(v)
 			}
 		}
@@ -373,12 +337,13 @@ macro_rules! ast_enum {
 }
 
 pub(crate) use ast_enum;
-use tree_sitter::TreeCursor;
+use derive_more::From;
+use miette::SourceSpan;
 
-use super::{cst::Cst, eprime::EPrimeModel, minizinc::MznModel};
+use super::{eprime::EPrimeModel, minizinc::MznModel};
 
 /// ConstraintModel represents an AST of a constraint model
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, From, Eq, PartialEq, Hash, Debug)]
 pub enum ConstraintModel {
 	/// MiniZinc model
 	MznModel(MznModel),
@@ -386,28 +351,28 @@ pub enum ConstraintModel {
 	EPrimeModel(EPrimeModel),
 }
 
+impl ConstraintModel {
+	/// Get the CST
+	pub fn cst(&self) -> &Cst {
+		match self {
+			ConstraintModel::MznModel(m) => m.cst(),
+			ConstraintModel::EPrimeModel(m) => m.cst(),
+		}
+	}
+}
+
 /// Module for testing AST
 #[cfg(test)]
 /// Test utilities for the AST nodes.
-pub mod test {
+pub mod tests {
 	use expect_test::{Expect, ExpectFile};
-	use shackle_diagnostics::SourceFile;
-	use tree_sitter::Parser;
 
 	use super::ConstraintModel;
-	use crate::{cst::Cst, eprime::EPrimeModel, minizinc::MznModel, InputLang};
+	use crate::{InputLang, cst::Cst, eprime::EPrimeModel, minizinc::MznModel};
 
 	/// Helper to check parsed AST
 	pub fn check_ast_with_lang(language: InputLang, source: &str, expected: Expect) {
-		let lang = match language {
-			InputLang::MiniZinc => tree_sitter_minizinc::LANGUAGE.into(),
-			InputLang::EPrime => tree_sitter_eprime::LANGUAGE.into(),
-			_ => unreachable!("check_ast_with_lang should only be called on model files"),
-		};
-		let mut parser = Parser::new();
-		parser.set_language(&lang).unwrap();
-		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
+		let cst = Cst::new(source, language);
 		let model = match language {
 			InputLang::MiniZinc => ConstraintModel::MznModel(MznModel::new(cst)),
 			InputLang::EPrime => ConstraintModel::EPrimeModel(EPrimeModel::new(cst)),
@@ -428,12 +393,7 @@ pub mod test {
 
 	/// Helper to check parsed AST storing the expected result in a file
 	pub fn check_ast_file(source: &str, expected: ExpectFile) {
-		let mut parser = Parser::new();
-		parser
-			.set_language(&tree_sitter_minizinc::LANGUAGE.into())
-			.unwrap();
-		let tree = parser.parse(source.as_bytes(), None).unwrap();
-		let cst = Cst::new(tree, SourceFile::unnamed(source.to_owned()));
+		let cst = Cst::new(source, InputLang::MiniZinc);
 		let model = ConstraintModel::MznModel(MznModel::new(cst));
 		expected.assert_debug_eq(&model);
 	}

@@ -94,14 +94,14 @@
 		"lint": "eslint ./src --ext .ts,.tsx"
 	},
 	"devDependencies": {
-		"@types/mocha": "^10.0.9",
-		"@types/node": "^25.3.5",
-		"@types/vscode": "^1.106.1",
-		"@typescript-eslint/eslint-plugin": "^8.56.1",
-		"@typescript-eslint/parser": "^8.24.0",
-		"eslint": "^10.0.3",
+		"@types/mocha": "^10.0.10",
+		"@types/node": "^25.6.0",
+		"@types/vscode": "^1.118.0",
+		"@typescript-eslint/eslint-plugin": "^8.59.2",
+		"@typescript-eslint/parser": "^8.59.2",
+		"eslint": "^10.3.0",
 		"mocha": "^11.7.5",
-		"typescript": "^5.9.3"
+		"typescript": "^6.0.3"
 	},
 	"dependencies": {
 		"vscode-languageclient": "^9.0.1"

@@ -1,6 +1,9 @@
 //! Warning handling
 
-#![allow(unused_assignments)] // TODO: Workaround for https://github.com/rust-lang/rust/issues/147648
+#![allow(
+	unused_assignments,
+	reason = "Workaround for https://github.com/rust-lang/rust/issues/147648"
+)]
 
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;

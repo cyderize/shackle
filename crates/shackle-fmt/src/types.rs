@@ -1,18 +1,15 @@
-use shackle_syntax::{
-	ast::AstNode,
-	minizinc::{self, OptType, RecordField, VarType},
-};
+use shackle_syntax::{ast::AstNode, minizinc};
 
 use crate::{
 	format::{Format, MiniZincFormatter},
 	ir::Element,
 };
 
-impl Format for minizinc::Type {
-	fn format(&self, formatter: &mut MiniZincFormatter) -> crate::ir::Element {
+impl<'tree> Format for minizinc::Type<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		stacker::maybe_grow(32 * 1024, 1024 * 1024, || {
 			let t = match self {
-				minizinc::Type::AnyType(a) => Element::text(a.cst_text()),
+				minizinc::Type::AnyType(a) => Element::text(a.cst_text(formatter.source())),
 				minizinc::Type::TypeBase(b) => b.format(formatter),
 				minizinc::Type::ArrayType(a) => a.format(formatter),
 				minizinc::Type::SetType(s) => s.format(formatter),
@@ -25,7 +22,7 @@ impl Format for minizinc::Type {
 	}
 }
 
-impl Format for minizinc::TypeBase {
+impl<'tree> Format for minizinc::TypeBase<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
 		if self.any_type() {
@@ -33,15 +30,15 @@ impl Format for minizinc::TypeBase {
 		}
 		if let Some(v) = self.var_type() {
 			match v {
-				VarType::Var => {
+				minizinc::VarType::Var => {
 					elements.push(Element::text("var "));
 				}
-				VarType::Par => {
+				minizinc::VarType::Par => {
 					elements.push(Element::text("par "));
 				}
 			}
 		}
-		if let Some(OptType::Opt) = self.opt_type() {
+		if let Some(minizinc::OptType::Opt) = self.opt_type() {
 			elements.push(Element::text("opt "));
 		}
 
@@ -50,19 +47,21 @@ impl Format for minizinc::TypeBase {
 	}
 }
 
-impl Format for minizinc::Domain {
+impl<'tree> Format for minizinc::Domain<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let e = match self {
 			minizinc::Domain::Bounded(b) => b.format(formatter),
-			minizinc::Domain::TypeInstEnumIdentifier(t) => Element::text(t.name()),
-			minizinc::Domain::TypeInstIdentifier(t) => Element::text(t.name()),
-			minizinc::Domain::Unbounded(u) => Element::text(u.cst_text()),
+			minizinc::Domain::TypeInstEnumIdentifier(t) => {
+				Element::text(t.name(formatter.source()))
+			}
+			minizinc::Domain::TypeInstIdentifier(t) => Element::text(t.name(formatter.source())),
+			minizinc::Domain::Unbounded(u) => Element::text(u.cst_text(formatter.source())),
 		};
 		formatter.attach_comments(self, vec![e])
 	}
 }
 
-impl Format for minizinc::ArrayType {
+impl<'tree> Format for minizinc::ArrayType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			formatter.format_list("array [", "] of ", self.dimensions()),
@@ -71,13 +70,13 @@ impl Format for minizinc::ArrayType {
 	}
 }
 
-impl Format for minizinc::SetType {
+impl<'tree> Format for minizinc::SetType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
-		if let VarType::Var = self.var_type() {
+		if let minizinc::VarType::Var = self.var_type() {
 			elements.push(Element::text("var "));
 		}
-		if let OptType::Opt = self.opt_type() {
+		if let minizinc::OptType::Opt = self.opt_type() {
 			elements.push(Element::text("opt "));
 		}
 		elements.push(Element::text("set of "));
@@ -86,10 +85,10 @@ impl Format for minizinc::SetType {
 	}
 }
 
-impl Format for minizinc::TupleType {
+impl<'tree> Format for minizinc::TupleType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
-		if let VarType::Var = self.var_type() {
+		if let minizinc::VarType::Var = self.var_type() {
 			elements.push(Element::text("var "));
 		}
 		elements.push(formatter.format_list("tuple(", ")", self.fields()));
@@ -97,10 +96,10 @@ impl Format for minizinc::TupleType {
 	}
 }
 
-impl Format for minizinc::RecordType {
+impl<'tree> Format for minizinc::RecordType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
-		if let VarType::Var = self.var_type() {
+		if let minizinc::VarType::Var = self.var_type() {
 			elements.push(Element::text("var "));
 		}
 		elements.push(formatter.format_list("record(", ")", self.fields()));
@@ -108,7 +107,7 @@ impl Format for minizinc::RecordType {
 	}
 }
 
-impl Format for RecordField {
+impl<'tree> Format for minizinc::RecordField<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let elements = vec![
 			self.field_type().format(formatter),
@@ -119,7 +118,7 @@ impl Format for RecordField {
 	}
 }
 
-impl Format for minizinc::OperationType {
+impl<'tree> Format for minizinc::OperationType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::text("op("),

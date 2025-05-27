@@ -1,19 +1,18 @@
 use lsp_server::ResponseError;
-use lsp_types::{request::Formatting, DocumentFormattingParams, Position, TextEdit};
-use shackle_compiler::{db::CompilerDatabase, file::ModelRef, syntax::db::SourceParser};
-use shackle_fmt::{format_model, MiniZincFormatOptions};
-use shackle_syntax::ast::ConstraintModel;
+use lsp_types::{DocumentFormattingParams, Position, TextEdit, request::Formatting};
+use shackle_fmt::{MiniZincFormatOptions, format};
+use shackle_hir::{CompilerDatabase, input::ModelFile};
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler};
 
 #[derive(Debug)]
-pub struct FormatHandler;
+pub(crate) struct FormatHandler;
 
-impl RequestHandler<Formatting, (ModelRef, MiniZincFormatOptions)> for FormatHandler {
+impl RequestHandler<Formatting, (ModelFile, MiniZincFormatOptions)> for FormatHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: DocumentFormattingParams,
-	) -> Result<(ModelRef, MiniZincFormatOptions), ResponseError> {
+	) -> Result<(ModelFile, MiniZincFormatOptions), ResponseError> {
 		Ok((
 			db.set_active_file_from_document(&params.text_document)?,
 			MiniZincFormatOptions {
@@ -26,36 +25,38 @@ impl RequestHandler<Formatting, (ModelRef, MiniZincFormatOptions)> for FormatHan
 
 	fn execute(
 		db: &CompilerDatabase,
-		(model_ref, options): (ModelRef, MiniZincFormatOptions),
+		(model_ref, options): (ModelFile, MiniZincFormatOptions),
 	) -> Result<Option<Vec<TextEdit>>, ResponseError> {
-		match db.ast(*model_ref) {
-			Ok(ConstraintModel::MznModel(ast)) => {
-				let Ok(formatted) = format_model(&ast, &options) else {
-					return Ok(None);
-				};
-				let end = ast.cst().root_node().end_position();
-				Ok(Some(vec![TextEdit {
-					range: lsp_types::Range {
-						end: Position::new(end.row as u32, end.column as u32),
-						..Default::default()
-					},
-					new_text: formatted,
-				}]))
-			}
-			_ => Ok(None),
-		}
+		let Ok(formatted) = format(&model_ref.source_file(db), &options) else {
+			return Ok(None);
+		};
+
+		let end = model_ref
+			.ast(db)
+			.ast(db)
+			.cst()
+			.root()
+			.as_ref()
+			.end_position();
+		Ok(Some(vec![TextEdit {
+			range: lsp_types::Range {
+				end: Position::new(end.row as u32, end.column as u32),
+				..Default::default()
+			},
+			new_text: formatted,
+		}]))
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::FormatHandler;
-	use crate::handlers::test::test_handler;
+	use crate::handlers::tests::test_handler;
 
 	#[test]
 	fn test_format() {
@@ -97,7 +98,7 @@ int: x   = (1 + 2) + 3 % foo
               "character": 3
             }
           },
-          "newText": "int: x = 1 + 2 + 3; % foo\n\n% bar\n"
+          "newText": "int: x = (1 + 2) + 3; % foo\n\n% bar\n"
         }
       ]
     }"#]),

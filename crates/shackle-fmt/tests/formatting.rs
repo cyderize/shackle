@@ -1,3 +1,6 @@
+#![allow(unused_crate_dependencies, reason = "Crates used in main library")]
+//! Test code formatting on various files
+
 use std::path::PathBuf;
 
 use common::check_format_file;

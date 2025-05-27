@@ -1,13 +1,13 @@
 use std::{
-	path::{Path, PathBuf, MAIN_SEPARATOR_STR},
+	path::{MAIN_SEPARATOR_STR, Path, PathBuf},
 	str::FromStr,
 };
 
-use lsp_types::Uri;
+use lsp_types::{Position, Uri};
 use miette::{SourceCode, SpanContents};
-use shackle_compiler::hir::{db::Hir, ids::NodeRef};
+use shackle_hir::{db::Db, ids::NodeRef};
 
-pub fn span_contents_to_range(r: &dyn SpanContents) -> lsp_types::Range {
+pub(crate) fn span_contents_to_range(r: &dyn SpanContents) -> lsp_types::Range {
 	let mut range = lsp_types::Range::default();
 	range.start.line = r.line() as u32;
 	range.start.character = r.column() as u32;
@@ -29,8 +29,8 @@ pub fn span_contents_to_range(r: &dyn SpanContents) -> lsp_types::Range {
 	range
 }
 
-pub fn node_ref_to_location<T: Into<NodeRef>>(
-	db: &dyn Hir,
+pub(crate) fn node_ref_to_location<'db, T: Into<NodeRef<'db>>>(
+	db: &'db dyn Db,
 	node: T,
 ) -> Option<lsp_types::Location> {
 	let (src, span) = node.into().source_span(db);
@@ -40,7 +40,7 @@ pub fn node_ref_to_location<T: Into<NodeRef>>(
 	Some(lsp_types::Location { uri, range })
 }
 
-pub fn uri_to_path(uri: &Uri) -> PathBuf {
+pub(crate) fn uri_to_path(uri: &Uri) -> PathBuf {
 	// TODO: Replace with less ad-hoc implementation
 	assert_eq!(
 		uri.scheme()
@@ -67,16 +67,39 @@ pub fn uri_to_path(uri: &Uri) -> PathBuf {
 			p.push(s);
 		}
 	}
-	eprintln!("{:?}", p);
 	p
 }
 
-pub fn path_to_uri(path: &Path) -> Uri {
+pub(crate) fn path_to_uri(path: &Path) -> Uri {
 	// TODO: Replace with less ad-hoc implementation
 	Uri::from_str(path.as_os_str().to_str().unwrap()).unwrap_or_else(|_| {
 		let p = path.to_string_lossy().replace("\\", "/");
 		let url = format!("file://{}{}", if p.starts_with("/") { "" } else { "/" }, p);
-		eprintln!("{:?}", url);
 		Uri::from_str(&url).unwrap()
 	})
+}
+
+pub(crate) fn position_to_byte_offset(s: &str, position: Position) -> Option<usize> {
+	let mut line = 0;
+	let mut col = 0;
+
+	for (byte_idx, ch) in s.char_indices() {
+		if line == position.line && col == position.character {
+			return Some(byte_idx);
+		}
+
+		if ch == '\n' {
+			line += 1;
+			col = 0;
+		} else {
+			col += 1;
+		}
+	}
+
+	// Handle position at end of string
+	if line == position.line && col == position.character {
+		return Some(s.len());
+	}
+
+	None
 }

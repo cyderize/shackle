@@ -1,37 +1,34 @@
 use lsp_server::ResponseError;
 use lsp_types::TextDocumentPositionParams;
-use shackle_compiler::{db::CompilerDatabase, file::ModelRef, syntax::db::SourceParser};
+use shackle_hir::{db::CompilerDatabase, input::ModelFile};
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler, extensions::ViewAst};
 
 #[derive(Debug)]
-pub struct ViewAstHandler;
+pub(crate) struct ViewAstHandler;
 
-impl RequestHandler<ViewAst, ModelRef> for ViewAstHandler {
+impl RequestHandler<ViewAst, ModelFile> for ViewAstHandler {
 	fn prepare(
 		db: &mut impl LanguageServerContext,
 		params: TextDocumentPositionParams,
-	) -> Result<ModelRef, ResponseError> {
+	) -> Result<ModelFile, ResponseError> {
 		db.set_active_file_from_document(&params.text_document)
 	}
 
-	fn execute(db: &CompilerDatabase, model_ref: ModelRef) -> Result<String, ResponseError> {
-		match db.ast(*model_ref) {
-			Ok(ast) => Ok(format!("{:#?}", ast)),
-			Err(e) => Ok(e.to_string()),
-		}
+	fn execute(db: &CompilerDatabase, model_ref: ModelFile) -> Result<String, ResponseError> {
+		Ok(format!("{:#?}", model_ref.ast(db).ast(db)))
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use std::str::FromStr;
 
 	use expect_test::expect;
 	use lsp_types::Uri;
 
 	use super::ViewAstHandler;
-	use crate::handlers::test::test_handler_display;
+	use crate::handlers::tests::test_handler_display;
 
 	#[test]
 	fn test_view_ast() {
@@ -82,7 +79,6 @@ var foo(1, 3): y;
                         id: UnquotedIdentifier(
                             UnquotedIdentifier {
                                 cst_kind: "identifier",
-                                name: "foo",
                             },
                         ),
                         parameters: [
@@ -107,7 +103,6 @@ var foo(1, 3): y;
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
                                     ),
@@ -135,7 +130,6 @@ var foo(1, 3): y;
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "b",
                                             },
                                         ),
                                     ),
@@ -151,7 +145,6 @@ var foo(1, 3): y;
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "a",
                                             },
                                         ),
                                     ),
@@ -163,7 +156,6 @@ var foo(1, 3): y;
                                         UnquotedIdentifier(
                                             UnquotedIdentifier {
                                                 cst_kind: "identifier",
-                                                name: "b",
                                             },
                                         ),
                                     ),
@@ -180,7 +172,6 @@ var foo(1, 3): y;
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -202,9 +193,6 @@ var foo(1, 3): y;
                             IntegerLiteral(
                                 IntegerLiteral {
                                     cst_kind: "integer_literal",
-                                    value: Ok(
-                                        1,
-                                    ),
                                 },
                             ),
                         ),
@@ -218,7 +206,6 @@ var foo(1, 3): y;
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "y",
                                 },
                             ),
                         ),
@@ -238,7 +225,6 @@ var foo(1, 3): y;
                                                 UnquotedIdentifier(
                                                     UnquotedIdentifier {
                                                         cst_kind: "identifier",
-                                                        name: "foo",
                                                     },
                                                 ),
                                             ),
@@ -246,17 +232,11 @@ var foo(1, 3): y;
                                                 IntegerLiteral(
                                                     IntegerLiteral {
                                                         cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            1,
-                                                        ),
                                                     },
                                                 ),
                                                 IntegerLiteral(
                                                     IntegerLiteral {
                                                         cst_kind: "integer_literal",
-                                                        value: Ok(
-                                                            3,
-                                                        ),
                                                     },
                                                 ),
                                             ],

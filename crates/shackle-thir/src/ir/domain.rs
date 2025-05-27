@@ -1,0 +1,252 @@
+//! Representation of variable domains
+use std::ops::Deref;
+
+use shackle_hir::Identifier;
+pub use shackle_hir::{OptType, VarType};
+use shackle_ty::{Ty, TyData};
+use shackle_utils::maybe_grow_stack;
+
+use super::{Expression, Marker};
+use crate::{Db, source::Origin};
+
+/// Ascribed domain of a variable
+#[derive(Debug, Hash, PartialEq, Eq, salsa::Update)]
+pub struct Domain<'db, T: Marker = ()> {
+	ty: Ty<'db>,
+	data: DomainData<'db, T>,
+	origin: Origin<'db>,
+}
+
+impl<'db, T: Marker> Deref for Domain<'db, T> {
+	type Target = DomainData<'db, T>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+impl<'db, T: Marker> Domain<'db, T> {
+	/// The type of the variable this domain is for (not of the domain)
+	pub fn ty(&self) -> Ty<'db> {
+		self.ty
+	}
+
+	/// Get the origin of this domain
+	pub fn origin(&self) -> Origin<'db> {
+		self.origin
+	}
+
+	/// Set the type of this domain without checking if it is valid
+	pub fn set_ty_unchecked(&mut self, ty: Ty<'db>) {
+		self.ty = ty;
+	}
+
+	/// Create a domain bounded by an expression
+	///
+	/// E.g. `var 1..3`
+	pub fn bounded(
+		db: &'db dyn Db,
+		origin: impl Into<Origin<'db>>,
+		inst: VarType,
+		opt: OptType,
+		expression: Expression<'db, T>,
+	) -> Self {
+		let dom_ty = expression.ty();
+		let ty = match dom_ty.lookup(db) {
+			TyData::Set(VarType::Par, OptType::NonOpt, e) => {
+				e.with_inst(db, inst).unwrap().with_opt(db, opt)
+			}
+			_ => unreachable!("Invalid domain type"),
+		};
+		Self {
+			ty,
+			data: DomainData::Bounded(Box::new(expression)),
+			origin: origin.into(),
+		}
+	}
+
+	/// Create an array domain
+	///
+	/// E.g. `array [int] of 1..3`
+	pub fn array(
+		db: &'db dyn Db,
+		origin: impl Into<Origin<'db>>,
+		opt: OptType,
+		dimensions: Domain<'db, T>,
+		element: Domain<'db, T>,
+	) -> Self {
+		let ty = Ty::array(db, dimensions.ty(), element.ty())
+			.expect("Invalid array type")
+			.with_opt(db, opt);
+		Self {
+			ty,
+			data: DomainData::Array(Box::new(dimensions), Box::new(element)),
+			origin: origin.into(),
+		}
+	}
+
+	/// Create a set variable domain
+	///
+	/// E.g. `var set of 1..3`
+	pub fn set(
+		db: &'db dyn Db,
+		origin: impl Into<Origin<'db>>,
+		inst: VarType,
+		opt: OptType,
+		element: Domain<'db, T>,
+	) -> Self {
+		let ty = Ty::par_set(db, element.ty())
+			.expect("Invalid set element type")
+			.with_inst(db, inst)
+			.expect("Cannot make var set domain")
+			.with_opt(db, opt);
+		Self {
+			ty,
+			data: DomainData::Set(Box::new(element)),
+			origin: origin.into(),
+		}
+	}
+
+	/// Create a tuple variable domain
+	///
+	/// E.g. `tuple(1..2, string)`
+	pub fn tuple(
+		db: &'db dyn Db,
+		origin: impl Into<Origin<'db>>,
+		opt: OptType,
+		fields: impl IntoIterator<Item = Domain<'db, T>>,
+	) -> Self {
+		let fields = fields.into_iter().collect::<Vec<_>>();
+		let ty = Ty::tuple(db, fields.iter().map(|d| d.ty())).with_opt(db, opt);
+		Self {
+			ty,
+			data: DomainData::Tuple(fields),
+			origin: origin.into(),
+		}
+	}
+
+	/// Create a record variable domain
+	///
+	/// E.g. `record(1..2: x, string: y)`
+	pub fn record(
+		db: &'db dyn Db,
+		origin: impl Into<Origin<'db>>,
+		opt: OptType,
+		fields: impl IntoIterator<Item = (Identifier<'db>, Domain<'db, T>)>,
+	) -> Self {
+		let fields = fields.into_iter().collect::<Vec<_>>();
+		let ty = Ty::record(db, fields.iter().map(|(i, d)| (*i, d.ty()))).with_opt(db, opt);
+		Self {
+			ty,
+			data: DomainData::Record(fields),
+			origin: origin.into(),
+		}
+	}
+
+	/// Create an unbounded domain
+	///
+	/// Normalises structured types, so e.g. providing an array type
+	/// will create an domain with `DomainData::Array`.
+	pub fn unbounded(db: &'db dyn Db, origin: impl Into<Origin<'db>>, ty: Ty<'db>) -> Self {
+		maybe_grow_stack(|| {
+			let origin = origin.into();
+			match ty.lookup(db) {
+				TyData::Array { opt, dim, element } => Domain::array(
+					db,
+					origin,
+					*opt,
+					Domain::unbounded(db, origin, *dim),
+					Domain::unbounded(db, origin, *element),
+				),
+				TyData::Set(inst, opt, elem) => Domain::set(
+					db,
+					origin,
+					*inst,
+					*opt,
+					Domain::unbounded(db, origin, *elem),
+				),
+				TyData::Tuple(opt, fields) => Domain::tuple(
+					db,
+					origin,
+					*opt,
+					fields.iter().map(|f| Domain::unbounded(db, origin, *f)),
+				),
+				TyData::Record(opt, fields) => Domain::record(
+					db,
+					origin,
+					*opt,
+					fields
+						.iter()
+						.map(|(i, f)| (Identifier(*i), Domain::unbounded(db, origin, *f))),
+				),
+				_ => Domain {
+					ty,
+					data: DomainData::Unbounded,
+					origin,
+				},
+			}
+		})
+	}
+
+	/// Walk the contents of this domain
+	pub fn walk(&self) -> impl Iterator<Item = &Domain<'db, T>> {
+		let mut todo = vec![self];
+		std::iter::from_fn(move || {
+			let next = todo.pop()?;
+			match &**next {
+				DomainData::Array(dim, el) => {
+					todo.push(el);
+					todo.push(dim);
+				}
+				DomainData::Set(el) => {
+					todo.push(el);
+				}
+				DomainData::Tuple(fields) => {
+					todo.extend(fields.iter().rev());
+				}
+				DomainData::Record(fields) => {
+					todo.extend(fields.iter().rev().map(|(_, f)| f));
+				}
+				_ => (),
+			}
+			Some(next)
+		})
+	}
+}
+
+// impl<'db, T: Marker> Drop for Domain<'db, T> {
+// 	fn drop(&mut self) {
+// 		// Default recursive drop can cause stack overflow
+// 		maybe_grow_stack(|| {
+// 			let _ = std::mem::replace(&mut self.data, DomainData::Unbounded);
+// 		})
+// 	}
+// }
+
+impl<'db, T: Marker> Clone for Domain<'db, T> {
+	fn clone(&self) -> Self {
+		// Default recursive clone can cause stack overflow
+		maybe_grow_stack(|| Self {
+			ty: self.ty,
+			data: self.data.clone(),
+			origin: self.origin,
+		})
+	}
+}
+
+/// Ascribed domain of a variable
+#[derive(Clone, Debug, Hash, PartialEq, Eq, salsa::Update)]
+pub enum DomainData<'db, T: Marker = ()> {
+	/// Bounded by an expression
+	Bounded(Box<Expression<'db, T>>),
+	/// Array index sets and element domain
+	Array(Box<Domain<'db, T>>, Box<Domain<'db, T>>),
+	/// Set domain
+	Set(Box<Domain<'db, T>>),
+	/// Tuple domain
+	Tuple(Vec<Domain<'db, T>>),
+	/// Record domain
+	Record(Vec<(Identifier<'db>, Domain<'db, T>)>),
+	/// Unbounded domain
+	Unbounded,
+}

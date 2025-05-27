@@ -2,31 +2,29 @@
 
 use std::num::{IntErrorKind, ParseFloatError, ParseIntError};
 
-use crate::ast::{ast_node, decode_string, AstNode};
+use crate::ast::{AstNode, ast_node, decode_string_literal};
 
 ast_node!(
 	/// Integer literal
-	IntegerLiteral,
-	value
+	IntegerLiteral
 );
 
-impl IntegerLiteral {
+impl<'tree> IntegerLiteral<'tree> {
 	/// Get the value of this integer literal
-	pub fn value(&self) -> Result<i64, ParseIntError> {
-		parse_integer_literal(self.cst_text())
+	pub fn value(&self, source: &str) -> Result<i64, ParseIntError> {
+		parse_integer_literal(self.cst_text(source))
 	}
 }
 
 ast_node!(
 	/// Float literal
-	FloatLiteral,
-	value
+	FloatLiteral
 );
 
-impl FloatLiteral {
+impl<'tree> FloatLiteral<'tree> {
 	/// Get the value of this float literal
-	pub fn value(&self) -> Result<f64, FloatParsingError> {
-		parse_float_literal(self.cst_text())
+	pub fn value(&self, source: &str) -> Result<f64, FloatParsingError> {
+		parse_float_literal(self.cst_text(source))
 	}
 }
 
@@ -36,10 +34,10 @@ ast_node!(
 	value
 );
 
-impl BooleanLiteral {
+impl<'tree> BooleanLiteral<'tree> {
 	/// Get the value of this boolean literal
 	pub fn value(&self) -> bool {
-		match self.cst_text() {
+		match self.cst_node().child(0).unwrap().kind() {
 			"true" => true,
 			"false" => false,
 			_ => unreachable!(),
@@ -49,14 +47,13 @@ impl BooleanLiteral {
 
 ast_node!(
 	/// String literal (without interpolation)
-	StringLiteral,
-	value
+	StringLiteral
 );
 
-impl StringLiteral {
+impl<'tree> StringLiteral<'tree> {
 	/// Get the value of this string literal
-	pub fn value(&self) -> String {
-		decode_string(self.cst_node())
+	pub fn value(&self, source: &str) -> String {
+		decode_string_literal(self.cst_node(), source)
 	}
 }
 
@@ -222,11 +219,21 @@ pub fn parse_float_literal(text: &str) -> Result<f64, FloatParsingError> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use expect_test::expect;
 
-	use super::parse_float_literal;
-	use crate::{ast::test::*, minizinc::FloatParsingError};
+	use crate::{
+		ast::tests::*,
+		minizinc::{FloatParsingError, parse_float_literal, parse_integer_literal},
+	};
+
+	#[test]
+	fn test_parse_integer() {
+		assert_eq!(parse_integer_literal("123"), Ok(123));
+		assert_eq!(parse_integer_literal("0xFF"), Ok(255));
+		assert_eq!(parse_integer_literal("0b1010"), Ok(10));
+		assert_eq!(parse_integer_literal("0o77"), Ok(63));
+	}
 
 	#[test]
 	fn test_parse_float() {
@@ -267,6 +274,26 @@ mod test {
 			parse_float_literal("0x1p").unwrap_err(),
 			FloatParsingError::MissingExponent
 		);
+		assert_eq!(
+			parse_float_literal("0x12345678.12345678p1").unwrap_err(),
+			FloatParsingError::InvalidValue
+		);
+		assert_eq!(
+			parse_float_literal("0x1p12345678901234567890").unwrap_err(),
+			FloatParsingError::InvalidValue
+		);
+		assert_eq!(
+			parse_float_literal("0x3FFFFFFFFFFFFFp1").unwrap_err(),
+			FloatParsingError::InvalidValue
+		);
+		assert_eq!(
+			parse_float_literal("0x1p1abc2").unwrap_err(),
+			FloatParsingError::InvalidDigit
+		);
+		assert_eq!(
+			parse_float_literal("inf").unwrap_err(),
+			FloatParsingError::InvalidValue
+		);
 	}
 
 	#[test]
@@ -284,16 +311,12 @@ mod test {
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
                         definition: IntegerLiteral(
                             IntegerLiteral {
                                 cst_kind: "integer_literal",
-                                value: Ok(
-                                    1,
-                                ),
                             },
                         ),
                     },
@@ -310,33 +333,29 @@ mod test {
 		check_ast(
 			"x = 1.2;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: FloatLiteral(
+                            FloatLiteral {
+                                cst_kind: "float_literal",
                             },
                         ),
-                    ),
-                    definition: FloatLiteral(
-                        FloatLiteral {
-                            cst_kind: "float_literal",
-                            value: Ok(
-                                1.2,
-                            ),
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -346,31 +365,29 @@ MznModel(
 		check_ast(
 			r#"x = "foo";"#,
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: StringLiteral(
+                            StringLiteral {
+                                cst_kind: "string_literal",
                             },
                         ),
-                    ),
-                    definition: StringLiteral(
-                        StringLiteral {
-                            cst_kind: "string_literal",
-                            value: "foo",
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -380,30 +397,29 @@ MznModel(
 		check_ast(
 			"x = <>;",
 			expect!([r#"
-MznModel(
-    Model {
-        items: [
-            Assignment(
-                Assignment {
-                    cst_kind: "assignment",
-                    assignee: Identifier(
-                        UnquotedIdentifier(
-                            UnquotedIdentifier {
-                                cst_kind: "identifier",
-                                name: "x",
+    MznModel(
+        Model {
+            items: [
+                Assignment(
+                    Assignment {
+                        cst_kind: "assignment",
+                        assignee: Identifier(
+                            UnquotedIdentifier(
+                                UnquotedIdentifier {
+                                    cst_kind: "identifier",
+                                },
+                            ),
+                        ),
+                        definition: Absent(
+                            Absent {
+                                cst_kind: "absent",
                             },
                         ),
-                    ),
-                    definition: Absent(
-                        Absent {
-                            cst_kind: "absent",
-                        },
-                    ),
-                },
-            ),
-        ],
-    },
-)
+                    },
+                ),
+            ],
+        },
+    )
 "#]),
 		);
 	}
@@ -423,7 +439,6 @@ MznModel(
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
@@ -456,16 +471,12 @@ MznModel(
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
                         definition: IntegerLiteral(
                             IntegerLiteral {
                                 cst_kind: "integer_literal",
-                                value: Ok(
-                                    255,
-                                ),
                             },
                         ),
                     },
@@ -489,16 +500,12 @@ MznModel(
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
                         definition: IntegerLiteral(
                             IntegerLiteral {
                                 cst_kind: "integer_literal",
-                                value: Ok(
-                                    3,
-                                ),
                             },
                         ),
                     },
@@ -522,16 +529,12 @@ MznModel(
                             UnquotedIdentifier(
                                 UnquotedIdentifier {
                                     cst_kind: "identifier",
-                                    name: "x",
                                 },
                             ),
                         ),
                         definition: IntegerLiteral(
                             IntegerLiteral {
                                 cst_kind: "integer_literal",
-                                value: Ok(
-                                    63,
-                                ),
                             },
                         ),
                     },

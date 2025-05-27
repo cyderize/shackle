@@ -8,13 +8,9 @@ function array [int] of any $T: mzn_slice_internal(
 );
 
 % Slice of 1D array
-function array [int] of any $T: mzn_slice(
-	array [$$E] of any $T: x,
-	tuple(set of $$E): i,
-) :: mzn_inline =
-	let {
-		constraint mzn_slice_valid(x, i);
-	} in mzn_slice_internal(index2int(x), [enum2int(i.1)]);
+function array [int] of any $T: mzn_slice(array [$$E] of any $T: x, tuple(set of $$E): i)
+	:: mzn_inline =
+	let { constraint mzn_slice_valid(x, i) } in mzn_slice_internal(index2int(x), [enum2int(i.1)]);
 
 % Slice of 2D array
 function array [int] of any $T: mzn_slice(
@@ -23,10 +19,7 @@ function array [int] of any $T: mzn_slice(
 ) :: mzn_inline =
 	let {
 		constraint mzn_slice_valid(x, i);
-	} in mzn_slice_internal(
-		index2int(x),
-		[enum2int(i.1), enum2int(i.2)],
-	);
+	} in mzn_slice_internal(index2int(x), [enum2int(i.1), enum2int(i.2)]);
 
 % Slice of 3D array
 function array [int] of any $T: mzn_slice(
@@ -35,10 +28,7 @@ function array [int] of any $T: mzn_slice(
 ) :: mzn_inline =
 	let {
 		constraint mzn_slice_valid(x, i);
-	} in mzn_slice_internal(
-		index2int(x),
-		[enum2int(i.1), enum2int(i.2), enum2int(i.3)],
-	);
+	} in mzn_slice_internal(index2int(x), [enum2int(i.1), enum2int(i.2), enum2int(i.3)]);
 
 % Slice of 4D array
 function array [int] of any $T: mzn_slice(
@@ -61,39 +51,19 @@ function array [int] of any $T: mzn_slice(
 		constraint mzn_slice_valid(x, i);
 	} in mzn_slice_internal(
 		index2int(x),
-		[
-			enum2int(i.1),
-			enum2int(i.2),
-			enum2int(i.3),
-			enum2int(i.4),
-			enum2int(i.5),
-		],
+		[enum2int(i.1), enum2int(i.2), enum2int(i.3), enum2int(i.4), enum2int(i.5)],
 	);
 
 % Slice of 6D array
 function array [int] of any $T: mzn_slice(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
-	tuple(
-		set of $$E,
-		set of $$F,
-		set of $$G,
-		set of $$H,
-		set of $$I,
-		set of $$J,
-	): i,
+	tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I, set of $$J): i,
 ) :: mzn_inline =
 	let {
 		constraint mzn_slice_valid(x, i);
 	} in mzn_slice_internal(
 		index2int(x),
-		[
-			enum2int(i.1),
-			enum2int(i.2),
-			enum2int(i.3),
-			enum2int(i.4),
-			enum2int(i.5),
-			enum2int(i.6),
-		],
+		[enum2int(i.1), enum2int(i.2), enum2int(i.3), enum2int(i.4), enum2int(i.5), enum2int(i.6)],
 	);
 
 % Slice validity check
@@ -104,31 +74,22 @@ test mzn_slice_valid(set of $$E: idx, set of $$E: idx_set, int: n) =
 		mzn_assert_warn(
 			idx subset idx_set,
 			if n > 0 then
-				"array slice out of bounds, index set \(n) is \(
-					idx_set
-				), but given range is \(idx)"
+				"array slice out of bounds, index set \(n) is \(idx_set), but given range is \(
+					idx
+				)"
 			else
-				"array slice out of bounds, index set is \(
-					idx_set
-				), but given range is \(idx)"
+				"array slice out of bounds, index set is \(idx_set), but given range is \(idx)"
 			endif,
 		)
 	endif;
 
 test mzn_slice_valid(array [$$E] of any $T: x, set of $$E: idx) =
 	mzn_slice_valid(idx, index_set(x), 0);
-test mzn_slice_valid(array [$$E] of any $T: x, tuple(set of $$E): idx) =
-	mzn_slice_valid(x, idx.1);
-test mzn_slice_valid(
-	array [$$E, $$F] of any $T: x,
-	tuple(set of $$E, set of $$F): idx,
-) =
+test mzn_slice_valid(array [$$E] of any $T: x, tuple(set of $$E): idx) = mzn_slice_valid(x, idx.1);
+test mzn_slice_valid(array [$$E, $$F] of any $T: x, tuple(set of $$E, set of $$F): idx) =
 	let {
 		any: idx_set = index_sets(x);
-	} in forall([
-		mzn_slice_valid(idx.1, idx_set.1, 1),
-		mzn_slice_valid(idx.2, idx_set.2, 2),
-	]);
+	} in forall([mzn_slice_valid(idx.1, idx_set.1, 1), mzn_slice_valid(idx.2, idx_set.2, 2)]);
 test mzn_slice_valid(
 	array [$$E, $$F, $$G] of any $T: x,
 	tuple(set of $$E, set of $$F, set of $$G): idx,
@@ -167,14 +128,7 @@ test mzn_slice_valid(
 	]);
 test mzn_slice_valid(
 	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
-	tuple(
-		set of $$E,
-		set of $$F,
-		set of $$G,
-		set of $$H,
-		set of $$I,
-		set of $$J,
-	): idx,
+	tuple(set of $$E, set of $$F, set of $$G, set of $$H, set of $$I, set of $$J): idx,
 ) =
 	let {
 		any: idx_set = index_sets(x);

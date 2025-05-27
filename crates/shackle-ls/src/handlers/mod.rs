@@ -14,17 +14,16 @@ mod view_mir;
 mod view_pretty_print;
 mod view_scope;
 
-pub use self::{
+pub(crate) use self::{
 	completions::*, format::*, goto_definition::*, hover::*, references::*, rename_symbol::*,
 	semantic_tokens::*, vfs::*, view_ast::*, view_cst::*, view_format_ir::*, view_hir::*,
 	view_mir::*, view_pretty_print::*, view_scope::*,
 };
 
 #[cfg(test)]
-pub mod test {
+pub(crate) mod tests {
 	use std::{
 		ops::Deref,
-		panic::RefUnwindSafe,
 		path::{Path, PathBuf},
 		str::FromStr,
 		sync::Arc,
@@ -32,44 +31,41 @@ pub mod test {
 
 	use expect_test::Expect;
 	use lsp_server::ResponseError;
-	use shackle_compiler::{
-		db::{CompilerDatabase, FileReader, Inputs},
-		file::{FileHandler, InputFile},
+	use shackle_diagnostics::{FileError, Result};
+	use shackle_hir::{
+		CompilerDatabase, Db,
+		db::{FileHandler, Setter},
+		input::{CompilerSettings, InputFiles, ModelFile, NamedModelFile},
 	};
-	use shackle_diagnostics::{FileError, SourceFile};
-	use shackle_syntax::InputLang;
 
-	use crate::{db::LanguageServerContext, dispatch::RequestHandler};
+	use crate::{
+		db::{LanguageServerContext, LanguageServerOptions},
+		dispatch::RequestHandler,
+	};
 
 	struct MockFileHandler(String);
 
 	impl FileHandler for MockFileHandler {
-		fn durable(&self) -> bool {
-			true
-		}
-
-		fn read_file(&self, path: &Path) -> Result<SourceFile, FileError> {
+		fn read_file(&self, path: &Path) -> Result<String> {
 			if path == PathBuf::from_str("test.mzn").unwrap() {
-				return Ok(SourceFile::new(path.to_owned(), self.0.clone()));
+				return Ok(self.0.clone());
 			}
-			std::fs::read_to_string(path)
-				.map(|contents| SourceFile::new(path.to_owned(), contents))
-				.map_err(|err| FileError {
+			std::fs::read_to_string(path).map_err(|err| {
+				FileError {
 					file: path.to_path_buf(),
 					message: err.to_string(),
 					other: Vec::new(),
-				})
+				}
+				.into()
+			})
 		}
 
-		fn snapshot(&self) -> Box<dyn FileHandler + RefUnwindSafe> {
-			unimplemented!()
-		}
+		fn on_resolved_includes(&self, _db: &dyn Db, _files: &[ModelFile]) {}
 	}
 
 	struct MockDatabase {
 		db: CompilerDatabase,
-		#[allow(dead_code)]
-		workspace: Option<lsp_types::Uri>,
+		options: LanguageServerOptions,
 	}
 
 	impl Deref for MockDatabase {
@@ -84,16 +80,17 @@ pub mod test {
 		fn set_active_file_from_document(
 			&mut self,
 			_doc: &lsp_types::TextDocumentIdentifier,
-		) -> Result<shackle_compiler::file::ModelRef, lsp_server::ResponseError> {
-			Ok(self.input_models()[0])
+		) -> Result<ModelFile, ResponseError> {
+			let file = InputFiles::get(&self.db).files(&self.db)[0];
+			Ok(file)
 		}
 
-		fn get_workspace_uri(&self) -> Option<&lsp_types::Uri> {
-			self.workspace.as_ref()
+		fn get_options(&self) -> &LanguageServerOptions {
+			&self.options
 		}
 	}
 
-	pub fn run_handler<H, R, T>(
+	pub(crate) fn run_handler<H, R, T>(
 		model: &str,
 		no_stdlib: bool,
 		params: R::Params,
@@ -103,20 +100,28 @@ pub mod test {
 		R: lsp_types::request::Request,
 	{
 		let mut db = MockDatabase {
-			db: CompilerDatabase::with_file_handler(Box::new(MockFileHandler(model.to_string()))),
-			workspace: lsp_types::Uri::from_str("file:///").ok(),
+			db: CompilerDatabase::with_file_handler(Arc::new(MockFileHandler(model.to_string()))),
+			options: LanguageServerOptions {
+				workspace_uri: lsp_types::Uri::from_str("file:///").ok(),
+			},
 		};
-		db.db.set_ignore_stdlib(no_stdlib);
-		db.db.set_input_files(Arc::new(vec![InputFile::Path(
-			PathBuf::from_str("test.mzn").unwrap(),
-			InputLang::MiniZinc,
-		)]));
+		let _ = CompilerSettings::get(&db.db)
+			.set_ignore_stdlib(&mut db.db)
+			.to(no_stdlib);
+		let file = NamedModelFile::new(&db.db, PathBuf::from_str("test.mzn").unwrap());
+		let _ = InputFiles::get(&db.db)
+			.set_files(&mut db.db)
+			.to(vec![file.into()]);
 		H::prepare(&mut db, params).and_then(|t| H::execute(&db, t))
 	}
 
 	/// Test an LSP handler
-	pub fn test_handler<H, R, T>(model: &str, no_stdlib: bool, params: R::Params, expected: Expect)
-	where
+	pub(crate) fn test_handler<H, R, T>(
+		model: &str,
+		no_stdlib: bool,
+		params: R::Params,
+		expected: Expect,
+	) where
 		H: RequestHandler<R, T>,
 		R: lsp_types::request::Request,
 	{
@@ -125,7 +130,7 @@ pub mod test {
 	}
 
 	/// Test an LSP handler which returns a string
-	pub fn test_handler_display<H, R, T>(
+	pub(crate) fn test_handler_display<H, R, T>(
 		model: &str,
 		no_stdlib: bool,
 		params: R::Params,

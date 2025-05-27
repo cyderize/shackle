@@ -1,0 +1,727 @@
+//! Types of signatures - the type required when referring to an item
+//!
+//! E.g.
+//! - Function parameter/return type
+//! - Variable declaration LHS types
+use rustc_hash::FxHashMap;
+use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch};
+use shackle_ty::{
+	EnumRef, FunctionEntry, FunctionType, OverloadedFunction, PolymorphicFunctionType, Ty, TyData,
+	TyVar, TyVarRef, registry::TypeRegistry,
+};
+
+use crate::{
+	Constructor, ConstructorParameter, Db, EnumConstructor, EnumConstructorEntry, Expression, Goal,
+	Item, ItemData, Pattern, PatternTy, Type, TypeCompletionMode, TypeContext, Typer,
+	constants::IdentifierRegistry,
+	diagnostics::Errors,
+	ids::{ExpressionRef, NodeRef, PatternRef, TypeRef},
+};
+
+impl<'db> Item<'db> {
+	/// Get the signature types for this item
+	pub fn signature(&self, db: &'db dyn Db) -> &'db SignatureTypes<'db> {
+		item_signature(db, *self)
+	}
+}
+
+#[salsa::tracked(returns(ref))]
+fn item_signature<'db>(db: &'db dyn Db, item: Item<'db>) -> SignatureTypes<'db> {
+	let mut ctx = SignatureTypeContext::new(item);
+	ctx.type_item(db, item);
+	ctx.finish()
+}
+
+/// Collected types for an item signature
+///
+/// Obtained via `HasSignature::signature()`
+#[derive(Clone, Debug, PartialEq, Eq, salsa::Update, Default)]
+pub struct SignatureTypes<'db> {
+	/// Types of declarations
+	pub patterns: FxHashMap<PatternRef<'db>, PatternTy<'db>>,
+	/// Types of expressions
+	pub expressions: FxHashMap<ExpressionRef<'db>, Ty<'db>>,
+	/// Identifier resolution
+	pub identifier_resolution: FxHashMap<ExpressionRef<'db>, PatternRef<'db>>,
+	/// Pattern resolution
+	pub pattern_resolution: FxHashMap<PatternRef<'db>, PatternRef<'db>>,
+}
+
+/// Context for typing an item signature
+struct SignatureTypeContext<'db> {
+	starting_item: Item<'db>,
+	data: SignatureTypes<'db>,
+}
+
+impl<'db> SignatureTypeContext<'db> {
+	/// Create a new signature type context
+	pub(crate) fn new(item: Item<'db>) -> Self {
+		Self {
+			starting_item: item,
+			data: SignatureTypes::default(),
+		}
+	}
+
+	/// Compute the signature of the given item
+	fn type_item(&mut self, db: &'db dyn Db, item: Item<'db>) {
+		let data = item.data(db);
+		match item {
+			Item::Annotation(a) => {
+				let it = a.annotation(db);
+				match &it.constructor {
+					Constructor::Atom { pattern } => {
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, *pattern),
+							PatternTy::AnnotationAtom,
+						);
+					}
+					Constructor::Function {
+						constructor,
+						destructor,
+						parameters,
+					} => {
+						let params = parameters
+							.iter()
+							.map(|p| {
+								let mut had_error = false;
+								for t in Type::any_types(p.declared_type, data) {
+									let (src, span) = TypeRef::new(db, item, t).source_span(db);
+									self.add_diagnostic(
+										db,
+										item,
+										TypeInferenceFailure {
+											src,
+											span,
+											msg: "Incomplete parameter types are not allowed"
+												.to_owned(),
+										},
+									);
+									had_error = true;
+								}
+								let ty = if had_error {
+									TypeRegistry::lookup(db).error
+								} else {
+									Typer::new(db, self, item, data)
+										.complete_type(
+											p.declared_type,
+											None,
+											TypeCompletionMode::AnnotationParameter,
+										)
+										.ty
+								};
+								if let Some(pat) = p.pattern {
+									self.add_declaration(
+										db,
+										PatternRef::new(db, item, pat),
+										PatternTy::Argument(ty),
+									);
+								}
+								ty
+							})
+							.collect::<Box<_>>();
+						let ann = TypeRegistry::lookup(db).ann;
+						let dtor = FunctionEntry {
+							has_body: false,
+							overload: OverloadedFunction::Function(FunctionType {
+								return_type: if params.len() == 1 {
+									params[0]
+								} else {
+									Ty::tuple(db, params.iter().copied())
+								},
+								params: Box::new([ann]),
+							}),
+						};
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, *destructor),
+							PatternTy::AnnotationDestructure(Box::new(dtor)),
+						);
+						let ctor = FunctionEntry {
+							has_body: false,
+							overload: OverloadedFunction::Function(FunctionType {
+								return_type: ann,
+								params,
+							}),
+						};
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, *constructor),
+							PatternTy::AnnotationConstructor(Box::new(ctor)),
+						);
+					}
+				}
+			}
+			Item::Function(f) => {
+				let it = f.function(db);
+				// Set as computing so if there's a call to a function with this name we can break the cycle
+				// (since if the call is actually not referring to this overload, it should work)
+				self.add_declaration(
+					db,
+					PatternRef::new(db, item, it.pattern),
+					PatternTy::Computing,
+				);
+				let ids = IdentifierRegistry::lookup(db);
+				let ty_params = it
+					.type_inst_vars
+					.iter()
+					.map(|tv| {
+						let ty_var = TyVarRef::new(
+							PatternRef::new(db, item, tv.name).identifier(db).unwrap(),
+						);
+						let type_var = TyVar {
+							ty_var,
+							varifiable: tv.is_varifiable,
+							enumerable: tv.is_enum,
+							indexable: tv.is_indexable,
+						};
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, tv.name),
+							PatternTy::TyVar(type_var),
+						);
+						ty_var
+					})
+					.collect::<Box<[_]>>();
+				let params = it
+					.parameters
+					.iter()
+					.enumerate()
+					.map(|(i, p)| {
+						let mut had_error = false;
+						let annotated_expression = p
+							.annotations
+							.iter()
+							.find(|ann| match &data[**ann] {
+								Expression::Identifier(i) => {
+									*i == ids.annotations.annotated_expression
+								}
+								_ => false,
+							})
+							.copied();
+						if i > 0
+							&& let Some(ann) = annotated_expression {
+								let (src, span) = ExpressionRef::new(db, item, ann).source_span(db);
+								self.add_diagnostic(db,
+									item,
+									SyntaxError {
+										src,
+										span,
+										msg: "'annotated_expression' only allowed on first function parameter.".to_owned(),
+									},
+								);
+							}
+						for t in Type::any_types(p.declared_type, data) {
+							let (src, span) = TypeRef::new(db, item, t).source_span(db);
+							self.add_diagnostic(
+								db,
+								item,
+								TypeInferenceFailure {
+									src,
+									span,
+									msg: "Incomplete parameter types are not allowed".to_owned(),
+								},
+							);
+							had_error = true;
+						}
+						let mut typer = Typer::new(db, self, item, data);
+						let ty = if had_error {
+							TypeRegistry::lookup(db).error
+						} else {
+							typer
+								.complete_type(p.declared_type, None, TypeCompletionMode::Default)
+								.ty
+						};
+						if let Some(pat) = p.pattern {
+							let _ = typer.collect_pattern(None, false, pat, ty, true);
+						}
+						ty
+					})
+					.collect();
+				let pattern = PatternRef::new(db, item, it.pattern);
+				if ty_params.is_empty() {
+					let f = FunctionType {
+						return_type: TypeRegistry::lookup(db).error,
+						params,
+					};
+					self.add_declaration(
+						db,
+						pattern,
+						PatternTy::Function(Box::new(FunctionEntry {
+							has_body: it.body.is_some(),
+							overload: OverloadedFunction::Function(f),
+						})),
+					);
+				} else {
+					let p = PolymorphicFunctionType {
+						return_type: TypeRegistry::lookup(db).error,
+						ty_params,
+						params,
+					};
+					self.add_declaration(
+						db,
+						pattern,
+						PatternTy::Function(Box::new(FunctionEntry {
+							has_body: it.body.is_some(),
+							overload: OverloadedFunction::PolymorphicFunction(p),
+						})),
+					);
+				}
+
+				let mut had_error = false;
+				for t in Type::any_types(it.return_type, data)
+					.chain(Type::anonymous_ty_vars(it.return_type, data))
+				{
+					let (src, span) = TypeRef::new(db, item, t).source_span(db);
+					self.add_diagnostic(
+						db,
+						item,
+						TypeInferenceFailure {
+							src,
+							span,
+							msg: "Incomplete return type not allowed".to_owned(),
+						},
+					);
+					had_error = true;
+				}
+				let return_type = if had_error {
+					TypeRegistry::lookup(db).error
+				} else {
+					Typer::new(db, self, item, data)
+						.complete_type(it.return_type, None, TypeCompletionMode::Default)
+						.ty
+				};
+
+				let d = self.data.patterns.get_mut(&pattern).unwrap();
+				match d {
+					PatternTy::Function(function) => match function.as_mut() {
+						FunctionEntry {
+							overload: OverloadedFunction::Function(f),
+							..
+						} => {
+							f.return_type = return_type;
+						}
+						FunctionEntry {
+							overload: OverloadedFunction::PolymorphicFunction(p),
+							..
+						} => {
+							p.return_type = return_type;
+						}
+					},
+					_ => unreachable!(),
+				}
+			}
+			Item::Declaration(d) => {
+				let it = d.declaration(db);
+				let ids = IdentifierRegistry::lookup(db);
+				let output_only = it
+					.annotations
+					.iter()
+					.find(|ann| match &data[**ann] {
+						Expression::Identifier(i) => *i == ids.annotations.output_only,
+						_ => false,
+					})
+					.copied();
+				for p in Pattern::identifiers(it.pattern, data) {
+					self.add_declaration(db, PatternRef::new(db, item, p), PatternTy::Computing);
+				}
+				let mut typer = Typer::new(db, self, item, data);
+				let ty = if data[it.declared_type].is_complete(data) {
+					// Use LHS type only
+					let expected = typer
+						.complete_type(it.declared_type, None, TypeCompletionMode::Default)
+						.ty;
+					typer.collect_pattern(None, false, it.pattern, expected, false)
+				} else if output_only.is_some() {
+					typer.collect_output_declaration(it)
+				} else {
+					typer.collect_declaration(it)
+				};
+
+				if it.definition.is_none()
+					&& (ty.contains_var(db) && ty.contains_par(db) || ty.contains_function(db))
+				{
+					let (src, span) = NodeRef::from(item).source_span(db);
+					self.add_diagnostic(
+						db,
+						item,
+						SyntaxError {
+							src,
+							span,
+							msg: "declaration must have a right-hand side.".to_owned(),
+						},
+					);
+				}
+
+				if let Some(ann) = output_only {
+					if it.definition.is_none() {
+						let (src, span) = ExpressionRef::new(db, item, ann).source_span(db);
+						self.add_diagnostic(
+							db,
+							item,
+							SyntaxError {
+								src,
+								span,
+								msg: "'output_only' declarations must have a right-hand side."
+									.to_owned(),
+							},
+						);
+					}
+					if !ty.known_par(db) {
+						let (src, span) = ExpressionRef::new(db, item, ann).source_span(db);
+						self.add_diagnostic(
+							db,
+							item,
+							TypeMismatch {
+								src,
+								span,
+								msg: "'output_only' declarations must be par.".to_owned(),
+							},
+						);
+					}
+				}
+			}
+			Item::Enumeration(e) => {
+				let it = e.enumeration(db);
+				let ty = Ty::par_enum(
+					db,
+					EnumRef::new(
+						PatternRef::new(db, item, it.pattern)
+							.identifier(db)
+							.unwrap(),
+					),
+				);
+				self.add_declaration(
+					db,
+					PatternRef::new(db, item, it.pattern),
+					PatternTy::Enum(Ty::par_set(db, ty).unwrap()),
+				);
+				if let Some(cases) = &it.definition {
+					self.add_enum_cases(db, item, data, ty, cases);
+				}
+			}
+			Item::EnumAssignment(e) => {
+				let it = e.enum_assignment(db);
+				let set_ty = Typer::new(db, self, item, data).collect_expression(it.assignee);
+				let ty = match set_ty.lookup(db) {
+					TyData::Set(_, _, e) => e,
+					_ => unreachable!(),
+				};
+				self.add_enum_cases(db, item, data, *ty, &it.definition);
+			}
+			Item::Solve(s) => {
+				let it = s.solve(db);
+				match &it.goal {
+					Goal::Maximize { pattern, objective }
+					| Goal::Minimize { pattern, objective } => {
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, *pattern),
+							PatternTy::Computing,
+						);
+						let actual =
+							Typer::new(db, self, item, data).collect_expression(*objective);
+						if !actual.is_subtype_of(db, TypeRegistry::lookup(db).var_float) {
+							let (src, span) =
+								ExpressionRef::new(db, item, *objective).source_span(db);
+							self.add_diagnostic(
+								db,
+								item,
+								TypeMismatch {
+									src,
+									span,
+									msg: format!(
+										"Objective must be numeric, but got '{}'",
+										actual.pretty_print(db)
+									),
+								},
+							);
+						}
+						self.add_declaration(
+							db,
+							PatternRef::new(db, item, *pattern),
+							PatternTy::Variable(actual),
+						);
+					}
+					_ => (),
+				}
+			}
+			Item::TypeAlias(t) => {
+				let it = t.type_alias(db);
+				let pat = PatternRef::new(db, item, it.name);
+				self.add_declaration(db, pat, PatternTy::Computing);
+				let result = Typer::new(db, self, item, data).complete_type(
+					it.aliased_type,
+					None,
+					TypeCompletionMode::Default,
+				);
+				self.add_declaration(
+					db,
+					pat,
+					PatternTy::TypeAlias {
+						ty: result.ty,
+						has_bounded: result.has_bounded,
+						has_unbounded: result.has_unbounded,
+					},
+				);
+			}
+			_ => unreachable!("Item {:?} does not have signature", item),
+		}
+	}
+
+	fn add_enum_cases(
+		&mut self,
+		db: &'db dyn Db,
+		item: Item<'db>,
+		data: &ItemData<'db>,
+		ty: Ty<'db>,
+		cases: &[EnumConstructor<'db>],
+	) {
+		let get_param_types = |ctx: &mut SignatureTypeContext<'db>,
+		                       parameters: &[ConstructorParameter<'db>]| {
+			let param_types = {
+				let mut typer = Typer::new(db, ctx, item, data);
+				parameters
+					.iter()
+					.map(|p| {
+						typer
+							.complete_type(
+								p.declared_type,
+								None,
+								TypeCompletionMode::EnumerationParameter,
+							)
+							.ty
+					})
+					.collect::<Box<[_]>>()
+			};
+
+			let mut had_error = false;
+			for (p, t) in parameters.iter().zip(param_types.iter()) {
+				if t.contains_error(db) {
+					had_error = true;
+				}
+				if !t.known_par(db) || !t.known_enumerable(db) {
+					let (src, span) = TypeRef::new(db, item, p.declared_type).source_span(db);
+					ctx.add_diagnostic(
+						db,
+						item,
+						TypeMismatch {
+							src,
+							span,
+							msg: format!(
+								"Expected par enumerable constructor parameter, but got '{}'",
+								t.pretty_print(db)
+							),
+						},
+					);
+					had_error = true;
+				}
+			}
+
+			(had_error, param_types)
+		};
+
+		for case in cases.iter() {
+			match case {
+				EnumConstructor::Named(Constructor::Atom { pattern }) => {
+					self.add_declaration(
+						db,
+						PatternRef::new(db, item, *pattern),
+						PatternTy::EnumAtom(ty),
+					);
+				}
+				EnumConstructor::Named(Constructor::Function {
+					constructor,
+					destructor,
+					parameters,
+				}) => {
+					let (had_error, param_types) = get_param_types(self, parameters);
+					let is_single = param_types.len() == 1;
+					let mut constructors = Vec::with_capacity(6);
+					let mut destructors = Vec::with_capacity(6);
+
+					let mut add_ctor = |e: Ty<'db>, ps: Box<[Ty<'db>]>, l: bool| {
+						destructors.push(FunctionEntry {
+							has_body: false,
+							overload: OverloadedFunction::Function(FunctionType {
+								return_type: if is_single {
+									ps[0]
+								} else {
+									Ty::tuple(db, ps.iter().copied())
+								},
+								params: Box::new([e]),
+							}),
+						});
+						constructors.push(EnumConstructorEntry {
+							constructor: FunctionEntry {
+								has_body: false,
+								overload: OverloadedFunction::Function(FunctionType {
+									return_type: e,
+									params: ps,
+								}),
+							},
+							is_lifted: l,
+						});
+					};
+
+					// C(a, b, ..) -> E
+					add_ctor(ty, param_types.clone(), false);
+					if !had_error {
+						// C(var a, var b, ..) -> var E
+						add_ctor(
+							ty.make_var(db).unwrap(),
+							param_types
+								.iter()
+								.map(|t| t.make_var(db).unwrap())
+								.collect::<Box<_>>(),
+							false,
+						);
+
+						// C(opt a, opt b, ..) -> opt E
+						add_ctor(
+							ty.make_opt(db),
+							param_types
+								.iter()
+								.map(|t| t.make_opt(db))
+								.collect::<Box<_>>(),
+							true,
+						);
+						// C(var opt a, var opt b, ..) -> var opt E
+						add_ctor(
+							ty.make_var(db).unwrap().make_opt(db),
+							param_types
+								.iter()
+								.map(|t| t.make_var(db).unwrap().make_opt(db))
+								.collect(),
+							true,
+						);
+						// C(set of a, set of b, ..) -> set of E
+						add_ctor(
+							Ty::par_set(db, ty).unwrap(),
+							param_types
+								.iter()
+								.map(|t| Ty::par_set(db, *t).unwrap())
+								.collect(),
+							true,
+						);
+						// C(var set of a, var set of b, ..) -> var set of E
+						add_ctor(
+							Ty::par_set(db, ty).unwrap().make_var(db).unwrap(),
+							param_types
+								.iter()
+								.map(|t| Ty::par_set(db, *t).unwrap().make_var(db).unwrap())
+								.collect(),
+							true,
+						);
+					}
+
+					self.add_declaration(
+						db,
+						PatternRef::new(db, item, *constructor),
+						PatternTy::EnumConstructor(constructors.into_boxed_slice()),
+					);
+					self.add_declaration(
+						db,
+						PatternRef::new(db, item, *destructor),
+						PatternTy::EnumDestructure(destructors.into_boxed_slice()),
+					);
+				}
+				EnumConstructor::Anonymous {
+					pattern,
+					parameters,
+				} => {
+					let (_, param_tys) = get_param_types(self, parameters);
+					self.add_declaration(
+						db,
+						PatternRef::new(db, item, *pattern),
+						PatternTy::AnonymousEnumConstructor(Box::new(FunctionEntry {
+							has_body: false,
+							overload: OverloadedFunction::Function(FunctionType {
+								return_type: ty,
+								params: param_tys,
+							}),
+						})),
+					);
+				}
+			}
+		}
+	}
+
+	/// Get results of typing
+	fn finish(self) -> SignatureTypes<'db> {
+		self.data
+	}
+}
+
+impl<'db> TypeContext<'db> for SignatureTypeContext<'db> {
+	fn add_declaration(
+		&mut self,
+		_db: &'db dyn Db,
+		pattern: PatternRef<'db>,
+		declaration: PatternTy<'db>,
+	) {
+		let old = self.data.patterns.insert(pattern, declaration);
+		assert!(
+			matches!(old, None | Some(PatternTy::Computing)),
+			"Tried to add declaration for {:?} twice",
+			pattern
+		);
+	}
+
+	fn add_expression(&mut self, _db: &'db dyn Db, expression: ExpressionRef<'db>, ty: Ty<'db>) {
+		let old = self.data.expressions.insert(expression, ty);
+		assert!(
+			old.is_none(),
+			"Tried to add type for expression {:?} twice",
+			expression
+		);
+	}
+
+	fn add_identifier_resolution(
+		&mut self,
+		_db: &'db dyn Db,
+		expression: ExpressionRef<'db>,
+		resolution: PatternRef<'db>,
+	) {
+		let old = self
+			.data
+			.identifier_resolution
+			.insert(expression, resolution);
+		assert!(
+			old.is_none(),
+			"Tried to add identifier resolution for {:?} twice",
+			expression
+		);
+	}
+
+	fn add_pattern_resolution(
+		&mut self,
+		_db: &'db dyn Db,
+		pattern: PatternRef<'db>,
+		resolution: PatternRef<'db>,
+	) {
+		let old = self.data.pattern_resolution.insert(pattern, resolution);
+		assert!(
+			old.is_none(),
+			"Tried to add pattern resolution for {:?} twice",
+			pattern
+		);
+	}
+
+	fn add_diagnostic(&mut self, db: &'db dyn Db, item: Item<'db>, error: impl Into<Error>) {
+		// Suppress errors from other items
+		if item == self.starting_item {
+			Errors::add(db, error);
+		}
+	}
+
+	fn type_pattern(&mut self, db: &'db dyn Db, pattern: PatternRef<'db>) -> PatternTy<'db> {
+		// When computing signatures, we always type everything required
+		// So other signatures get typed as well
+		if let Some(d) = self.data.patterns.get(&pattern).cloned() {
+			return d;
+		}
+		self.type_item(db, pattern.item(db));
+		self.data.patterns[&pattern].clone()
+	}
+}

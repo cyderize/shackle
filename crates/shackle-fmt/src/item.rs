@@ -1,22 +1,18 @@
-use shackle_syntax::{
-	ast::AstNode,
-	minizinc::{self, Expression},
-};
+use shackle_syntax::{ast::AstNode, minizinc};
 
 use crate::{
 	format::{Format, MiniZincFormatter},
 	ir::Element,
 };
 
-impl Format for minizinc::Item {
-	fn format(&self, formatter: &mut MiniZincFormatter) -> crate::ir::Element {
+impl<'tree> Format for minizinc::Item<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
 		let node = self.cst_node().as_ref();
-		if let Some(p) = node.prev_sibling() {
-			if p.end_position().row < node.start_position().row.saturating_sub(1) {
+		if let Some(p) = node.prev_sibling()
+			&& p.end_position().row < node.start_position().row.saturating_sub(1) {
 				elements.push(Element::line_break());
 			}
-		}
 		let element = match self {
 			minizinc::Item::Annotation(x) => x.format(formatter),
 			minizinc::Item::Assignment(x) => x.format(formatter),
@@ -39,7 +35,7 @@ impl Format for minizinc::Item {
 	}
 }
 
-impl Format for minizinc::Annotation {
+impl<'tree> Format for minizinc::Annotation<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			Element::text("annotation "),
@@ -65,7 +61,7 @@ impl Format for minizinc::Annotation {
 	}
 }
 
-impl Format for minizinc::Assignment {
+impl<'tree> Format for minizinc::Assignment<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			self.assignee().format(formatter),
@@ -85,7 +81,7 @@ impl Format for minizinc::Assignment {
 	}
 }
 
-impl Format for minizinc::Constraint {
+impl<'tree> Format for minizinc::Constraint<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::text("constraint"),
@@ -105,13 +101,15 @@ impl Format for minizinc::Constraint {
 	}
 }
 
-struct DeclAnnotation(Expression);
+struct DeclAnnotation<'tree>(minizinc::Expression<'tree>);
 
-impl Format for DeclAnnotation {
+impl<'tree> Format for DeclAnnotation<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let Self(e) = self;
 		match e {
-			Expression::Identifier(ident) if ident.name() == "output" => {
+			minizinc::Expression::Identifier(ident)
+				if ident.name(formatter.source()) == "output" =>
+			{
 				// This doesn't need to be quoted when used on declarations
 				Element::text("output")
 			}
@@ -120,7 +118,7 @@ impl Format for DeclAnnotation {
 	}
 }
 
-impl Format for minizinc::Declaration {
+impl<'tree> Format for minizinc::Declaration<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			self.declared_type().format(formatter),
@@ -144,7 +142,7 @@ impl Format for minizinc::Declaration {
 	}
 }
 
-impl Format for minizinc::Enumeration {
+impl<'tree> Format for minizinc::Enumeration<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			Element::text("enum "),
@@ -169,7 +167,7 @@ impl Format for minizinc::Enumeration {
 	}
 }
 
-impl Format for minizinc::EnumerationCase {
+impl<'tree> Format for minizinc::EnumerationCase<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let c = match self {
 			minizinc::EnumerationCase::Anonymous(e) => e.format(formatter),
@@ -180,13 +178,13 @@ impl Format for minizinc::EnumerationCase {
 	}
 }
 
-impl Format for minizinc::AnonymousEnumeration {
+impl<'tree> Format for minizinc::AnonymousEnumeration<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		formatter.format_list("_(", ")", self.parameters())
 	}
 }
 
-impl Format for minizinc::EnumerationConstructor {
+impl<'tree> Format for minizinc::EnumerationConstructor<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			minizinc::Expression::Identifier(self.id()).format(formatter),
@@ -195,7 +193,7 @@ impl Format for minizinc::EnumerationConstructor {
 	}
 }
 
-impl Format for minizinc::EnumerationMembers {
+impl<'tree> Format for minizinc::EnumerationMembers<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		formatter.format_list(
 			"{",
@@ -205,7 +203,7 @@ impl Format for minizinc::EnumerationMembers {
 	}
 }
 
-impl Format for minizinc::Function {
+impl<'tree> Format for minizinc::Function<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			Element::text("function "),
@@ -231,7 +229,7 @@ impl Format for minizinc::Function {
 	}
 }
 
-impl Format for minizinc::Predicate {
+impl<'tree> Format for minizinc::Predicate<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			Element::text(
@@ -261,7 +259,7 @@ impl Format for minizinc::Predicate {
 	}
 }
 
-impl Format for minizinc::Parameter {
+impl<'tree> Format for minizinc::Parameter<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![self.declared_type().format(formatter)];
 		if let Some(p) = self.pattern() {
@@ -273,21 +271,21 @@ impl Format for minizinc::Parameter {
 	}
 }
 
-impl Format for minizinc::Include {
-	fn format(&self, _formatter: &mut MiniZincFormatter) -> Element {
+impl<'tree> Format for minizinc::Include<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::text("include "),
-			Element::text(self.file().cst_text()),
+			Element::text(self.file().cst_text(formatter.source())),
 		])
 	}
 }
 
-impl Format for minizinc::Output {
+impl<'tree> Format for minizinc::Output<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![Element::text("output")];
 		if let Some(section) = self.section() {
 			elements.push(Element::text(" :: "));
-			elements.push(Element::text(section.cst_text()));
+			elements.push(Element::text(section.cst_text(formatter.source())));
 		}
 		if self.expression().has_brackets(formatter) {
 			elements.push(Element::text(" "));
@@ -302,7 +300,7 @@ impl Format for minizinc::Output {
 	}
 }
 
-impl Format for minizinc::Solve {
+impl<'tree> Format for minizinc::Solve<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = vec![
 			Element::text("solve"),
@@ -339,7 +337,7 @@ impl Format for minizinc::Solve {
 	}
 }
 
-impl Format for minizinc::TypeAlias {
+impl<'tree> Format for minizinc::TypeAlias<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			Element::text("type "),

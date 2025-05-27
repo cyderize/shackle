@@ -5,17 +5,17 @@ use std::{
 
 use lsp_types::notification::Notification;
 use miette::{Diagnostic, Severity};
-use shackle_compiler::hir::db::Hir;
+use shackle_hir::{Db, all_errors, all_warnings};
 
 use crate::utils::{path_to_uri, span_contents_to_range};
 
-pub fn diagnostics_notification(db: &dyn Hir, path: &Path) -> lsp_server::Notification {
+pub(crate) fn diagnostics_notification(db: &dyn Db, path: &Path) -> lsp_server::Notification {
 	let mut diagnostics = Vec::new();
-	for d in db.all_errors().iter() {
-		collect_diagnostic(path, d, &mut diagnostics);
+	for d in all_errors(db) {
+		let _ = collect_diagnostic(path, d, &mut diagnostics);
 	}
-	for d in db.all_warnings().iter() {
-		collect_diagnostic(path, d, &mut diagnostics);
+	for d in all_warnings(db) {
+		let _ = collect_diagnostic(path, d, &mut diagnostics);
 	}
 	lsp_server::Notification {
 		method: lsp_types::notification::PublishDiagnostics::METHOD.to_owned(),
@@ -87,7 +87,7 @@ fn collect_diagnostic(
 	});
 	if let Some(related) = d.related() {
 		for d in related {
-			collect_diagnostic(path, d, out);
+			let _ = collect_diagnostic(path, d, out);
 		}
 	}
 	Some(())

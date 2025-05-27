@@ -1,71 +1,63 @@
 use std::{
 	collections::HashMap,
-	panic::RefUnwindSafe,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::RwLock,
 };
 
-use shackle_compiler::file::FileHandler;
-use shackle_diagnostics::{FileError, SourceFile};
+use shackle_diagnostics::{FileError, Result};
+use shackle_hir::db::FileHandler;
 
 /// Virtual filesystem allowing us to override file reads
 ///
 /// Uses a mutex internally so can be cloned and used by immutable reference.
 #[derive(Debug)]
-pub struct Vfs {
-	files: Arc<Mutex<HashMap<PathBuf, String>>>,
+pub(crate) struct Vfs {
+	files: RwLock<HashMap<PathBuf, String>>,
 }
 
 impl Vfs {
 	/// Create a new VFS
-	pub fn new() -> Self {
+	pub(crate) fn new() -> Self {
 		Self {
-			files: Arc::new(Mutex::new(HashMap::new())),
+			files: RwLock::new(HashMap::new()),
 		}
 	}
 
 	/// Use the given string as the contents of this file instead of loading from the filesystem
-	pub fn manage_file(&self, file: &Path, contents: &str) {
-		let mut guard = self.files.lock().unwrap();
-		guard.insert(file.to_owned(), contents.to_owned());
+	pub(crate) fn manage_file(&self, file: &Path, contents: &str) {
+		let mut guard = self.files.write().unwrap();
+		let _ = guard.insert(file.to_owned(), contents.to_owned());
 	}
 
 	/// Load the given file from the filesystem instead of using the managed contents
-	pub fn unmanage_file(&self, file: &Path) {
-		let mut guard = self.files.lock().unwrap();
-		guard.remove(&file.to_owned());
+	pub(crate) fn unmanage_file(&self, file: &Path) {
+		let mut guard = self.files.write().unwrap();
+		let _ = guard.remove(&file.to_owned());
 	}
 }
 
 impl FileHandler for Vfs {
-	fn durable(&self) -> bool {
-		false
-	}
-
-	fn read_file(&self, path: &Path) -> Result<SourceFile, FileError> {
-		let guard = self.files.lock().unwrap();
+	fn read_file(&self, path: &Path) -> Result<String> {
+		let guard = self.files.read().unwrap();
 		if let Some(s) = guard.get(path) {
-			return Ok(SourceFile::new(path.to_path_buf(), s.clone()));
+			return Ok(s.clone());
 		}
 
-		std::fs::read_to_string(path)
-			.map(|contents| SourceFile::new(path.to_path_buf(), contents))
-			.map_err(|err| FileError {
+		std::fs::read_to_string(path).map_err(|e| {
+			FileError {
 				file: path.to_path_buf(),
-				message: err.to_string(),
-				other: Vec::new(),
-			})
+				message: e.to_string(),
+				other: vec![],
+			}
+			.into()
+		})
 	}
 
-	fn snapshot(&self) -> Box<dyn FileHandler + RefUnwindSafe> {
-		Box::new(self.clone())
-	}
-}
-
-impl Clone for Vfs {
-	fn clone(&self) -> Self {
-		Self {
-			files: self.files.clone(),
-		}
+	fn on_resolved_includes(
+		&self,
+		_db: &dyn shackle_hir::Db,
+		_files: &[shackle_hir::input::ModelFile],
+	) {
+		// TODO: Watch files for changes and mark files as dirty
 	}
 }

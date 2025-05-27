@@ -1,27 +1,30 @@
 [package]
+authors = {workspace = true}
+edition = {workspace = true}
+license = {workspace = true}
 name = "shackle-ls"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 crossbeam-channel = "0.5.8"
-env_logger = "0.11.0"
-log = "0.4.18"
+env_logger = {workspace = true}
+log = {workspace = true}
 lsp-server = "0.7.0"
 lsp-types = "0.97"
-miette = "7.0.0"
-serde = { version = "1.0.188", features = ["derive"] }
-serde_json = "1.0.96"
-shackle-compiler = { path = "../shackle-compiler" }
-shackle-diagnostics = { path = "../shackle-diagnostics" }
-shackle-fmt = { path = "../shackle-fmt" }
-shackle-syntax = { path = "../shackle-syntax" }
-streaming-iterator = "0.1.9"
+miette = {workspace = true}
+serde_json = {workspace = true}
+shackle-diagnostics = {path = "../shackle-diagnostics"}
+shackle-fmt = {path = "../shackle-fmt"}
+shackle-hir = {path = "../shackle-hir"}
+shackle-syntax = {path = "../shackle-syntax"}
+shackle-thir = {path = "../shackle-thir"}
+shackle-ty = {path = "../shackle-ty"}
 threadpool = "1.8.1"
-tree-sitter = "0.26.3"
-tree-sitter-minizinc = { path = "../../parsers/tree-sitter-minizinc" }
+# tree-sitter = { workspace = true }
+# tree-sitter-minizinc = { path = "../../parsers/tree-sitter-minizinc" }
 
 [dev-dependencies]
 expect-test = "1.4.1"
+
+[lints]
+workspace = true

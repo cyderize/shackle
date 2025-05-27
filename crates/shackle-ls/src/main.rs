@@ -1,15 +1,17 @@
+//! The MiniZinc language server, providing IDE features such as go-to-definition, hover, and completions.
 use std::error::Error;
 
 use db::LanguageServerDatabase;
 use lsp_server::{Connection, ExtractError, Message};
 use lsp_types::{
-	notification::{DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument},
 	CompletionOptions, HoverProviderCapability, InitializeParams, OneOf, SemanticTokensFullOptions,
 	SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
 	ServerCapabilities, TextDocumentSyncKind,
+	notification::{DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument},
 };
 
 use crate::{
+	db::LanguageServerOptions,
 	dispatch::{DispatchNotification, DispatchRequest},
 	handlers::*,
 };
@@ -72,8 +74,14 @@ fn main_loop(
 	params: serde_json::Value,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
 	let params: InitializeParams = serde_json::from_value(params).unwrap();
-	#[allow(deprecated)] // TODO
-	let mut db = LanguageServerDatabase::new(&connection, params.root_uri);
+	let mut db = LanguageServerDatabase::new(
+		&connection,
+		LanguageServerOptions {
+			workspace_uri: params
+				.workspace_folders
+				.map(|folders| folders[0].uri.clone()),
+		},
+	);
 	for msg in &connection.receiver {
 		match msg {
 			Message::Request(req) => {
@@ -111,15 +119,9 @@ fn main_loop(
 			}
 			Message::Notification(not) => {
 				let result = DispatchNotification::new(not, &mut db)
-					.on::<DidOpenTextDocument, _>(|db, params| {
-						handlers::on_document_open(db, params)
-					})
-					.on::<DidChangeTextDocument, _>(|db, params| {
-						handlers::on_document_changed(db, params)
-					})
-					.on::<DidCloseTextDocument, _>(|db, params| {
-						handlers::on_document_closed(db, params)
-					})
+					.on::<DidOpenTextDocument, _>(on_document_open)
+					.on::<DidChangeTextDocument, _>(on_document_changed)
+					.on::<DidCloseTextDocument, _>(on_document_closed)
 					.finish();
 				match result {
 					Ok(()) => (),

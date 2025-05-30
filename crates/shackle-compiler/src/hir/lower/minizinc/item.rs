@@ -90,6 +90,22 @@ impl ItemCollector<'_> {
 		} else {
 			Constructor::Atom { pattern }
 		};
+		if let Some(body) = a.body() {
+			let instead = if a.parameters().is_some() {
+				"function item"
+			} else {
+				"variable declaration"
+			};
+			let (src, span) = body.cst_node().source_span();
+			ctx.add_diagnostic(SyntaxError {
+				src,
+				span,
+				msg: format!(
+					"Annotation items cannot have right-hand side definitions. Use a {} instead",
+					instead
+				),
+			});
+		}
 		let (data, source_map) = ctx.finish();
 		let index = self
 			.model

@@ -113,23 +113,21 @@ impl SignatureTypeContext {
 							})
 							.collect::<Box<_>>();
 						let ann = db.type_registry().ann;
-						if !params.is_empty() {
-							let dtor = FunctionEntry {
-								has_body: false,
-								overload: OverloadedFunction::Function(FunctionType {
-									return_type: if params.len() == 1 {
-										params[0]
-									} else {
-										Ty::tuple(db.upcast(), params.iter().copied())
-									},
-									params: Box::new([ann]),
-								}),
-							};
-							self.add_declaration(
-								PatternRef::new(item, *destructor),
-								PatternTy::AnnotationDestructure(Box::new(dtor)),
-							);
-						}
+						let dtor = FunctionEntry {
+							has_body: false,
+							overload: OverloadedFunction::Function(FunctionType {
+								return_type: if params.len() == 1 {
+									params[0]
+								} else {
+									Ty::tuple(db.upcast(), params.iter().copied())
+								},
+								params: Box::new([ann]),
+							}),
+						};
+						self.add_declaration(
+							PatternRef::new(item, *destructor),
+							PatternTy::AnnotationDestructure(Box::new(dtor)),
+						);
 						let ctor = FunctionEntry {
 							has_body: false,
 							overload: OverloadedFunction::Function(FunctionType {

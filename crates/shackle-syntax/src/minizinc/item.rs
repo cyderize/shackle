@@ -396,6 +396,11 @@ impl Annotation {
 	pub fn parameters(&self) -> Option<AnnotationParameters> {
 		optional_child_with_field_name(self, "parameters")
 	}
+
+	/// Body of annotation item (not supported, rejected during lowering)
+	pub fn body(&self) -> Option<Expression> {
+		optional_child_with_field_name(self, "body")
+	}
 }
 
 ast_node!(

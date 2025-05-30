@@ -48,6 +48,19 @@ impl Format for minizinc::Annotation {
 		if let Some(params) = self.parameters() {
 			elements.push(formatter.format_list("(", ")", params.iter()));
 		}
+		if let Some(body) = self.body() {
+			// Not allowed, but can be formatted for convenience
+			elements.push(Element::text(" ="));
+			if body.has_brackets(formatter) {
+				elements.push(Element::text(" "));
+				elements.push(body.format(formatter));
+			} else {
+				elements.push(Element::group(vec![Element::indent(vec![
+					Element::line_break_or_space(),
+					body.format(formatter),
+				])]))
+			}
+		}
 		Element::sequence(elements)
 	}
 }

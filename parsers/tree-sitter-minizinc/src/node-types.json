@@ -491,6 +491,16 @@
     "type": "annotation",
     "named": true,
     "fields": {
+      "body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -523,7 +533,7 @@
     "fields": {
       "parameter": {
         "multiple": true,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "parameter",

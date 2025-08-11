@@ -91,7 +91,7 @@ ast_enum!(
 
 impl Identifier {
 	/// Get the name of this identifier
-	pub fn name(&self) -> Cow<str> {
+	pub fn name(&self) -> Cow<'_, str> {
 		match *self {
 			Identifier::QuotedIdentifier(ref i) => Cow::from(i.name()),
 			Identifier::UnquotedIdentifier(ref i) => Cow::from(i.name()),
@@ -1556,7 +1556,7 @@ MznModel(
 	fn test_case() {
 		check_ast(
 			r#"
-			x = case a of 
+			x = case a of
 					Foo(b) => true,
 					_ => false
 				endcase;

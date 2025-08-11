@@ -47,7 +47,7 @@ struct SetLiteral<E: PartialOrd> {
 pub(crate) fn deserialize_encapsulated_set<
 	'de,
 	D: Deserializer<'de>,
-	E: Copy + Deserialize<'de> + PartialOrd,
+	E: Copy + Deserialize<'de> + PartialOrd + 'static,
 >(
 	deserializer: D,
 ) -> Result<RangeList<E>, D::Error> {
@@ -73,7 +73,7 @@ pub(crate) fn serialize_encapsulate_set<E: PartialOrd + Serialize + Copy, S: Ser
 pub(crate) fn deserialize_set<
 	'de,
 	D: Deserializer<'de>,
-	E: Copy + Deserialize<'de> + PartialOrd,
+	E: Copy + Deserialize<'de> + PartialOrd + 'static,
 >(
 	deserializer: D,
 ) -> Result<RangeList<E>, D::Error> {

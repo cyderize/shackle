@@ -46,7 +46,7 @@ impl<T> Intermediate<T> {
 	}
 
 	/// Read this intermediate value without taking it
-	pub fn get(&self) -> IntermediateValue<T> {
+	pub fn get(&self) -> IntermediateValue<'_, T> {
 		IntermediateValue(self.0.read().unwrap())
 	}
 }

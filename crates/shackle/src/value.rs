@@ -401,7 +401,7 @@ impl Enum {
 		self.lock().iter().next().is_none()
 	}
 
-	pub(crate) fn lock(&self) -> CtorLock {
+	pub(crate) fn lock(&self) -> CtorLock<'_> {
 		CtorLock {
 			lock: self.state.lock().unwrap(),
 		}

@@ -18,7 +18,7 @@ use nom::{
 	combinator::{all_consuming, map, map_res, opt, recognize, verify},
 	multi::{many0, separated_list0, separated_list1},
 	sequence::{delimited, pair, preceded, separated_pair, terminated},
-	IResult,
+	IResult, Parser,
 };
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -162,10 +162,10 @@ pub enum SetExp<Identifier> {
 
 /// Parser combinator that parses an identifier from a string
 pub(crate) fn identifier<Identifier: FromStr>(input: &str) -> IResult<&str, Identifier> {
-	let (input, v) = verify(
-		recognize(nom::sequence::tuple((alpha1, alphanumeric0))),
-		|s: &str| !RESERVED.contains(&s),
-	)(input)?;
+	let (input, v) = verify(alphanumeric1, |s: &str| {
+		s.chars().next().unwrap().is_ascii_alphabetic() && !RESERVED.contains(&s)
+	})
+	.parse(input)?;
 	Ok((
 		input,
 		match v.parse() {
@@ -177,15 +177,15 @@ pub(crate) fn identifier<Identifier: FromStr>(input: &str) -> IResult<&str, Iden
 
 /// Parser combinator that parses an integer from a string
 pub(crate) fn int(input: &str) -> IResult<&str, IntVal> {
-	let (input, neg) = opt(char('-'))(input)?;
-	let (input, i): (_, i64) = map_res(recognize(digit1), str::parse)(input)?;
+	let (input, neg) = opt(char('-')).parse(input)?;
+	let (input, i): (_, i64) = map_res(recognize(digit1), str::parse).parse(input)?;
 	Ok((input, if neg.is_some() { -i } else { i }))
 }
 
 /// Parser combinator that parses a range of integers from a string
 pub(crate) fn range(input: &str) -> IResult<&str, RangeInclusive<IntVal>> {
 	let (input, lb) = int(input)?;
-	if let (input, Some(_)) = opt(tag(".."))(input)? {
+	if let (input, Some(_)) = opt(tag("..")).parse(input)? {
 		let (input, ub) = int(input)?;
 		Ok((input, lb..=ub))
 	} else {
@@ -196,23 +196,23 @@ pub(crate) fn range(input: &str) -> IResult<&str, RangeInclusive<IntVal>> {
 /// Parser combinator that repeatedly calls a parser consuming whitespace in
 /// between when possible
 pub(crate) fn sequence<'a, O>(
-	p: impl FnMut(&'a str) -> IResult<&'a str, O>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<O>> {
+	p: impl Parser<&'a str, Output = O>,
+) -> impl Parser<&'a str, Output = Vec<O>> {
 	terminated(many0(preceded(multispace0, p)), multispace0)
 }
 
 /// Parser combinator that expects parentheses with a comma seperated parser
 /// rules
 pub(crate) fn tuple<'a, O>(
-	p: impl FnMut(&'a str) -> IResult<&'a str, O>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<O>> {
+	p: impl Parser<&'a str, Output = O>,
+) -> impl Parser<&'a str, Output = Vec<O>> {
 	delimited(char('('), separated_list1(char(','), p), char(')'))
 }
 
 /// Parser combinator that requires whitespace between parsing rules
 pub(crate) fn whitespace_seperated<'a, O>(
-	p: impl FnMut(&'a str) -> IResult<&'a str, O>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<O>> {
+	p: impl Parser<&'a str, Output = O>,
+) -> impl Parser<&'a str, Output = Vec<O>> {
 	separated_list1(multispace1, p)
 }
 
@@ -288,7 +288,7 @@ impl<Identifier: FromStr> BoolExp<Identifier> {
 	/// Parser combinator for a call Boolean expression with two integer arguments
 	/// from a string.
 	fn call_arg2_int(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("lt"), tag("le"), tag("gt"), tag("ge")))(input)?;
+		let (input, tag) = alt((tag("lt"), tag("le"), tag("gt"), tag("ge"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
 		let (input, e1) = IntExp::parse(input)?;
 		let (input, _) = char(',')(input)?;
@@ -333,7 +333,8 @@ impl<Identifier: FromStr> BoolExp<Identifier> {
 			tag("subseq"),
 			tag("supseq"),
 			tag("supset"),
-		))(input)?;
+		))
+		.parse(input)?;
 		let (input, _) = char('(')(input)?;
 		let (input, e1) = SetExp::parse(input)?;
 		let (input, _) = char(',')(input)?;
@@ -355,9 +356,9 @@ impl<Identifier: FromStr> BoolExp<Identifier> {
 	/// Parser combinator for a call Boolean expression with a variadic number of
 	/// Boolean arguments from a string.
 	fn call_argn(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("and"), tag("or"), tag("xor"), tag("iff")))(input)?;
+		let (input, tag) = alt((tag("and"), tag("or"), tag("xor"), tag("iff"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
-		let (input, es) = separated_list0(char(','), Self::parse)(input)?;
+		let (input, es) = separated_list0(char(','), Self::parse).parse(input)?;
 		let (input, _) = char(')')(input)?;
 		Ok((
 			input,
@@ -376,7 +377,7 @@ impl<Identifier: FromStr> BoolExp<Identifier> {
 	fn call_argn_exp(input: &str) -> IResult<&str, Self> {
 		let (input, tag) = tag("eq")(input)?;
 		let (input, _) = char('(')(input)?;
-		let (input, es) = separated_list1(char(','), Exp::parse)(input)?;
+		let (input, es) = separated_list1(char(','), Exp::parse).parse(input)?;
 		let (input, _) = char(')')(input)?;
 		Ok((
 			input,
@@ -403,7 +404,8 @@ impl<Identifier: FromStr> BoolExp<Identifier> {
 			Self::call_argn,
 			Self::call_argn_exp,
 			map(VarRef::parse, BoolExp::Var),
-		))(input)
+		))
+		.parse(input)
 	}
 }
 
@@ -505,7 +507,8 @@ impl<Identifier: FromStr> Exp<Identifier> {
 			map(SetExp::parse, |x| Exp::Set(Box::new(x))),
 			map(BoolExp::parse, |x| Exp::Bool(Box::new(x))),
 			map(IntExp::parse, |x| Exp::Int(Box::new(x))),
-		))(input)
+		))
+		.parse(input)
 	}
 
 	/// Parse a list of expressions seperated by whitespace
@@ -522,8 +525,9 @@ impl<Identifier: FromStr> Exp<Identifier> {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-				let (_, v) = all_consuming(whitespace_seperated(Exp::parse))(v)
-					.map_err(|e| E::custom(format!("invalid expressions {e:?}")))?;
+				let (_, v) = all_consuming(whitespace_seperated(Exp::parse))
+					.parse(v)
+					.map_err(|_| E::custom(format!("invalid expressions `{v}'")))?;
 				Ok(v)
 			}
 		}
@@ -547,7 +551,7 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 	/// Parser combinator for a call integer expression with a integer argument
 	/// from string
 	fn call_arg1(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("neg"), tag("abs"), tag("sqr")))(input)?;
+		let (input, tag) = alt((tag("neg"), tag("abs"), tag("sqr"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
 		let (input, e) = Self::parse(input)?;
 		let (input, _) = char(')')(input)?;
@@ -582,7 +586,7 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 	/// from string
 	fn call_arg2(input: &str) -> IResult<&str, Self> {
 		let (input, tag) =
-			alt((tag("sub"), tag("div"), tag("mod"), tag("pow"), tag("dist")))(input)?;
+			alt((tag("sub"), tag("div"), tag("mod"), tag("pow"), tag("dist"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
 		let (input, e1) = Self::parse(input)?;
 		let (input, _) = char(',')(input)?;
@@ -604,7 +608,7 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 	/// Parser combinator for a call integer expression with three integer
 	/// arguments from string
 	fn call_arg3(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("if"),))(input)?;
+		let (input, tag) = alt((tag("if"),)).parse(input)?;
 		let (input, _) = char('(')(input)?;
 		let (input, e1) = BoolExp::parse(input)?;
 		let (input, _) = char(',')(input)?;
@@ -624,9 +628,9 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 	/// Parser combinator for a call integer expression with variadic number of
 	/// integer arguments from string
 	fn call_argn(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("add"), tag("mul")))(input)?;
+		let (input, tag) = alt((tag("add"), tag("mul"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
-		let (input, es) = separated_list1(char(','), Self::parse)(input)?;
+		let (input, es) = separated_list1(char(','), Self::parse).parse(input)?;
 		let (input, _) = char(')')(input)?;
 		Ok((
 			input,
@@ -641,9 +645,9 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 	/// Parser combinator for a call integer expression with variadic number of
 	/// expression arguments from string
 	fn call_argn_exp(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("min"), tag("max")))(input)?;
+		let (input, tag) = alt((tag("min"), tag("max"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
-		let (input, es) = separated_list1(char(','), Exp::parse)(input)?;
+		let (input, es) = separated_list1(char(','), Exp::parse).parse(input)?;
 		let (input, _) = char(')')(input)?;
 		Ok((
 			input,
@@ -667,7 +671,8 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 			IntExp::call_argn_exp,
 			map(VarRef::parse, IntExp::Var),
 			map(BoolExp::parse, IntExp::Bool),
-		))(input)
+		))
+		.parse(input)
 	}
 
 	/// Parse a list of integer expressions
@@ -684,8 +689,9 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-				let (_, v) = all_consuming(whitespace_seperated(IntExp::parse))(v)
-					.map_err(|e| E::custom(format!("invalid integer expressions {e:?}")))?;
+				let (_, v) = all_consuming(whitespace_seperated(IntExp::parse))
+					.parse(v)
+					.map_err(|_| E::custom(format!("invalid integer expressions `{v}'")))?;
 				Ok(v)
 			}
 		}
@@ -811,9 +817,9 @@ impl<Identifier: FromStr> SetExp<Identifier> {
 	/// Parser combinator to parse a call set expression with 3 arguments from a
 	/// string.
 	fn call_arg3(input: &str) -> IResult<&str, Self> {
-		let (input, tag) = alt((tag("union"), tag("inter"), tag("sdiff")))(input)?;
+		let (input, tag) = alt((tag("union"), tag("inter"), tag("sdiff"))).parse(input)?;
 		let (input, _) = char('(')(input)?;
-		let (input, es) = separated_list1(char(','), Self::parse)(input)?;
+		let (input, es) = separated_list1(char(','), Self::parse).parse(input)?;
 		let (input, _) = char(')')(input)?;
 		Ok((
 			input,
@@ -845,7 +851,8 @@ impl<Identifier: FromStr> SetExp<Identifier> {
 				SetExp::Set,
 			),
 			map(VarRef::parse, SetExp::Var),
-		))(input)
+		))
+		.parse(input)
 	}
 }
 

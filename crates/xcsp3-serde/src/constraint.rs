@@ -13,6 +13,7 @@ use nom::{
 	character::complete::char,
 	combinator::{all_consuming, map},
 	sequence::{delimited, separated_pair},
+	Parser,
 };
 use serde::{
 	de::{self, Visitor},
@@ -704,8 +705,9 @@ fn deserialize_int_tuples<'de, D: Deserializer<'de>>(
 		}
 
 		fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-			let (_, v) = all_consuming(sequence(tuple(int)))(v)
-				.map_err(|e| E::custom(format!("invalid integer {e:?}")))?;
+			let (_, v) = all_consuming(sequence(tuple(int)))
+				.parse(v)
+				.map_err(|_| E::custom(format!("invalid integer `{v}'")))?;
 			Ok(v)
 		}
 	}
@@ -850,11 +852,17 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Channel<Identifier> {
 		if c.list.is_empty() {
 			return Err(de::Error::missing_field("list"));
 		}
-		let (_, list) = all_consuming(whitespace_seperated(IntExp::parse))(&c.list[0])
-			.map_err(|e| de::Error::custom(format!("invalid integer expressions {e:?}")))?;
+		let (_, list) = all_consuming(whitespace_seperated(IntExp::parse))
+			.parse(&c.list[0])
+			.map_err(|_| {
+				de::Error::custom(format!("invalid integer expressions `{}'", &c.list[0]))
+			})?;
 		let inverse_list = if let Some(inverse_list) = c.list.get(1) {
-			all_consuming(whitespace_seperated(IntExp::parse))(inverse_list)
-				.map_err(|e| de::Error::custom(format!("invalid integer expressions {e:?}")))?
+			all_consuming(whitespace_seperated(IntExp::parse))
+				.parse(inverse_list)
+				.map_err(|_| {
+					de::Error::custom(format!("invalid integer expressions `{inverse_list}'"))
+				})?
 				.1
 		} else {
 			Vec::new()
@@ -969,8 +977,9 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Condition<Identifier> {
 					),
 					char(')'),
 				);
-				let (_, (operator, operand)) =
-					parser(v).map_err(|e| E::custom(format!("invalid condition {e:?}")))?;
+				let (_, (operator, operand)) = parser
+					.parse(v)
+					.map_err(|e| E::custom(format!("invalid condition {e:?}")))?;
 				let operator = match operator {
 					"lt" => Operator::Lt,
 					"le" => Operator::Le,
@@ -1122,7 +1131,7 @@ impl<Identifier: FromStr> Transition<Identifier> {
 			fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
 				eprintln!("{}", v);
 				let transition = map(
-					nom::sequence::tuple((
+					(
 						char('('),
 						identifier,
 						char(','),
@@ -1130,11 +1139,12 @@ impl<Identifier: FromStr> Transition<Identifier> {
 						char(','),
 						identifier,
 						char(')'),
-					)),
+					),
 					|(_, from, _, val, _, to, _)| Transition { from, val, to },
 				);
-				let (_, v) = all_consuming(sequence(transition))(v)
-					.map_err(|e| E::custom(format!("invalid transitions {e:?}")))?;
+				let (_, v) = all_consuming(sequence(transition))
+					.parse(v)
+					.map_err(|_| E::custom(format!("invalid transitions `{v}'")))?;
 				Ok(v)
 			}
 		}

@@ -23,6 +23,8 @@ jobs:
         with:
           cache-target: release
           channel: ${{ env.RUST_TEST_CHANNEL }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build shackle-cli
         run: cargo install --root dist/ --path crates/shackle-cli
       - name: Build shackle-ls
@@ -41,6 +43,8 @@ jobs:
         with:
           cache: false
           channel: ${{ env.RUST_TEST_CHANNEL }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
@@ -60,6 +64,8 @@ jobs:
         uses: moonrepo/setup-rust@v1
         with:
           channel: ${{ env.RUST_TEST_CHANNEL }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run cargo test
         run: cargo test
   clippy:
@@ -71,5 +77,7 @@ jobs:
         with:
           channel: ${{ env.RUST_CHANNEL }}
           components: clippy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run clippy
         run: cargo clippy --tests -- -D warnings

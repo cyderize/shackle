@@ -14,7 +14,7 @@ use std::{fmt::Display, marker::PhantomData, ops::RangeInclusive, str::FromStr};
 use nom::{
 	branch::alt,
 	bytes::complete::tag,
-	character::complete::{alpha1, alphanumeric0, char, digit1, multispace0, multispace1},
+	character::complete::{alphanumeric1, char, digit1, multispace0, multispace1},
 	combinator::{all_consuming, map, map_res, opt, recognize, verify},
 	multi::{many0, separated_list0, separated_list1},
 	sequence::{delimited, pair, preceded, separated_pair, terminated},
@@ -417,12 +417,13 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for BoolExp<Identifier> {
 			type Value = BoolExp<Ident>;
 
 			fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-				formatter.write_str("an integer")
+				formatter.write_str("a Boolean expression")
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let (_, v) = Self::Value::parse(v)
-					.map_err(|e| E::custom(format!("invalid integer {e:?}")))?;
+					.map_err(|e| E::custom(format!("invalid Boolean expression: {e:?}")))?;
 				Ok(v)
 			}
 		}
@@ -525,6 +526,7 @@ impl<Identifier: FromStr> Exp<Identifier> {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let (_, v) = all_consuming(whitespace_seperated(Exp::parse))
 					.parse(v)
 					.map_err(|_| E::custom(format!("invalid expressions `{v}'")))?;
@@ -689,6 +691,7 @@ impl<Identifier: FromStr> IntExp<Identifier> {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let (_, v) = all_consuming(whitespace_seperated(IntExp::parse))
 					.parse(v)
 					.map_err(|_| E::custom(format!("invalid integer expressions `{v}'")))?;
@@ -708,12 +711,13 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for IntExp<Identifier> {
 			type Value = IntExp<Ident>;
 
 			fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-				formatter.write_str("an integer")
+				formatter.write_str("an integer expression")
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let (_, v) = Self::Value::parse(v)
-					.map_err(|e| E::custom(format!("invalid integer {e:?}")))?;
+					.map_err(|_| E::custom(format!("invalid integer expression `{v}'")))?;
 				Ok(v)
 			}
 		}

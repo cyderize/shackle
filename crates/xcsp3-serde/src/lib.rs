@@ -440,6 +440,7 @@ fn deserialize_ident<'de, D: Deserializer<'de>, Identifier: FromStr>(
 		}
 
 		fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+			let v = v.trim();
 			Ok(Some(FromStr::from_str(v).map_err(|_| {
 				E::custom("unable to create identifier from string")
 			})?))
@@ -463,6 +464,7 @@ fn deserialize_int_vals<'de, D: Deserializer<'de>>(
 		}
 
 		fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+			let v = v.trim();
 			let (_, v) = all_consuming(whitespace_seperated(int))
 				.parse(v)
 				.map_err(|_| E::custom(format!("invalid list of integers {v}")))?;
@@ -486,6 +488,7 @@ fn deserialize_range_list<'de, D: Deserializer<'de>>(
 		}
 
 		fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+			let v = v.trim();
 			let (_, r) = all_consuming(whitespace_seperated(range))
 				.parse(v)
 				.map_err(|_| E::custom(format!("invalid list of ranges `{v}")))?;
@@ -508,6 +511,7 @@ fn deserialize_size<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<us
 		}
 
 		fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+			let v = v.trim();
 			let (_, r) = all_consuming(sequence(delimited(
 				char::<_, nom::error::Error<&str>>('['),
 				map_res(recognize(digit1), str::parse),
@@ -525,7 +529,7 @@ fn deserialize_size<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<us
 /// Deserialize a string and call the `FromStr` implementation
 fn from_str<'de, D: Deserializer<'de>, I: FromStr>(deserializer: D) -> Result<I, D::Error> {
 	let s: Cow<'_, str> = Deserialize::deserialize(deserializer)?;
-	match s.parse() {
+	match s.trim().parse() {
 		Ok(t) => Ok(t),
 		Err(_) => Err(serde::de::Error::custom("unable to parse from string")),
 	}
@@ -627,9 +631,12 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Array<Identifier> {
 		let domains = match x.domain {
 			Domain::Domain(v) => v.into_iter().map(|d| (d.vars, d.domain)).collect(),
 			Domain::Direct(s) => {
+				let s = s.trim();
 				let s = all_consuming(whitespace_seperated(range))
 					.parse(s.as_ref())
-					.map_err(|_| serde::de::Error::custom("unable to pase ranges from `{s}'"))?;
+					.map_err(|_| {
+						serde::de::Error::custom(format!("unable to parse ranges from `{s}'"))
+					})?;
 				vec![(
 					vec![VarRef::Ident(
 						Identifier::from_str("others").unwrap_or_else(|_| {
@@ -932,6 +939,7 @@ impl<Identifier: FromStr> VarRef<Identifier> {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let (_, v) = all_consuming(whitespace_seperated(VarRef::parse))
 					.parse(v)
 					.map_err(|_| E::custom(format!("invalid variable references `{v}'")))?;

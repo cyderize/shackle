@@ -13,7 +13,7 @@ use nom::{
 	character::complete::char,
 	combinator::{all_consuming, map},
 	sequence::{delimited, separated_pair},
-	Parser,
+	IResult, Parser,
 };
 use serde::{
 	de::{self, Visitor},
@@ -548,7 +548,7 @@ pub struct OffsetList<Identifier> {
 }
 
 /// Operator used as part of the [`Condition`] struct or a constraint.
-#[derive(Clone, Debug, PartialEq, Hash, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Operator {
 	/// Less than
@@ -705,6 +705,7 @@ fn deserialize_int_tuples<'de, D: Deserializer<'de>>(
 		}
 
 		fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+			let v = v.trim();
 			let (_, v) = all_consuming(sequence(tuple(int)))
 				.parse(v)
 				.map_err(|_| E::custom(format!("invalid integer `{v}'")))?;
@@ -853,11 +854,15 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Channel<Identifier> {
 			return Err(de::Error::missing_field("list"));
 		}
 		let (_, list) = all_consuming(whitespace_seperated(IntExp::parse))
-			.parse(&c.list[0])
+			.parse(c.list[0].trim())
 			.map_err(|_| {
-				de::Error::custom(format!("invalid integer expressions `{}'", &c.list[0]))
+				de::Error::custom(format!(
+					"invalid integer expressions `{}'",
+					&c.list[0].trim()
+				))
 			})?;
 		let inverse_list = if let Some(inverse_list) = c.list.get(1) {
+			let inverse_list = inverse_list.trim();
 			all_consuming(whitespace_seperated(IntExp::parse))
 				.parse(inverse_list)
 				.map_err(|_| {
@@ -922,7 +927,7 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Circuit<Identifier> {
 			#[serde(flatten)]
 			info: MetaInfo<Identifier>,
 			/// textual content of the element
-			#[serde(default, alias = "$text")]
+			#[serde(default, deserialize_with = "IntExp::parse_vec", alias = "$text")]
 			simple: Vec<IntExp<Identifier>>,
 			/// <list> element
 			#[serde(default)]
@@ -960,36 +965,15 @@ impl<'de, Identifier: FromStr> Deserialize<'de> for Condition<Identifier> {
 			}
 
 			fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
 				let mut parser = delimited(
 					char('('),
-					separated_pair(
-						alt((
-							tag("lt"),
-							tag("le"),
-							tag("eq"),
-							tag("ge"),
-							tag("gt"),
-							tag("ne"),
-							tag("in"),
-						)),
-						char(','),
-						Exp::parse,
-					),
+					separated_pair(Operator::parse, char(','), Exp::parse),
 					char(')'),
 				);
 				let (_, (operator, operand)) = parser
 					.parse(v)
 					.map_err(|e| E::custom(format!("invalid condition {e:?}")))?;
-				let operator = match operator {
-					"lt" => Operator::Lt,
-					"le" => Operator::Le,
-					"eq" => Operator::Eq,
-					"ge" => Operator::Ge,
-					"gt" => Operator::Gt,
-					"ne" => Operator::Ne,
-					"in" => Operator::In,
-					_ => unreachable!(),
-				};
 				Ok(Condition { operator, operand })
 			}
 		}
@@ -1015,6 +999,56 @@ impl<Identifier> Default for OffsetList<Identifier> {
 			list: Vec::new(),
 			start_index: IntVal::default(),
 		}
+	}
+}
+
+impl Operator {
+	fn parse(input: &str) -> IResult<&str, Self> {
+		map(
+			alt((
+				tag("lt"),
+				tag("le"),
+				tag("eq"),
+				tag("ge"),
+				tag("gt"),
+				tag("ne"),
+				tag("in"),
+			)),
+			|op| match op {
+				"lt" => Self::Lt,
+				"le" => Self::Le,
+				"eq" => Self::Eq,
+				"ge" => Self::Ge,
+				"gt" => Self::Gt,
+				"ne" => Self::Ne,
+				"in" => Self::In,
+				_ => unreachable!(),
+			},
+		)
+		.parse(input)
+	}
+}
+
+impl<'de> Deserialize<'de> for Operator {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Operator, D::Error> {
+		/// Visitor for parsing a condition.
+		struct V;
+		impl Visitor<'_> for V {
+			type Value = Operator;
+
+			fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+				formatter.write_str("an operator")
+			}
+
+			fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+				let v = v.trim();
+				Ok(all_consuming(Operator::parse)
+					.parse(v)
+					.map_err(|e| E::custom(format!("invalid condition {e:?}")))?
+					.1)
+			}
+		}
+		deserializer.deserialize_str(V)
 	}
 }
 
@@ -1129,7 +1163,7 @@ impl<Identifier: FromStr> Transition<Identifier> {
 			}
 
 			fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-				eprintln!("{}", v);
+				let v = v.trim();
 				let transition = map(
 					(
 						char('('),

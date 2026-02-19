@@ -1,11 +1,11 @@
 # Finds mermaid code blocks and renders them
 
 import json
-import sys
 import re
+import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from subprocess import run
+from tempfile import TemporaryDirectory
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

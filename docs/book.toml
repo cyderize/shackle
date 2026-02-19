@@ -1,7 +1,6 @@
 [book]
 authors = ["Jip J. Dekker"]
 language = "en"
-multilingual = false
 src = "src"
 title = "The Shackle Almanac"
 
@@ -14,4 +13,4 @@ mathjax-support = false
 enable = true
 
 [preprocessor.mermaid]
-command = "python utils/mermaid.py"
+command = "python3 utils/mermaid.py"

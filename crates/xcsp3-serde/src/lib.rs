@@ -1015,7 +1015,6 @@ mod tests {
 			}
 		};
 	}
-	pub(crate) use test_file;
 
 	test_file!(knapsack);
 

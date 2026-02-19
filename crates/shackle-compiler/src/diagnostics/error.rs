@@ -1,5 +1,7 @@
 //! Error handling
 
+#![allow(unused_assignments)] // TODO: Workaround for https://github.com/rust-lang/rust/issues/147648
+
 use std::{
 	fmt::{Display, Formatter},
 	panic::Location,

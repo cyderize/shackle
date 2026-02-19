@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## unreleased
+
+### Changed
+
+- `FlatZinc` now has two additional (and optional) generic type parameters. These allow the user to specify the type in which the mapping from identifier to variable and from identifier to array is stored.
+
 ## [0.4.4] - 2025-11-06
 
 ### Changed

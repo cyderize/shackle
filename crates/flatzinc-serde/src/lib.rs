@@ -86,8 +86,9 @@ pub use rangelist::RangeList;
 use serde::{Deserialize, Serialize};
 
 use crate::encapsulate::{
-	deserialize_encapsulated_set, deserialize_encapsulated_string, deserialize_set,
-	serialize_encapsulate_set, serialize_encapsulate_string, serialize_set,
+	deserialize_encapsulated_set, deserialize_encapsulated_string, deserialize_key_value_object,
+	deserialize_set, serialize_encapsulate_set, serialize_encapsulate_string,
+	serialize_key_value_object, serialize_set,
 };
 mod encapsulate;
 
@@ -347,13 +348,33 @@ impl Display for Domain {
 /// result of instantiating the parameter variables of a MiniZinc model and
 /// generating a solver-specific equisatisfiable model.
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
-pub struct FlatZinc<Identifier: Ord = String> {
+pub struct FlatZinc<
+	Identifier = String,
+	VarMap = BTreeMap<Identifier, Variable<Identifier>>,
+	ArrayMap = BTreeMap<Identifier, Array<Identifier>>,
+> {
 	/// A mapping from decision variable `Identifier` to their definitions
-	#[serde(default)]
-	pub variables: BTreeMap<Identifier, Variable<Identifier>>,
+	#[serde(
+		default,
+		bound(
+			serialize = "Identifier: Serialize, for<'a> &'a VarMap: IntoIterator<Item = (&'a Identifier, &'a Variable<Identifier>)>",
+			deserialize = "Identifier: Deserialize<'de>, VarMap: FromIterator<(Identifier, Variable<Identifier>)>"
+		),
+		deserialize_with = "deserialize_key_value_object",
+		serialize_with = "serialize_key_value_object"
+	)]
+	pub variables: VarMap,
 	/// A mapping from array `Identifier` to their definitions
-	#[serde(default)]
-	pub arrays: BTreeMap<Identifier, Array<Identifier>>,
+	#[serde(
+		default,
+		bound(
+			serialize = "Identifier: Serialize, for<'a> &'a ArrayMap: IntoIterator<Item = (&'a Identifier, &'a Array<Identifier>)>",
+			deserialize = "Identifier: Deserialize<'de>, ArrayMap: FromIterator<(Identifier, Array<Identifier>)>"
+		),
+		deserialize_with = "deserialize_key_value_object",
+		serialize_with = "serialize_key_value_object"
+	)]
+	pub arrays: ArrayMap,
 	/// A list of (solver-specific) constraints, that must be satisfied in a solution.
 	#[serde(default)]
 	pub constraints: Vec<Constraint<Identifier>>,
@@ -367,11 +388,15 @@ pub struct FlatZinc<Identifier: Ord = String> {
 	pub version: String,
 }
 
-impl<Identifier: Ord> Default for FlatZinc<Identifier> {
+impl<Identifier, VarMap, ArrayMap> Default for FlatZinc<Identifier, VarMap, ArrayMap>
+where
+	VarMap: Default,
+	ArrayMap: Default,
+{
 	fn default() -> Self {
 		Self {
 			variables: Default::default(),
-			arrays: BTreeMap::new(),
+			arrays: Default::default(),
 			constraints: Vec::new(),
 			output: Default::default(),
 			solve: Default::default(),
@@ -628,7 +653,7 @@ pub struct Variable<Identifier = String> {
 #[cfg(test)]
 mod tests {
 	use std::{
-		collections::BTreeMap,
+		collections::{BTreeMap, HashMap},
 		fs::File,
 		io::{BufReader, Read},
 		path::Path,
@@ -692,6 +717,56 @@ mod tests {
 		let fzn: FlatZinc<Ustr> = serde_json::from_reader(rdr).unwrap();
 		expect_test::expect_file!["../corpus/documentation_example.debug_ustr.txt"]
 			.assert_debug_eq(&fzn)
+	}
+
+	#[test]
+	fn test_hashmap_backed_maps_deserialize() {
+		type HashMapFlatZinc =
+			FlatZinc<String, HashMap<String, Variable<String>>, HashMap<String, Array<String>>>;
+
+		let mut rdr = BufReader::new(
+			File::open(Path::new("./corpus/documentation_example.fzn.json")).unwrap(),
+		);
+		let mut content = String::new();
+		let _ = rdr.read_to_string(&mut content).unwrap();
+
+		let fzn: HashMapFlatZinc = serde_json::from_str(&content).unwrap();
+
+		let fzn2: HashMapFlatZinc = {
+			let json = serde_json::to_string(&fzn).unwrap();
+			serde_json::from_str(&json).unwrap()
+		};
+		assert_eq!(fzn, fzn2);
+	}
+
+	#[test]
+	fn test_vec_backed_maps_deserialize_from_object_shape() {
+		type VecFlatZinc =
+			FlatZinc<String, Vec<(String, Variable<String>)>, Vec<(String, Array<String>)>>;
+
+		let mut rdr = BufReader::new(
+			File::open(Path::new("./corpus/documentation_example.fzn.json")).unwrap(),
+		);
+		let mut content = String::new();
+		let _ = rdr.read_to_string(&mut content).unwrap();
+
+		let fzn: VecFlatZinc = serde_json::from_str(&content).unwrap();
+		assert!(!fzn.variables.is_empty());
+		assert!(!fzn.arrays.is_empty());
+	}
+
+	#[test]
+	fn test_default_with_custom_map_types() {
+		let fzn = FlatZinc::<
+			String,
+			HashMap<String, Variable<String>>,
+			Vec<(String, Array<String>)>,
+		>::default();
+		assert!(fzn.variables.is_empty());
+		assert!(fzn.arrays.is_empty());
+		assert!(fzn.constraints.is_empty());
+		assert!(fzn.output.is_empty());
+		assert_eq!(fzn.version, "1.0");
 	}
 
 	#[test]

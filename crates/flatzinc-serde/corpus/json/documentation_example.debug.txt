@@ -1,9 +1,8 @@
 FlatZinc {
     variables: {
-        u!("X_INTRODUCED_0_"): Variable {
-            ty: Int,
-            domain: Some(
-                Int(
+        "X_INTRODUCED_0_": Variable {
+            ty: Int(
+                Some(
                     RangeList::from(0..=85000),
                 ),
             ),
@@ -12,10 +11,9 @@ FlatZinc {
             defined: true,
             introduced: false,
         },
-        u!("b"): Variable {
-            ty: Int,
-            domain: Some(
-                Int(
+        "b": Variable {
+            ty: Int(
+                Some(
                     RangeList::from(0..=3),
                 ),
             ),
@@ -24,10 +22,9 @@ FlatZinc {
             defined: false,
             introduced: false,
         },
-        u!("c"): Variable {
-            ty: Int,
-            domain: Some(
-                Int(
+        "c": Variable {
+            ty: Int(
+                Some(
                     RangeList::from(0..=6),
                 ),
             ),
@@ -38,7 +35,7 @@ FlatZinc {
         },
     },
     arrays: {
-        u!("X_INTRODUCED_2_"): Array {
+        "X_INTRODUCED_2_": Array {
             contents: [
                 Int(
                     250,
@@ -51,7 +48,7 @@ FlatZinc {
             defined: false,
             introduced: false,
         },
-        u!("X_INTRODUCED_6_"): Array {
+        "X_INTRODUCED_6_": Array {
             contents: [
                 Int(
                     75,
@@ -64,7 +61,7 @@ FlatZinc {
             defined: false,
             introduced: false,
         },
-        u!("X_INTRODUCED_8_"): Array {
+        "X_INTRODUCED_8_": Array {
             contents: [
                 Int(
                     100,
@@ -80,20 +77,20 @@ FlatZinc {
     },
     constraints: [
         Constraint {
-            id: u!("int_lin_le"),
+            id: "int_lin_le",
             args: [
                 Literal(
                     Identifier(
-                        u!("X_INTRODUCED_2_"),
+                        "X_INTRODUCED_2_",
                     ),
                 ),
                 Array(
                     [
                         Identifier(
-                            u!("b"),
+                            "b",
                         ),
                         Identifier(
-                            u!("c"),
+                            "c",
                         ),
                     ],
                 ),
@@ -107,20 +104,20 @@ FlatZinc {
             ann: [],
         },
         Constraint {
-            id: u!("int_lin_le"),
+            id: "int_lin_le",
             args: [
                 Literal(
                     Identifier(
-                        u!("X_INTRODUCED_6_"),
+                        "X_INTRODUCED_6_",
                     ),
                 ),
                 Array(
                     [
                         Identifier(
-                            u!("b"),
+                            "b",
                         ),
                         Identifier(
-                            u!("c"),
+                            "c",
                         ),
                     ],
                 ),
@@ -134,20 +131,20 @@ FlatZinc {
             ann: [],
         },
         Constraint {
-            id: u!("int_lin_le"),
+            id: "int_lin_le",
             args: [
                 Literal(
                     Identifier(
-                        u!("X_INTRODUCED_8_"),
+                        "X_INTRODUCED_8_",
                     ),
                 ),
                 Array(
                     [
                         Identifier(
-                            u!("b"),
+                            "b",
                         ),
                         Identifier(
-                            u!("c"),
+                            "c",
                         ),
                     ],
                 ),
@@ -161,7 +158,7 @@ FlatZinc {
             ann: [],
         },
         Constraint {
-            id: u!("int_lin_eq"),
+            id: "int_lin_eq",
             args: [
                 Array(
                     [
@@ -179,13 +176,13 @@ FlatZinc {
                 Array(
                     [
                         Identifier(
-                            u!("b"),
+                            "b",
                         ),
                         Identifier(
-                            u!("c"),
+                            "c",
                         ),
                         Identifier(
-                            u!("X_INTRODUCED_0_"),
+                            "X_INTRODUCED_0_",
                         ),
                     ],
                 ),
@@ -196,24 +193,23 @@ FlatZinc {
                 ),
             ],
             defines: Some(
-                u!("X_INTRODUCED_0_"),
+                "X_INTRODUCED_0_",
             ),
             ann: [
                 Atom(
-                    u!("ctx_pos"),
+                    "ctx_pos",
                 ),
             ],
         },
     ],
     output: [
-        u!("b"),
-        u!("c"),
+        "b",
+        "c",
     ],
     solve: SolveObjective {
-        method: Maximize,
-        objective: Some(
+        method: Maximize(
             Identifier(
-                u!("X_INTRODUCED_0_"),
+                "X_INTRODUCED_0_",
             ),
         ),
         ann: [],

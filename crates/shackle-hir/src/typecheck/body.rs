@@ -11,9 +11,7 @@ use shackle_utils::arena::ArenaMap;
 
 use crate::{
 	Db, Expression, ExpressionId, Item, Pattern, PatternId, PatternTy, TypeContext, Typer,
-	constants::IdentifierRegistry,
-	diagnostics::Errors,
-	ids::{ExpressionRef, PatternRef},
+	constants::IdentifierRegistry, diagnostics::Errors, ids::PatternRef,
 };
 
 /// Collected types for an item body
@@ -88,7 +86,7 @@ impl<'db> BodyTypeContext<'db> {
 				}
 				for param in it.parameters.iter() {
 					if let Some(p) = param.pattern {
-						let param_ty = match &signature.patterns[&PatternRef::new(db, item, p)] {
+						let param_ty = match &signature.patterns[&p] {
 							PatternTy::Argument(t) | PatternTy::Destructuring(t) => *t,
 							_ => unreachable!(),
 						};
@@ -99,7 +97,7 @@ impl<'db> BodyTypeContext<'db> {
 				}
 
 				if let Some(e) = it.body {
-					match &signature.patterns[&PatternRef::new(db, item, it.pattern)] {
+					match &signature.patterns[&it.pattern] {
 						PatternTy::Function(function) => {
 							let _ = typer.typecheck_expression(e, function.overload.return_type());
 						}
@@ -110,7 +108,7 @@ impl<'db> BodyTypeContext<'db> {
 			Item::Declaration(d) => {
 				let it = d.declaration(db);
 				let signature = item.signature(db);
-				let expected = match &signature.patterns[&PatternRef::new(db, item, it.pattern)] {
+				let expected = match &signature.patterns[&it.pattern] {
 					PatternTy::Variable(t) | PatternTy::Destructuring(t) => *t,
 					_ => unreachable!(),
 				};
@@ -161,7 +159,7 @@ impl<'db> BodyTypeContext<'db> {
 			Item::Enumeration(e) => {
 				let it = e.enumeration(db);
 				let signature = item.signature(db);
-				let ty = match &signature.patterns[&PatternRef::new(db, item, it.pattern)] {
+				let ty = match &signature.patterns[&it.pattern] {
 					PatternTy::Enum(t) => *t,
 					_ => unreachable!(),
 				};
@@ -195,47 +193,40 @@ impl<'db> BodyTypeContext<'db> {
 impl<'db> TypeContext<'db> for BodyTypeContext<'db> {
 	fn add_declaration(
 		&mut self,
-		db: &'db dyn Db,
-		pattern: PatternRef<'db>,
+		_db: &'db dyn Db,
+		pattern: PatternId<'db>,
 		declaration: PatternTy<'db>,
 	) {
-		assert_eq!(pattern.item(db), self.item);
-		let pat = pattern.pattern(db);
 		assert!(
 			matches!(
-				self.data.patterns.get(pat),
+				self.data.patterns.get(pattern),
 				None | Some(PatternTy::Computing)
 			),
 			"Tried to add declaration for {:?} twice",
 			pattern
 		);
-		self.data.patterns.insert(pat, declaration);
+		self.data.patterns.insert(pattern, declaration);
 	}
 
-	fn add_expression(&mut self, db: &'db dyn Db, expression: ExpressionRef<'db>, ty: Ty<'db>) {
-		assert_eq!(expression.item(db), self.item);
+	fn add_expression(&mut self, _db: &'db dyn Db, expression: ExpressionId<'db>, ty: Ty<'db>) {
 		assert!(
-			self.data
-				.expressions
-				.get(expression.expression(db))
-				.is_none(),
+			self.data.expressions.get(expression).is_none(),
 			"Tried to add type for expression {:?} twice",
 			expression
 		);
-		self.data.expressions.insert(expression.expression(db), ty);
+		self.data.expressions.insert(expression, ty);
 	}
 
 	fn add_identifier_resolution(
 		&mut self,
-		db: &'db dyn Db,
-		expression: ExpressionRef<'db>,
+		_db: &'db dyn Db,
+		expression: ExpressionId<'db>,
 		resolution: PatternRef<'db>,
 	) {
-		assert_eq!(expression.item(db), self.item);
 		let old = self
 			.data
 			.identifier_resolution
-			.insert(expression.expression(db), resolution);
+			.insert(expression, resolution);
 		assert!(
 			old.is_none(),
 			"Tried to add identifier resolution for {:?} twice",
@@ -245,15 +236,11 @@ impl<'db> TypeContext<'db> for BodyTypeContext<'db> {
 
 	fn add_pattern_resolution(
 		&mut self,
-		db: &'db dyn Db,
-		pattern: PatternRef<'db>,
+		_db: &'db dyn Db,
+		pattern: PatternId<'db>,
 		resolution: PatternRef<'db>,
 	) {
-		assert_eq!(pattern.item(db), self.item);
-		let old = self
-			.data
-			.pattern_resolution
-			.insert(pattern.pattern(db), resolution);
+		let old = self.data.pattern_resolution.insert(pattern, resolution);
 		assert!(
 			old.is_none(),
 			"Tried to add pattern resolution for {:?} twice",
@@ -270,10 +257,11 @@ impl<'db> TypeContext<'db> for BodyTypeContext<'db> {
 	fn type_pattern(&mut self, db: &'db dyn Db, pattern: PatternRef<'db>) -> PatternTy<'db> {
 		let item = pattern.item(db);
 		if item == self.item
-			&& let Some(d) = self.data.patterns.get(pattern.pattern(db)) {
-				return d.clone();
-			}
+			&& let Some(d) = self.data.patterns.get(pattern.pattern(db))
+		{
+			return d.clone();
+		}
 		let signature = item.signature(db);
-		signature.patterns[&pattern].clone()
+		signature.patterns[&pattern.pattern(db)].clone()
 	}
 }

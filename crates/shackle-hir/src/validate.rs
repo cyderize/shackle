@@ -34,7 +34,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 		let mut enum_constructors = Vec::new();
 		for p in ps.iter() {
 			let signature = p.item(db).signature(db);
-			match &signature.patterns[p] {
+			match &signature.patterns[&p.pattern(db)] {
 				PatternTy::Function(f) | PatternTy::AnnotationDestructure(f) => {
 					overloads.push((*p, *f.clone()));
 				}
@@ -154,13 +154,14 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 								let mut v = Vec::new();
 								let resolved_item = p.item(db);
 								if let Item::Declaration(d) = resolved_item
-									&& let Some(def) = d.declaration(db).definition {
-										v.push(
-											ExpressionRef::new(db, resolved_item, def)
-												.into_entity(db)
-												.into(),
-										);
-									}
+									&& let Some(def) = d.declaration(db).definition
+								{
+									v.push(
+										ExpressionRef::new(db, resolved_item, def)
+											.into_entity(db)
+											.into(),
+									);
+								}
 								v.push((*it).into());
 								let _ = e.insert(v);
 							}
@@ -179,9 +180,10 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 								let mut v = Vec::new();
 								let resolved_item = p.item(db);
 								if let Item::Enumeration(e) = resolved_item
-									&& e.enumeration(db).definition.is_some() {
-										v.push(p.into_entity(db).into());
-									}
+									&& e.enumeration(db).definition.is_some()
+								{
+									v.push(p.into_entity(db).into());
+								}
 								v.push((*it).into());
 								let _ = e.insert(v);
 							}

@@ -20,12 +20,6 @@
 //! may require signatures to be typed, and these in turn may require other
 //! signatures to be typed, but never other bodies.
 //!
-//! Typing signatures does not cause types of signatures it depends on to be
-//! queried from the database, as this can create cycles, which cannot be
-//! recovered from in a useful way. The types of dependent signatures are
-//! always computed, so there is some redundant recomputation, but the effect
-//! is minimal.
-//!
 //! The `SignatureTypeContext` and `BodyTypeContext` structs implement the
 //! `TypeContext` trait, which allows them to both use the `Typer` struct to
 //! perform type-checking of expressions.
@@ -43,7 +37,7 @@ mod typer;
 pub use self::{body::*, signature::*, typer::*};
 use crate::{
 	Db, Expression, ExpressionId, Item, ItemData, Model, Pattern, PatternId,
-	ids::{EntityId, ExpressionRef, PatternRef},
+	ids::{EntityId, PatternRef},
 	input::resolve_includes,
 };
 
@@ -87,7 +81,6 @@ impl<'db> Item<'db> {
 #[derive(Clone)]
 pub struct TypeResult<'db> {
 	db: &'db dyn Db,
-	item: Item<'db>,
 	body: &'db BodyTypes<'db>,
 	signature: Option<&'db SignatureTypes<'db>>,
 }
@@ -98,13 +91,11 @@ impl<'db> TypeResult<'db> {
 		match item {
 			Item::Assignment(_) | Item::Constraint(_) | Item::Output(_) => TypeResult {
 				db,
-				item,
 				body: item.body_types(db),
 				signature: None,
 			},
 			_ => TypeResult {
 				db,
-				item,
 				body: item.body_types(db),
 				signature: Some(item.signature(db)),
 			},
@@ -117,12 +108,10 @@ impl<'db> TypeResult<'db> {
 			return Some(*t);
 		}
 		if let Some(b) = &self.signature
-			&& let Some(t) = b
-				.identifier_resolution
-				.get(&ExpressionRef::new(self.db, self.item, index))
-			{
-				return Some(*t);
-			}
+			&& let Some(t) = b.identifier_resolution.get(&index)
+		{
+			return Some(*t);
+		}
 		None
 	}
 
@@ -132,19 +121,16 @@ impl<'db> TypeResult<'db> {
 			return Some(*t);
 		}
 		if let Some(b) = &self.signature
-			&& let Some(t) = b
-				.pattern_resolution
-				.get(&PatternRef::new(self.db, self.item, index))
-			{
-				return Some(*t);
-			}
+			&& let Some(t) = b.pattern_resolution.get(&index)
+		{
+			return Some(*t);
+		}
 		None
 	}
 
 	/// Get the entities from this item which resolve to the given patter
 	pub fn reverse_resolutions(
 		&self,
-		db: &'db dyn Db,
 		pattern: PatternRef<'db>,
 	) -> impl Iterator<Item = EntityId<'db>> {
 		self.body
@@ -174,8 +160,8 @@ impl<'db> TypeResult<'db> {
 					.identifier_resolution
 					.iter()
 					.filter_map(move |(src, dst)| {
-						if *dst == pattern && src.item(db) == self.item {
-							Some(EntityId::from(src.expression(db)))
+						if *dst == pattern {
+							Some(EntityId::from(*src))
 						} else {
 							None
 						}
@@ -185,8 +171,8 @@ impl<'db> TypeResult<'db> {
 							.pattern_resolution
 							.iter()
 							.filter_map(move |(src, dst)| {
-								if *dst == pattern && src.item(db) == self.item {
-									Some(EntityId::from(src.pattern(db)))
+								if *dst == pattern {
+									Some(EntityId::from(*src))
 								} else {
 									None
 								}
@@ -201,12 +187,10 @@ impl<'db> TypeResult<'db> {
 			return Some(d);
 		}
 		if let Some(b) = &self.signature
-			&& let Some(d) = b
-				.patterns
-				.get(&PatternRef::new(self.db, self.item, pattern))
-			{
-				return Some(d);
-			}
+			&& let Some(d) = b.patterns.get(&pattern)
+		{
+			return Some(d);
+		}
 		None
 	}
 
@@ -216,12 +200,10 @@ impl<'db> TypeResult<'db> {
 			return Some(*t);
 		}
 		if let Some(b) = &self.signature
-			&& let Some(t) = b
-				.expressions
-				.get(&ExpressionRef::new(self.db, self.item, expression))
-			{
-				return Some(*t);
-			}
+			&& let Some(t) = b.expressions.get(&expression)
+		{
+			return Some(*t);
+		}
 		None
 	}
 
@@ -233,16 +215,17 @@ impl<'db> TypeResult<'db> {
 	) -> Option<String> {
 		let ty = self.get_expression(expression)?;
 		if let Expression::Identifier(i) = data[expression]
-			&& let TyData::Function(opt, function) = ty.lookup(self.db) {
-				// Pretty print functions using item-like syntax if possible
-				return Some(
-					opt.pretty_print()
-						.into_iter()
-						.chain([function.pretty_print_item(self.db, i)])
-						.collect::<Vec<_>>()
-						.join(" "),
-				);
-			}
+			&& let TyData::Function(opt, function) = ty.lookup(self.db)
+		{
+			// Pretty print functions using item-like syntax if possible
+			return Some(
+				opt.pretty_print()
+					.into_iter()
+					.chain([function.pretty_print_item(self.db, i)])
+					.collect::<Vec<_>>()
+					.join(" "),
+			);
+		}
 		Some(ty.pretty_print(self.db))
 	}
 
@@ -326,88 +309,67 @@ impl<'db> Index<ExpressionId<'db>> for TypeResult<'db> {
 			return t;
 		}
 		if let Some(b) = &self.signature
-			&& let Some(t) = b
-				.expressions
-				.get(&ExpressionRef::new(self.db, self.item, index))
-			{
-				return t;
-			}
+			&& let Some(t) = b.expressions.get(&index)
+		{
+			return t;
+		}
 		unreachable!("No type for expression {:?}", index)
 	}
 }
 
 impl<'db> std::fmt::Debug for TypeResult<'db> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		crate::db::with_attached_database(|db| {
-			let patterns = self
-				.body
-				.patterns
-				.iter()
-				.chain(self.signature.iter().flat_map(|ts| {
-					ts.patterns.iter().filter_map(|(p, d)| {
-						if p.item(db) == self.item {
-							Some((p.pattern(db), d))
-						} else {
-							None
-						}
-					})
-				}))
-				.collect::<ArenaMap<_, _>>();
-			let expressions = self
-				.body
-				.expressions
-				.iter()
-				.chain(self.signature.iter().flat_map(|ts| {
-					ts.expressions.iter().filter_map(|(e, t)| {
-						if e.item(db) == self.item {
-							Some((e.expression(db), t))
-						} else {
-							None
-						}
-					})
-				}))
-				.collect::<ArenaMap<_, _>>();
+		let patterns = self
+			.body
+			.patterns
+			.iter()
+			.chain(
+				self.signature
+					.iter()
+					.flat_map(|ts| ts.patterns.iter().map(|(p, d)| (*p, d))),
+			)
+			.collect::<ArenaMap<_, _>>();
+		let expressions = self
+			.body
+			.expressions
+			.iter()
+			.chain(
+				self.signature
+					.iter()
+					.flat_map(|ts| ts.expressions.iter().map(|(e, t)| (*e, t))),
+			)
+			.collect::<ArenaMap<_, _>>();
 
-			let identifier_resolutions = self
-				.body
-				.identifier_resolution
-				.iter()
-				.map(|(e, t)| (*e, t))
-				.chain(self.signature.iter().flat_map(|ts| {
-					ts.identifier_resolution.iter().filter_map(|(k, v)| {
-						if k.item(db) == self.item {
-							Some((k.expression(db), v))
-						} else {
-							None
-						}
-					})
-				}))
-				.collect::<ArenaMap<_, _>>();
+		let identifier_resolutions = self
+			.body
+			.identifier_resolution
+			.iter()
+			.map(|(e, t)| (*e, t))
+			.chain(
+				self.signature
+					.iter()
+					.flat_map(|ts| ts.identifier_resolution.iter().map(|(k, v)| (*k, v))),
+			)
+			.collect::<ArenaMap<_, _>>();
 
-			let pattern_resolutions = self
-				.body
-				.pattern_resolution
-				.iter()
-				.map(|(e, t)| (*e, t))
-				.chain(self.signature.iter().flat_map(|ts| {
-					ts.pattern_resolution.iter().filter_map(|(k, v)| {
-						if k.item(db) == self.item {
-							Some((k.pattern(db), v))
-						} else {
-							None
-						}
-					})
-				}))
-				.collect::<ArenaMap<_, _>>();
+		let pattern_resolutions = self
+			.body
+			.pattern_resolution
+			.iter()
+			.map(|(e, t)| (*e, t))
+			.chain(
+				self.signature
+					.iter()
+					.flat_map(|ts| ts.pattern_resolution.iter().map(|(k, v)| (*k, v))),
+			)
+			.collect::<ArenaMap<_, _>>();
 
-			f.debug_struct("TypeResult")
-				.field("patterns", &patterns)
-				.field("expressions", &expressions)
-				.field("identifier_resolutions", &identifier_resolutions)
-				.field("pattern_resolutions", &pattern_resolutions)
-				.finish()
-		})
-		.unwrap_or_else(|| f.debug_struct("TypeResult").finish())
+		f.debug_struct("TypeResult")
+			.field("patterns", &patterns)
+			.field("expressions", &expressions)
+			.field("identifier_resolutions", &identifier_resolutions)
+			.field("pattern_resolutions", &pattern_resolutions)
+			.finish()
 	}
 }
 
@@ -419,23 +381,23 @@ pub trait TypeContext<'db> {
 	fn add_declaration(
 		&mut self,
 		db: &'db dyn Db,
-		pattern: PatternRef<'db>,
+		pattern: PatternId<'db>,
 		declaration: PatternTy<'db>,
 	);
 	/// Add a type for an expression
-	fn add_expression(&mut self, db: &'db dyn Db, expression: ExpressionRef<'db>, ty: Ty<'db>);
+	fn add_expression(&mut self, db: &'db dyn Db, expression: ExpressionId<'db>, ty: Ty<'db>);
 	/// Add identifier resolution
 	fn add_identifier_resolution(
 		&mut self,
 		db: &'db dyn Db,
-		expression: ExpressionRef<'db>,
+		expression: ExpressionId<'db>,
 		resolution: PatternRef<'db>,
 	);
 	/// Add pattern resolution
 	fn add_pattern_resolution(
 		&mut self,
 		db: &'db dyn Db,
-		pattern: PatternRef<'db>,
+		pattern: PatternId<'db>,
 		resolution: PatternRef<'db>,
 	);
 	/// Add an error

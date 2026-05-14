@@ -205,7 +205,7 @@ impl<'db> TopoSorter<'db> {
 				let ps = GlobalScope::find_function(self.db, name);
 				for p in ps.iter() {
 					let signature = p.item(self.db).signature(self.db);
-					match &signature.patterns[p] {
+					match &signature.patterns[&p.pattern(self.db)] {
 						PatternTy::Function(f)
 						| PatternTy::AnnotationConstructor(f)
 						| PatternTy::AnnotationDestructure(f) => {
@@ -226,7 +226,7 @@ impl<'db> TopoSorter<'db> {
 				}
 				let p = PatternRef::new(self.db, item, function.pattern);
 				let types = item.signature(self.db);
-				match &types.patterns[&p] {
+				match &types.patterns[&p.pattern(self.db)] {
 					PatternTy::Function(f) => {
 						let (is_self, _, _) =
 							FunctionEntry::match_fn(self.db, overloads, f.overload.params())
@@ -241,7 +241,7 @@ impl<'db> TopoSorter<'db> {
 							let ps = GlobalScope::find_function(self.db, name.root(self.db));
 							for p in ps.iter() {
 								let signature = p.item(self.db).signature(self.db);
-								let matches = match &signature.patterns[p] {
+								let matches = match &signature.patterns[&p.pattern(self.db)] {
 									PatternTy::Function(fe) => {
 										fe.overload.params().len() == f.overload.params().len()
 									}

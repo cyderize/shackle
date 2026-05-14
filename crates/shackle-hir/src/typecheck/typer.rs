@@ -155,8 +155,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			Expression::Slice(_) => self.types.set_of_bottom,
 			Expression::Missing => self.types.error,
 		};
-		self.ctx
-			.add_expression(db, ExpressionRef::new(db, self.item, expr), result);
+		self.ctx.add_expression(db, expr, result);
 		self.collect_annotations(expr, result);
 		result
 	}
@@ -206,8 +205,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 	) -> Ty<'db> {
 		let db = self.db;
 		if let Some(p) = self.find_variable(expr, *i) {
-			let expression = ExpressionRef::new(db, self.item, expr);
-			self.ctx.add_identifier_resolution(db, expression, p);
+			self.ctx.add_identifier_resolution(db, expr, p);
 			match self.ctx.type_pattern(db, p) {
 				PatternTy::Variable(ty) => {
 					if self.in_output_item && p.item(db) != self.item {
@@ -273,11 +271,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 								});
 						if has_annotated_expression {
 							let ret = fe.overload.instantiate(db, &t).return_type;
-							self.ctx.add_identifier_resolution(
-								db,
-								ExpressionRef::new(db, self.item, expr),
-								p,
-							);
+							self.ctx.add_identifier_resolution(db, expr, p);
 							return ret;
 						}
 					}
@@ -625,11 +619,8 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					self.types.error
 				}
 			};
-			self.ctx.add_declaration(
-				db,
-				PatternRef::new(db, self.item, *i),
-				PatternTy::RecordField(field_ty),
-			);
+			self.ctx
+				.add_declaration(db, *i, PatternTy::RecordField(field_ty));
 		}
 		Ty::record(db, fields)
 	}
@@ -1275,11 +1266,8 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				self.types.error
 			}
 		};
-		self.ctx.add_declaration(
-			db,
-			PatternRef::new(db, self.item, ra.field),
-			PatternTy::RecordField(ty),
-		);
+		self.ctx
+			.add_declaration(db, ra.field, PatternTy::RecordField(ty));
 		ty
 	}
 
@@ -1516,11 +1504,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 	/// Type check a declaration
 	pub fn collect_declaration(&mut self, d: &Declaration<'db>) -> Ty<'db> {
 		for p in Pattern::identifiers(d.pattern, self.data) {
-			self.ctx.add_declaration(
-				self.db,
-				PatternRef::new(self.db, self.item, p),
-				PatternTy::Computing,
-			);
+			self.ctx.add_declaration(self.db, p, PatternTy::Computing);
 		}
 		let ty = if let Some(e) = d.definition {
 			let actual = self.collect_expression(e);
@@ -1594,8 +1578,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				},
 			);
 		}
-		self.ctx
-			.add_expression(db, ExpressionRef::new(db, self.item, ann), actual);
+		self.ctx.add_expression(db, ann, actual);
 		self.collect_annotations(ann, actual);
 	}
 
@@ -1607,8 +1590,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			.filter_map(|param| param.pattern)
 			.flat_map(|p| Pattern::identifiers(p, self.data))
 		{
-			self.ctx
-				.add_declaration(db, PatternRef::new(db, self.item, p), PatternTy::Computing);
+			self.ctx.add_declaration(db, p, PatternTy::Computing);
 		}
 		let params = l
 			.parameters
@@ -1672,11 +1654,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 		let db = self.db;
 		let error = (self.types.error, self.types.error);
 		if args.iter().any(|t| t.contains_error(db)) {
-			self.ctx.add_expression(
-				db,
-				ExpressionRef::new(db, self.item, expr),
-				self.types.error,
-			);
+			self.ctx.add_expression(db, expr, self.types.error);
 			return error;
 		}
 
@@ -1748,10 +1726,8 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				}
 				let ret = f.return_type;
 				let op = Ty::function(db, f);
-				self.ctx
-					.add_expression(db, ExpressionRef::new(db, self.item, expr), op);
-				self.ctx
-					.add_identifier_resolution(db, ExpressionRef::new(db, self.item, expr), p);
+				self.ctx.add_expression(db, expr, op);
+				self.ctx.add_identifier_resolution(db, expr, p);
 				return (op, ret);
 			}
 		}
@@ -1772,11 +1748,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					),
 				},
 			);
-			self.ctx.add_expression(
-				db,
-				ExpressionRef::new(db, self.item, expr),
-				self.types.error,
-			);
+			self.ctx.add_expression(db, expr, self.types.error);
 			return error;
 		}
 
@@ -1798,11 +1770,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 		}
 
 		if overloads.is_empty() {
-			self.ctx.add_expression(
-				db,
-				ExpressionRef::new(db, self.item, expr),
-				self.types.error,
-			);
+			self.ctx.add_expression(db, expr, self.types.error);
 			return error;
 		}
 
@@ -1842,13 +1810,8 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				let instantiation = fe.overload.instantiate(db, &tvs);
 				let ret = instantiation.return_type;
 				let op = Ty::function(db, instantiation);
-				self.ctx
-					.add_expression(db, ExpressionRef::new(db, self.item, expr), op);
-				self.ctx.add_identifier_resolution(
-					db,
-					ExpressionRef::new(db, self.item, expr),
-					pattern,
-				);
+				self.ctx.add_expression(db, expr, op);
+				self.ctx.add_identifier_resolution(db, expr, pattern);
 				(op, ret)
 			}
 			Err(FunctionResolutionError::AmbiguousOverloading(ps)) => {
@@ -1870,11 +1833,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				let (src, span) = ExpressionRef::new(db, self.item, expr).source_span(db);
 				self.ctx
 					.add_diagnostic(db, self.item, AmbiguousCall { src, span, msg });
-				self.ctx.add_expression(
-					db,
-					ExpressionRef::new(db, self.item, expr),
-					self.types.error,
-				);
+				self.ctx.add_expression(db, expr, self.types.error);
 				error
 			}
 			Err(FunctionResolutionError::NoMatchingFunction(es)) => {
@@ -1954,11 +1913,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				let (src, span) = ExpressionRef::new(db, self.item, expr).source_span(db);
 				self.ctx
 					.add_diagnostic(db, self.item, NoMatchingFunction { src, span, msg });
-				self.ctx.add_expression(
-					db,
-					ExpressionRef::new(db, self.item, expr),
-					self.types.error,
-				);
+				self.ctx.add_expression(db, expr, self.types.error);
 				error
 			}
 		}
@@ -1989,19 +1944,11 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 						let p = self.find_variable(scope?, *i)?;
 						match self.ctx.type_pattern(db, p) {
 							PatternTy::EnumAtom(ty) => {
-								self.ctx.add_pattern_resolution(
-									db,
-									PatternRef::new(db, self.item, pat),
-									p,
-								);
+								self.ctx.add_pattern_resolution(db, pat, p);
 								Some(ty)
 							}
 							PatternTy::AnnotationAtom => {
-								self.ctx.add_pattern_resolution(
-									db,
-									PatternRef::new(db, self.item, pat),
-									p,
-								);
+								self.ctx.add_pattern_resolution(db, pat, p);
 								Some(self.types.ann)
 							}
 							_ => None,
@@ -2016,7 +1963,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					// This pattern declares a new variable
 					self.ctx.add_declaration(
 						db,
-						PatternRef::new(db, self.item, pat),
+						pat,
 						if is_argument {
 							PatternTy::Argument(expected)
 						} else {
@@ -2120,8 +2067,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					) {
 						let _ = self.collect_pattern(scope, resolves_atoms, *p, t, is_argument);
 					}
-					let fn_pat = PatternRef::new(db, self.item, *function);
-					self.ctx.add_pattern_resolution(db, fn_pat, ctor_pat);
+					self.ctx.add_pattern_resolution(db, *function, ctor_pat);
 					let ctor_type = c.overload.clone().into_function().unwrap();
 					let dtor_type = FunctionType {
 						params: Box::new([ctor_type.return_type]),
@@ -2133,7 +2079,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					};
 					self.ctx.add_declaration(
 						db,
-						fn_pat,
+						*function,
 						PatternTy::DestructuringFn {
 							constructor: Ty::function(db, ctor_type),
 							destructor: Ty::function(db, dtor_type),
@@ -2224,11 +2170,8 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				),
 			},
 		};
-		self.ctx.add_declaration(
-			db,
-			PatternRef::new(db, self.item, pat),
-			PatternTy::Destructuring(actual),
-		);
+		self.ctx
+			.add_declaration(db, pat, PatternTy::Destructuring(actual));
 		if !actual.is_subtype_of(db, expected) {
 			let (src, span) = PatternRef::new(db, self.item, pat).source_span(db);
 			self.ctx.add_diagnostic(
@@ -2367,8 +2310,7 @@ supported in operation types."
 				let mut ty = match &self.data[*domain] {
 					Expression::Identifier(i) => {
 						if let Some(p) = self.find_variable(*domain, *i) {
-							let domain_ref = ExpressionRef::new(db, self.item, *domain);
-							self.ctx.add_identifier_resolution(db, domain_ref, p);
+							self.ctx.add_identifier_resolution(db, *domain, p);
 							match self.ctx.type_pattern(db, p) {
 								PatternTy::TypeAlias {
 									ty,
@@ -2387,7 +2329,7 @@ supported in operation types."
 									match ty.lookup(db) {
 										TyData::Set(VarType::Par, OptType::NonOpt, inner) => {
 											set_bounded(self, *domain);
-											self.ctx.add_expression(db, domain_ref, ty);
+											self.ctx.add_expression(db, *domain, ty);
 											*inner
 										}
 										TyData::Error => self.types.error,
@@ -2415,7 +2357,7 @@ supported in operation types."
 									TyData::Set(VarType::Par, OptType::NonOpt, inner) => {
 										// Don't set has_bounded or has_unbounded as enums are accepted
 										// everywhere
-										self.ctx.add_expression(db, domain_ref, ty);
+										self.ctx.add_expression(db, *domain, ty);
 										*inner
 									}
 									TyData::Error => self.types.error,
@@ -2647,11 +2589,8 @@ supported in operation types."
 							has_unbounded,
 						);
 
-						self.ctx.add_declaration(
-							db,
-							PatternRef::new(db, self.item, p),
-							PatternTy::RecordField(field_ty),
-						);
+						self.ctx
+							.add_declaration(db, p, PatternTy::RecordField(field_ty));
 
 						(i, field_ty)
 					}),

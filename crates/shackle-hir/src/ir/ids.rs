@@ -92,7 +92,7 @@ impl<'db> PatternRef<'db> {
 		let mut result = Vec::new();
 		for model in resolve_includes(db).iter() {
 			for reference_item in model.hir(db).items(db).iter() {
-				for reference in reference_item.types(db).reverse_resolutions(db, *self) {
+				for reference in reference_item.types(db).reverse_resolutions(*self) {
 					result.push(EntityRef::new(db, reference_item, reference));
 				}
 			}

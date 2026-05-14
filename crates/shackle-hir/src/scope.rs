@@ -1189,37 +1189,37 @@ impl RenameCheck {
 			// Check if any uses of this name will now refer to something else which shadows the new name
 			for entity in pattern.references(db) {
 				if let EntityId::Expression(e) = entity.entity(db) {
-    						let scope = entity.item(db).scope(db);
-    						if scope.find_variable(db, e, new_name).is_some() {
-    							// Identifier will now refer to the shadowing new name
-    							return RenameCheck::ShadowConflict;
-    						}
-    					}
+					let scope = entity.item(db).scope(db);
+					if scope.find_variable(db, e, new_name).is_some() {
+						// Identifier will now refer to the shadowing new name
+						return RenameCheck::ShadowConflict;
+					}
+				}
 			}
 		} else {
 			// Not top-level, shadowing could occur in both directions.
 
 			// Find where this identifier is used that would end up shadowed by something else
-			for entity in types.reverse_resolutions(db, pattern) {
+			for entity in types.reverse_resolutions(pattern) {
 				if let EntityId::Expression(e) = entity {
-    						let mut current = item_scope.expression_scopes[e].0;
-    						loop {
-    							if current == defining_scope {
-    								// Found our defining scope first, so will not change meaning
-    								break;
-    							}
-    							match &item_scope.scopes[current] {
-    								Scope::Local { parent, scope } => {
-    									if scope.variables.contains_key(&new_name) {
-    										// Will cause this identifier to refer to the shadowing name instead of our identifier
-    										return RenameCheck::ShadowConflict;
-    									}
-    									current = *parent;
-    								}
-    								_ => unreachable!(),
-    							}
-    						}
-    					}
+					let mut current = item_scope.expression_scopes[e].0;
+					loop {
+						if current == defining_scope {
+							// Found our defining scope first, so will not change meaning
+							break;
+						}
+						match &item_scope.scopes[current] {
+							Scope::Local { parent, scope } => {
+								if scope.variables.contains_key(&new_name) {
+									// Will cause this identifier to refer to the shadowing name instead of our identifier
+									return RenameCheck::ShadowConflict;
+								}
+								current = *parent;
+							}
+							_ => unreachable!(),
+						}
+					}
+				}
 			}
 
 			// Look at scopes outward from the defining scope for ones that define the new name (i.e. ones that would be shadowed by the rename)
@@ -1229,7 +1229,7 @@ impl RenameCheck {
 				match &item_scope.scopes[current] {
 					Scope::Local { parent, scope } => {
 						if let Some((p, _)) = scope.variables.get(&new_name) {
-							to_check.extend(types.reverse_resolutions(db, *p));
+							to_check.extend(types.reverse_resolutions(*p));
 						}
 						current = *parent;
 					}
@@ -1237,14 +1237,14 @@ impl RenameCheck {
 						if let Some((p, _)) =
 							item_scope.model.global_scope(db).variables.get(&new_name)
 						{
-							to_check.extend(types.reverse_resolutions(db, *p));
+							to_check.extend(types.reverse_resolutions(*p));
 							break;
 						}
 						current = *global_scope;
 					}
 					Scope::Global => {
 						if let Some(p) = GlobalScope::find_variable(db, new_name) {
-							to_check.extend(types.reverse_resolutions(db, p));
+							to_check.extend(types.reverse_resolutions(p));
 						}
 						break;
 					}

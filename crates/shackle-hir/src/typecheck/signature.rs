@@ -72,7 +72,7 @@ impl<'db> SignatureTypeContext<'db> {
 	/// Create a new signature type context
 	pub(crate) fn new(item: Item<'db>) -> Self {
 		Self {
-			item: item,
+			item,
 			data: SignatureTypes::default(),
 		}
 	}

@@ -1,12 +1,11 @@
 use lsp_server::ResponseError;
 use lsp_types::TextDocumentPositionParams;
-use shackle_fmt::{MiniZincFormatOptions, format};
 use shackle_hir::{db::CompilerDatabase, input::ModelFile};
 
 use crate::{db::LanguageServerContext, dispatch::RequestHandler, extensions::ViewMir};
 
 #[derive(Debug)]
-pub struct ViewMirHandler;
+pub(crate) struct ViewMirHandler;
 
 impl RequestHandler<ViewMir, ModelFile> for ViewMirHandler {
 	fn prepare(
@@ -16,7 +15,7 @@ impl RequestHandler<ViewMir, ModelFile> for ViewMirHandler {
 		db.set_active_file_from_document(&params.text_document)
 	}
 
-	fn execute(db: &CompilerDatabase, _: ModelFile) -> Result<String, ResponseError> {
+	fn execute(_db: &CompilerDatabase, _: ModelFile) -> Result<String, ResponseError> {
 		todo!()
 		// let errors = db.all_errors();
 		// if errors.is_empty() {

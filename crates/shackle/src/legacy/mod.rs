@@ -114,11 +114,10 @@ impl Program {
 						})? {
 						LegacyOutput::Status(s) => status = s,
 						LegacyOutput::Msg(msg) => {
-							if let Message::Solution(_) = msg {
-								if status == Status::Unknown {
+							if let Message::Solution(_) = msg
+								&& status == Status::Unknown {
 									status = Status::Satisfied
 								}
-							}
 							msg_callback(&msg)?
 						}
 						LegacyOutput::Error(err) => return Err(err),

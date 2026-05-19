@@ -25,7 +25,7 @@
 
 use std::sync::{RwLock, RwLockReadGuard};
 
-use shackle_diagnostics::{Error, Result};
+use shackle_diagnostics::Result;
 use shackle_hir::{Db, diagnostics::Errors};
 
 use crate::{Model, lower::lower_model, transform::thir_transforms};

@@ -25,7 +25,7 @@ pub fn check_format<'a>(
 		let path = source.path().unwrap();
 		log::info!("  Checking {}", path.to_string_lossy());
 		let formatted = MiniZincFormatter::new(source.contents(), &model, options).format();
-		if source.contents() != &formatted {
+		if source.contents() != formatted {
 			is_formatted = false;
 			let diff = TextDiff::from_lines(source.contents(), &formatted);
 			let mut udiff = diff.unified_diff();
@@ -72,7 +72,7 @@ pub fn format_files<'a>(
 		let path = source.path().unwrap();
 		log::info!("  Formatting {}", path.to_string_lossy());
 		let formatted = MiniZincFormatter::new(source.contents(), &model, options).format();
-		if source.contents() == &formatted {
+		if source.contents() == formatted {
 			log::info!("    (Unchanged)");
 		} else {
 			match write(path, formatted) {
@@ -187,7 +187,7 @@ fn get_mzn_files<'a>(files: impl Iterator<Item = &'a PathBuf>) -> Result<Vec<Pat
 	if errors.is_empty() {
 		Ok(result)
 	} else if errors.len() == 1 {
-		Err(errors.pop().unwrap().into())
+		Err(errors.pop().unwrap())
 	} else {
 		Err(MultipleErrors { errors }.into())
 	}

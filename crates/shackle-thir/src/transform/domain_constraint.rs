@@ -14,9 +14,9 @@ use shackle_diagnostics::Result;
 use shackle_hir::{Identifier, IntegerLiteral, StringLiteral, constants::IdentifierRegistry};
 
 use crate::{
-	ArrayComprehension, ArrayLiteral, BuiltinCall, Constraint, Db, Declaration, DeclarationId,
-	Domain, DomainData, Expression, FunctionId, Generator, Item, Let, LetItem, LookupCall, Marker,
-	Model, RecordAccess, RecordLiteral, TupleAccess, TupleLiteral,
+	ArrayComprehension, ArrayLiteral, Constraint, Db, Declaration, DeclarationId, Domain,
+	DomainData, Expression, FunctionId, Generator, Item, Let, LetItem, LookupCall, Marker, Model,
+	RecordAccess, RecordLiteral, TupleAccess, TupleLiteral,
 	source::Origin,
 	traverse::{
 		Folder, ReplacementMap, add_declaration, add_function, fold_function_body, fold_let,
@@ -496,8 +496,8 @@ impl<'db, Dst: Marker, Src: Marker> DomainRewriter<'db, Dst, Src> {
 									db,
 									&self.model,
 									origin,
-									BuiltinCall {
-										name: self.ids.builtins.mzn_forall_par,
+									LookupCall {
+										function: self.ids.builtins.forall.into(),
 										arguments: vec![Expression::new(
 											db,
 											&self.model,

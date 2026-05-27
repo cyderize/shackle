@@ -223,6 +223,9 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 			if f == idx
 				|| !model[idx].is_polymorphic()
 				|| model[idx].parameters().len() != args.len()
+				|| model[idx]
+					.annotations()
+					.has(model, self.ids.annotations.mzn_unreachable)
 			{
 				continue;
 			}
@@ -261,15 +264,28 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 					.zip(args.iter())
 					.all(|(p, a)| p.is_subtype_of(db, *a))
 				{
-					let _ = ts.instantiate_inner(
-						db,
-						model,
-						ts.original_functions
-							.lookup_function(db, name, &ft.params)
-							.unwrap()
-							.function,
-						&ft.params,
-					);
+					let matched = ts
+						.original_functions
+						.lookup_function(db, name, &ft.params)
+						.unwrap()
+						.function;
+					if matched == idx {
+						log::debug!(
+							"Instantiating {} with {} has subtype {} with args {}",
+							PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
+							args.iter()
+								.map(|ty| ty.pretty_print(db))
+								.collect::<Vec<_>>()
+								.join(", "),
+							PrettyPrinter::new(db, model).pretty_print_signature(idx.into()),
+							ft.params
+								.iter()
+								.map(|ty| ty.pretty_print(db))
+								.collect::<Vec<_>>()
+								.join(", ")
+						);
+						let _ = ts.instantiate_inner(db, model, idx, &ft.params);
+					}
 				}
 			})(self);
 		}

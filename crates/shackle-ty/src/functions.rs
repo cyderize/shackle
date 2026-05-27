@@ -348,10 +348,11 @@ impl<'db> FunctionEntry<'db> {
 					}
 				} else if let Ok((_, ftb)) =
 					b.overload.instantiate_ty_params(db, a.overload.params())
-					&& !a.overload.return_type().is_subtype_of(db, ftb.return_type) {
-						// Functions have incompatible return types
-						incompat_fns[i + j + 1] = incompat_fns[i].or(Some(i));
-					}
+					&& !a.overload.return_type().is_subtype_of(db, ftb.return_type)
+				{
+					// Functions have incompatible return types
+					incompat_fns[i + j + 1] = incompat_fns[i].or(Some(i));
+				}
 			}
 		}
 		let mut drain = overloads.iter().cloned().map(Some).collect::<Vec<_>>();
@@ -361,9 +362,10 @@ impl<'db> FunctionEntry<'db> {
 				.enumerate()
 				.filter_map(|(j, dup)| {
 					if let Some(x) = dup
-						&& *x == i {
-							return Some(drain[j].take().unwrap());
-						}
+						&& *x == i
+					{
+						return Some(drain[j].take().unwrap());
+					}
 					None
 				})
 				.collect::<Vec<_>>();
@@ -382,9 +384,10 @@ impl<'db> FunctionEntry<'db> {
 				.enumerate()
 				.filter_map(|(j, dup)| {
 					if let Some(x) = dup
-						&& *x == i {
-							return Some(drain[j].take().unwrap());
-						}
+						&& *x == i
+					{
+						return Some(drain[j].take().unwrap());
+					}
 					None
 				})
 				.collect::<Vec<_>>();
@@ -721,7 +724,7 @@ impl<'db> PolymorphicFunctionType<'db> {
 		arg: Ty<'db>,
 		param: Ty<'db>,
 	) -> bool {
-		match (arg.lookup(db).clone(), param.lookup(db).clone()) {
+		match (arg.lookup(db), param.lookup(db)) {
 			(
 				TyData::Array {
 					opt: o1,
@@ -734,26 +737,31 @@ impl<'db> PolymorphicFunctionType<'db> {
 					element: e2,
 				},
 			) => {
-				(o1 == o2 || o1 == OptType::NonOpt)
+				(*o1 == *o2 || *o1 == OptType::NonOpt)
 					&& PolymorphicFunctionType::collect_instantiations(
 						db,
 						add_instantiation,
-						d1,
-						d2,
-					) && PolymorphicFunctionType::collect_instantiations(db, add_instantiation, e1, e2)
+						*d1,
+						*d2,
+					) && PolymorphicFunctionType::collect_instantiations(
+					db,
+					add_instantiation,
+					*e1,
+					*e2,
+				)
 			}
 			(TyData::Set(i1, o1, e1), TyData::Set(i2, o2, e2)) => {
-				(i1 == i2 || i1 == VarType::Par)
-					&& (o1 == o2 || o1 == OptType::NonOpt)
+				(*i1 == *i2 || *i1 == VarType::Par)
+					&& (*o1 == *o2 || *o1 == OptType::NonOpt)
 					&& PolymorphicFunctionType::collect_instantiations(
 						db,
 						add_instantiation,
-						e1,
-						e2,
+						*e1,
+						*e2,
 					)
 			}
 			(TyData::Tuple(o1, f1), TyData::Tuple(o2, f2)) => {
-				(o1 == o2 || o1 == OptType::NonOpt)
+				(*o1 == *o2 || *o1 == OptType::NonOpt)
 					&& f1.len() == f2.len()
 					&& f1.iter().zip(f2.iter()).all(|(t1, t2)| {
 						PolymorphicFunctionType::collect_instantiations(
@@ -765,7 +773,7 @@ impl<'db> PolymorphicFunctionType<'db> {
 					})
 			}
 			(TyData::Record(o1, f1), TyData::Record(o2, f2)) => {
-				(o1 == o2 || o1 == OptType::NonOpt)
+				(*o1 == *o2 || *o1 == OptType::NonOpt)
 					&& f2.iter().all(|(i2, t2)| {
 						f1.iter().any(|(i1, t1)| {
 							i1 == i2
@@ -779,7 +787,7 @@ impl<'db> PolymorphicFunctionType<'db> {
 					})
 			}
 			(TyData::Function(o1, f1), TyData::Function(o2, f2)) => {
-				(o1 == OptType::NonOpt || o1 == o2)
+				(*o1 == OptType::NonOpt || *o1 == *o2)
 					&& PolymorphicFunctionType::collect_instantiations(
 						db,
 						add_instantiation,

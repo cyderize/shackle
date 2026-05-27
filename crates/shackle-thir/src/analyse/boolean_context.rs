@@ -452,60 +452,38 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 			}
 			ExpressionData::Case(_) => todo!(),
 			ExpressionData::Call(c) => (|| {
-				if (c.matches_builtin(self.ids.builtins.mzn_not_par)
-					|| c.matches_builtin(self.ids.builtins.mzn_not_var))
-					&& c.arguments.len() == 3
-				{
-					self.update(&c.arguments[0], !it.mode, false);
-					return;
-				}
 				match &c.function {
-					Callable::Builtin => {}
 					Callable::Function(f) => {
-						if (self.model[*f].name() == self.ids.builtins.mzn_not_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_not_var)
-							&& c.arguments.len() == 1
-						{
+						let name = self.model[*f].name();
+						let is_builtin = self.model[*f].body().is_none();
+
+						if name == self.ids.builtins.not && c.arguments.len() == 1 && is_builtin {
 							self.update(&c.arguments[0], !it.mode, false);
 							return;
-						} else if ((self.model[*f].name() == self.ids.builtins.mzn_and_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_and_var)
-							&& it.mode.is_root() || (self.model[*f].name()
-							== self.ids.builtins.mzn_or_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_or_var)
-							&& it.mode.is_root_neg())
+						} else if (name == self.ids.builtins.and && it.mode.is_root()
+							|| name == self.ids.builtins.or && it.mode.is_root_neg())
 							&& c.arguments.len() == 2
-							&& c.arguments[0].ty().is_bool(db)
-							&& c.arguments[1].ty().is_bool(db)
+							&& is_builtin
 						{
 							self.update(&c.arguments[0], it.mode, false);
 							self.update(&c.arguments[1], it.mode, false);
-						} else if ((self.model[*f].name() == self.ids.builtins.mzn_forall_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_forall_var)
-							&& it.mode.is_root() || (self.model[*f].name()
-							== self.ids.builtins.mzn_exists_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_exists_var)
-							&& it.mode.is_root_neg())
+						} else if (name == self.ids.builtins.forall && it.mode.is_root()
+							|| name == self.ids.builtins.exists && it.mode.is_root_neg())
 							&& c.arguments.len() == 1
-							&& c.arguments[0]
-								.ty()
-								.elem_ty(db)
-								.unwrap_or(self.tys.error)
-								.is_bool(db)
+							&& is_builtin
 						{
 							self.update(&c.arguments[0], it.mode, true);
 							return;
-						} else if (self.model[*f].name() == self.ids.builtins.mzn_clause_par
-							|| self.model[*f].name() == self.ids.builtins.mzn_clause_var)
+						} else if name == self.ids.builtins.clause
 							&& c.arguments.len() == 2
 							&& it.mode.is_root_neg()
+							&& is_builtin
 						{
 							self.update(&c.arguments[0], it.mode, true);
 							self.update(&c.arguments[1], !it.mode, true);
 							return;
-						} else if (self.model[*f].name()
-							== self.ids.functions.symmetry_breaking_constraint
-							|| self.model[*f].name() == self.ids.functions.redundant_constraint)
+						} else if (name == self.ids.functions.symmetry_breaking_constraint
+							|| name == self.ids.functions.redundant_constraint)
 							&& c.arguments.len() == 1
 						{
 							self.update(&c.arguments[0], it.mode, false);
@@ -690,9 +668,7 @@ impl<'a, 'db, T: Marker> Visitor<'a, 'db, T> for BooleanVisitor<'a, 'db, T> {
 	}
 
 	fn visit_call(&mut self, model: &'a Model<'db, T>, call: &'a Call<'db, T>) {
-		if let Callable::Function(f) = &call.function
-			&& model[*f].name() == self.ids.builtins.mzn_abort
-		{
+		if call.matches_builtin(model, self.ids.builtins.abort) {
 			return;
 		}
 		self.is_true = false;
@@ -737,188 +713,187 @@ impl<'a, 'db, T: Marker> Visitor<'a, 'db, T> for BooleanVisitor<'a, 'db, T> {
 	}
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use std::sync::Arc;
+#[cfg(test)]
+mod tests {
+	use expect_test::{Expect, expect};
+	use salsa::Setter;
+	use shackle_hir::{
+		CompilerDatabase,
+		ids::NodeRef,
+		input::{CompilerSettings, InlineModelFile, InputFiles},
+	};
+	use shackle_syntax::InputLang;
 
-// 	use expect_test::{Expect, expect};
-// 	use shackle_syntax::InputLang;
+	use super::ModeAnalysis;
+	use crate::{
+		lower::lower_model, pretty_print::PrettyPrinter, transform::inlining::inline_functions,
+	};
 
-// 	use super::ModeAnalysis;
-// 	use crate::{
-// 		CompilerDatabase,
-// 		db::{FileReader, Inputs},
-// 		file::InputFile,
-// 		hir::ids::NodeRef,
-// 		thir::{db::Thir, pretty_print::PrettyPrinter, transform::inlining::inline_functions},
-// 	};
+	fn check_bool_ctx(program: &str, expected: Expect, fn_root: bool) {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let model_file = InlineModelFile::new(&db, program.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let mut model = lower_model(&db).take();
+		model = inline_functions(&db, model).unwrap();
+		let result = ModeAnalysis::analyse(&db, &model);
+		let mut printer = PrettyPrinter::new(&db, &model);
+		printer.expression_annotator = Some(Box::new(|e| {
+			if fn_root {
+				Some(result.get_in_root_fn(e).as_str().to_owned())
+			} else {
+				Some(result.get(e).as_str().to_owned())
+			}
+		}));
+		let to_print = model
+			.top_level_items()
+			.filter(|it| match model.item_origin(*it).node() {
+				Some(NodeRef::Item(item)) => item.model_file(&db) == model_file,
+				Some(NodeRef::Entity(entity)) => entity.item(&db).model_file(&db) == model_file,
+				Some(NodeRef::Model(m)) => m == model_file,
+				None => true,
+			});
+		let mut pretty = String::new();
+		for item in to_print {
+			pretty.push_str(&printer.pretty_print_item(item));
+			pretty.push_str(";\n");
+		}
+		expected.assert_eq(&pretty);
+	}
 
-// 	fn check_bool_ctx(program: &str, expected: Expect, fn_root: bool) {
-// 		let mut db = CompilerDatabase::default();
-// 		db.set_ignore_stdlib(true);
-// 		db.set_input_files(Arc::new(vec![InputFile::String(
-// 			program.to_owned(),
-// 			InputLang::MiniZinc,
-// 		)]));
-// 		let model_ref = db.input_models()[0];
-// 		let mut model = db.model_thir().take();
-// 		model = inline_functions(&db, model).unwrap();
-// 		let result = ModeAnalysis::analyse(&db, &model);
-// 		let mut printer = PrettyPrinter::new(&db, &model);
-// 		printer.expression_annotator = Some(Box::new(|e| {
-// 			if fn_root {
-// 				Some(result.get_in_root_fn(e).as_str().to_owned())
-// 			} else {
-// 				Some(result.get(e).as_str().to_owned())
-// 			}
-// 		}));
-// 		let to_print = model
-// 			.top_level_items()
-// 			.filter(|it| match model.item_origin(*it).node() {
-// 				Some(NodeRef::Item(item)) => item.model_ref(&db) == model_ref,
-// 				Some(NodeRef::Entity(entity)) => entity.item(&db).model_ref(&db) == model_ref,
-// 				Some(NodeRef::Model(m)) => m == model_ref,
-// 				None => true,
-// 			});
-// 		let mut pretty = String::new();
-// 		for item in to_print {
-// 			pretty.push_str(&printer.pretty_print_item(item));
-// 			pretty.push_str(";\n");
-// 		}
-// 		expected.assert_eq(&pretty);
-// 	}
+	#[test]
+	fn test_bool_ctx() {
+		check_bool_ctx(
+			r#"
+			predicate forall(array [int] of var bool: b);
+			predicate '\/'(var bool: x, var bool: y);
+			predicate 'not'(var bool: x);
+			var bool: a;
+			var bool: b;
+			constraint forall([a, b]);
+			var bool: c;
+			var int: d;
+			function var bool: foo(var bool: c, var int: d);
+			constraint foo(c, d);
+			var bool: e;
+			var bool: f;
+			constraint not (e \/ f);
+			var int: g = let {
+				var int: h = 1;
+				var bool: p = true;
+				var bool: q = true;
+				constraint q;
+			} in h;
+			"#,
+			expect![[r#"
+    function var bool: forall(array [int] of var bool: b);
+    function var bool: '\/'(var bool: x, var bool: y);
+    function var bool: 'not'(var bool: x);
+    var bool: a;
+    var bool: b;
+    constraint forall([a:: ctx_non_root, b:: ctx_non_root]:: ctx_root):: ctx_root;
+    var bool: c;
+    var int: d;
+    function var bool: foo(var bool: c, var int: d);
+    constraint foo(c:: ctx_non_root, d:: ctx_root):: ctx_root;
+    var bool: e;
+    var bool: f;
+    constraint (not(((e:: ctx_non_root) \/ (f:: ctx_non_root))));
+    var int: g = let {
+      var int: h = 1:: ctx_root;
+      var bool: p = true:: ctx_non_root;
+      var bool: q = true:: ctx_root;
+      constraint q:: ctx_root;
+    } in h:: ctx_root:: ctx_root;
+"#]],
+			false,
+		)
+	}
 
-// 	#[test]
-// 	fn test_bool_ctx() {
-// 		check_bool_ctx(
-// 			r#"
-// 			predicate forall(array [int] of var bool: b);
-// 			predicate '\/'(var bool: x, var bool: y);
-// 			predicate 'not'(var bool: x);
-// 			var bool: a;
-// 			var bool: b;
-// 			constraint forall([a, b]);
-// 			var bool: c;
-// 			var int: d;
-// 			function var bool: foo(var bool: c, var int: d);
-// 			constraint foo(c, d);
-// 			var bool: e;
-// 			var bool: f;
-// 			constraint not (e \/ f);
-// 			var int: g = let {
-// 				var int: h = 1;
-// 				var bool: p = true;
-// 				var bool: q = true;
-// 				constraint q;
-// 			} in h;
-// 			"#,
-// 			expect![[r#"
-//     function var bool: forall(array [int] of var bool: b);
-//     function var bool: '\/'(var bool: x, var bool: y);
-//     function var bool: 'not'(var bool: x);
-//     var bool: a;
-//     var bool: b;
-//     constraint forall([a:: ctx_root, b:: ctx_root]:: ctx_root):: ctx_root;
-//     var bool: c;
-//     var int: d;
-//     function var bool: foo(var bool: c, var int: d);
-//     constraint foo(c:: ctx_non_root, d:: ctx_root):: ctx_root;
-//     var bool: e;
-//     var bool: f;
-//     constraint 'not'('\/'(e:: ctx_root_neg, f:: ctx_root_neg):: ctx_root_neg):: ctx_root;
-//     var int: g = let {
-//       var int: h = 1:: ctx_root;
-//       var bool: p = true:: ctx_non_root;
-//       var bool: q = true:: ctx_root;
-//       constraint q:: ctx_root;
-//     } in h:: ctx_root:: ctx_root;
-// "#]],
-// 			false,
-// 		)
-// 	}
+	#[test]
+	fn test_fn_ctx() {
+		let program = r#"
+			predicate '>'(var int: x, var int: y);
+			function var int: '+'(var int: x, var int: y);
+			function var int: foo(var int: x, var int: y) = let {
+				constraint x > y;
+			} in x + y
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function var bool: '>'(var int: x, var int: y);
+    function var int: '+'(var int: x, var int: y);
+    function var int: foo(var int: x, var int: y) = let {
+      constraint '>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
+    } in '+'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function var bool: '>'(var int: x, var int: y);
+    function var int: '+'(var int: x, var int: y);
+    function var int: foo(var int: x, var int: y) = let {
+      constraint '>'(x:: ctx_root, y:: ctx_root):: ctx_root;
+    } in '+'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
+"#]],
+			true,
+		);
+	}
 
-// 	#[test]
-// 	fn test_fn_ctx() {
-// 		let program = r#"
-// 			predicate '>'(var int: x, var int: y);
-// 			function var int: '+'(var int: x, var int: y);
-// 			function var int: foo(var int: x, var int: y) = let {
-// 				constraint x > y;
-// 			} in x + y
-// 		"#;
-// 		check_bool_ctx(
-// 			program,
-// 			expect![[r#"
-//     function var bool: '>'(var int: x, var int: y);
-//     function var int: '+'(var int: x, var int: y);
-//     function var int: foo(var int: x, var int: y) = let {
-//       constraint '>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
-//     } in '+'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
-// "#]],
-// 			false,
-// 		);
-// 		check_bool_ctx(
-// 			program,
-// 			expect![[r#"
-//     function var bool: '>'(var int: x, var int: y);
-//     function var int: '+'(var int: x, var int: y);
-//     function var int: foo(var int: x, var int: y) = let {
-//       constraint '>'(x:: ctx_root, y:: ctx_root):: ctx_root;
-//     } in '+'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
-// "#]],
-// 			true,
-// 		);
-// 	}
+	#[test]
+	fn test_bool_ctx_let() {
+		check_bool_ctx(
+			r#"
+            function set of int: foo() = let {
+				var bool: b;
+				constraint b;
+			} in {1, 3, 5};
+		"#,
+			expect![[r#"
+    function set of int: foo() = let {
+      var bool: b;
+      constraint b:: ctx_non_root;
+    } in {1:: ctx_non_root, 3:: ctx_non_root, 5:: ctx_non_root}:: ctx_non_root:: ctx_non_root;
+"#]],
+			false,
+		);
+	}
 
-// 	#[test]
-// 	fn test_bool_ctx_let() {
-// 		check_bool_ctx(
-// 			r#"
-//             function set of int: foo() = let {
-// 				var bool: b;
-// 				constraint b;
-// 			} in {1, 3, 5};
-// 		"#,
-// 			expect![[r#"
-//     function set of int: foo() = let {
-//       var bool: b;
-//       constraint b:: ctx_non_root;
-//     } in {1:: ctx_non_root, 3:: ctx_non_root, 5:: ctx_non_root}:: ctx_non_root:: ctx_non_root;
-// "#]],
-// 			false,
-// 		);
-// 	}
-
-// 	#[test]
-// 	fn test_bool_ctx_abort() {
-// 		let program = r#"
-// 			test mzn_abort(string: msg);
-// 			test bar(int: x);
-// 			function int: foo(int: x) = let {
-// 				constraint if bar(x) then mzn_abort("foo") endif;
-// 			} in x;
-// 		"#;
-// 		check_bool_ctx(
-// 			program,
-// 			expect![[r#"
-//     function bool: mzn_abort(string: msg);
-//     function bool: bar(int: x);
-//     function int: foo(int: x) = let {
-//       constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
-//     } in x:: ctx_non_root:: ctx_non_root;
-// "#]],
-// 			false,
-// 		);
-// 		check_bool_ctx(
-// 			program,
-// 			expect![[r#"
-//     function bool: mzn_abort(string: msg);
-//     function bool: bar(int: x);
-//     function int: foo(int: x) = let {
-//       constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
-//     } in x:: ctx_root:: ctx_root;
-// "#]],
-// 			true,
-// 		);
-// 	}
-// }
+	#[test]
+	fn test_bool_ctx_abort() {
+		let program = r#"
+			test mzn_abort(string: msg);
+			test bar(int: x);
+			function int: foo(int: x) = let {
+				constraint if bar(x) then mzn_abort("foo") endif;
+			} in x;
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function bool: mzn_abort(string: msg);
+    function bool: bar(int: x);
+    function int: foo(int: x) = let {
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+    } in x:: ctx_non_root:: ctx_non_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function bool: mzn_abort(string: msg);
+    function bool: bar(int: x);
+    function int: foo(int: x) = let {
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+    } in x:: ctx_root:: ctx_root;
+"#]],
+			true,
+		);
+	}
+}

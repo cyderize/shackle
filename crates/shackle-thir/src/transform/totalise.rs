@@ -4,7 +4,7 @@
 
 use rustc_hash::FxHashMap;
 use shackle_diagnostics::Result;
-use shackle_hir::{BooleanLiteral, StringLiteral, constants::IdentifierRegistry};
+use shackle_hir::{BooleanLiteral, constants::IdentifierRegistry};
 use shackle_ty::{OptType, Ty, registry::TypeRegistry};
 use shackle_utils::{arena::ArenaMap, maybe_grow_stack};
 
@@ -12,8 +12,9 @@ use crate::{
 	ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Constraint, Db, Declaration,
 	DeclarationId, Domain, DomainData, Expression, ExpressionBuilder, ExpressionData, Function,
 	FunctionId, FunctionItem, FunctionName, Generator, IfThenElse, IntegerLiteral, Item, Let,
-	LetItem, LookupCall, Marker, Model, ResolvedIdentifier, SetLiteral, TupleAccess, TupleLiteral,
-	analyse::{Mode, ModeAnalysis, Totality, analyse_totality},
+	LetItem, LookupCall, Marker, Model, ResolvedIdentifier, SetLiteral, TotalLet, TupleAccess,
+	TupleLiteral,
+	analyse::{Mode, ModeAnalysis, Totality, TotalityResult, analyse_totality},
 	pretty_print::PrettyPrinter,
 	source::Origin,
 	traverse::{
@@ -27,7 +28,7 @@ struct Totaliser<'a, 'db, Dst: Marker> {
 	tys: &'db TypeRegistry<'db>,
 	totalised_model: Model<'db, Dst>,
 	replacement_map: ReplacementMap<'db, Dst>,
-	totality: ArenaMap<FunctionItem<'db>, Totality>,
+	totality: ArenaMap<FunctionItem<'db>, TotalityResult>,
 	modes: &'a ModeAnalysis<'a, 'db>,
 	root_fn_map: FxHashMap<FunctionId<'db>, FunctionId<'db, Dst>>,
 	root_fn_decl_map: FxHashMap<DeclarationId<'db>, DeclarationId<'db, Dst>>,
@@ -59,12 +60,12 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 	}
 
 	fn add_function(&mut self, db: &'db dyn Db, model: &Model<'db>, f: FunctionId<'db>) {
-		let totality = self.totality[f];
+		let function_totality = self.totality[f];
 
 		log::debug!(
 			"{} is {:?}",
 			PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
-			totality
+			function_totality
 		);
 
 		let orig_return = model[f].return_type();
@@ -72,14 +73,14 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 			// Booleans remain boolean
 			orig_return
 		} else {
-			match totality {
+			match function_totality.totality {
 				Totality::Total => orig_return,
 				Totality::ParPartial => Ty::tuple(db, [self.tys.par_bool, orig_return]),
 				Totality::VarPartial => Ty::tuple(db, [self.tys.var_bool, orig_return]),
 			}
 		};
 
-		if !matches!(totality, Totality::Total) {
+		if function_totality.needs_root {
 			let root_name = model[f].name().root(db);
 
 			if let Ok(existing) = model.lookup_function(
@@ -177,6 +178,15 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 				}
 				ExpressionData::Case(_c) => todo!(),
 				ExpressionData::Call(c) => self.totalise_call(db, model, c, origin, expression),
+				ExpressionData::Let(l) => {
+					let folded = self.fold_let(db, model, l);
+					Expression::new(
+						db,
+						&self.totalised_model,
+						expression.origin(),
+						TotalLet(folded),
+					)
+				}
 				ExpressionData::Lambda(_l) => todo!(),
 				_ => return fold_expression(self, db, model, expression),
 			};
@@ -515,10 +525,10 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				db,
 				&self.totalised_model,
 				origin,
-				Let {
+				TotalLet(Let {
 					items,
 					in_expression: Box::new(in_expression),
-				},
+				}),
 			)
 		} else {
 			Expression::new(
@@ -759,7 +769,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					db,
 					&self.totalised_model,
 					o,
-					Let {
+					TotalLet(Let {
 						items: vec![LetItem::Declaration(idx)],
 						in_expression: Box::new(Expression::new(
 							db,
@@ -786,7 +796,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 								),
 							]),
 						)),
-					},
+					}),
 				)
 			};
 
@@ -939,7 +949,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				db,
 				&self.totalised_model,
 				origin,
-				Let {
+				TotalLet(Let {
 					items,
 					in_expression: Box::new(Expression::new(
 						db,
@@ -958,7 +968,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 							element_values,
 						]),
 					)),
-				},
+				}),
 			);
 		}
 
@@ -986,7 +996,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			db,
 			&self.totalised_model,
 			origin,
-			Let {
+			TotalLet(Let {
 				items,
 				in_expression: Box::new(Expression::new(
 					db,
@@ -1005,7 +1015,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						comprehension,
 					]),
 				)),
-			},
+			}),
 		)
 	}
 
@@ -1061,7 +1071,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					db,
 					&self.totalised_model,
 					origin,
-					Let {
+					TotalLet(Let {
 						items: vec![LetItem::Declaration(idx)],
 						in_expression: Box::new(Expression::new(
 							db,
@@ -1072,7 +1082,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 								arguments: vec![definedness, value],
 							},
 						)),
-					},
+					}),
 				);
 			}
 
@@ -1080,7 +1090,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				db,
 				&self.totalised_model,
 				origin,
-				Let {
+				TotalLet::from(Let {
 					items: vec![LetItem::Declaration(idx)],
 					in_expression: Box::new(Expression::new(
 						db,
@@ -1088,7 +1098,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						origin,
 						TupleLiteral(vec![definedness, value]),
 					)),
-				},
+				}),
 			);
 		}
 		Expression::new(
@@ -1259,10 +1269,10 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					db,
 					&self.totalised_model,
 					origin,
-					Let {
+					TotalLet::from(Let {
 						items,
 						in_expression: Box::new(in_expression),
-					},
+					}),
 				);
 			} else {
 				result = Expression::new(
@@ -1309,7 +1319,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				db,
 				&self.totalised_model,
 				origin,
-				Let {
+				TotalLet::from(Let {
 					items: vec![
 						LetItem::Declaration(decl_idx),
 						LetItem::Constraint(constraint_idx),
@@ -1323,7 +1333,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 							field: IntegerLiteral(2),
 						},
 					)),
-				},
+				}),
 			)
 		}
 
@@ -1410,7 +1420,6 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				}
 				fold_function_id(self, db, model, *f)
 			})()),
-			Callable::Builtin => Callable::Builtin,
 			e => unreachable!("Unexpected {:?}", e),
 		};
 		let arguments = c
@@ -1521,7 +1530,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				db,
 				&self.totalised_model,
 				origin,
-				Let {
+				TotalLet::from(Let {
 					items,
 					in_expression: Box::new(self.forall_call(
 						db,
@@ -1532,7 +1541,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 							ArrayLiteral(definedness),
 						),
 					)),
-				},
+				}),
 			);
 		}
 
@@ -1576,7 +1585,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			db,
 			&self.totalised_model,
 			origin,
-			Let {
+			TotalLet::from(Let {
 				items,
 				in_expression: Box::new(Expression::new(
 					db,
@@ -1584,7 +1593,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					origin,
 					TupleLiteral(vec![def, val]),
 				)),
-			},
+			}),
 		)
 	}
 
@@ -1678,7 +1687,16 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		if folded.ty().is_subtype_of(db, original.ty()) {
 			return true;
 		}
-		let field_tys = folded.ty().fields(db).unwrap();
+		let field_tys = folded.ty().fields(db).unwrap_or_else(|| {
+			panic!(
+				"Expected totalised type to be tuple, but got {} (original {}) at {}\n\nBefore totalisation:\n{}\n\nAfter totalisation:\n{}",
+				folded.ty().pretty_print(db),
+				original.ty().pretty_print(db),
+				original.origin().pretty_print(db),
+				PrettyPrinter::new(db, model).pretty_print_expression(original),
+				PrettyPrinter::new(db, &self.totalised_model).pretty_print_expression(folded)
+			)
+		});
 		assert!(
 			field_tys.len() == 2
 				&& (field_tys[0] == self.tys.par_bool || field_tys[0] == self.tys.var_bool)
@@ -1700,66 +1718,28 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 	}
 
 	fn forall_call(&self, db: &'db dyn Db, arg: Expression<'db, Dst>) -> Expression<'db, Dst> {
-		let is_par = arg.ty().known_par(db);
 		let origin = arg.origin();
-		Expression::new_unchecked(
-			if is_par {
-				self.tys.par_bool
-			} else {
-				self.tys.var_bool
-			},
-			Call {
-				function: Callable::Builtin,
-				arguments: vec![
-					Expression::new(
-						db,
-						&self.totalised_model,
-						arg.origin(),
-						StringLiteral(
-							if is_par {
-								self.ids.builtins.mzn_forall_par
-							} else {
-								self.ids.builtins.mzn_forall_var
-							}
-							.0,
-						),
-					),
-					arg,
-				],
-			},
+		Expression::new(
+			db,
+			&self.totalised_model,
 			origin,
+			LookupCall {
+				function: self.ids.builtins.forall.into(),
+				arguments: vec![arg],
+			},
 		)
 	}
 
 	fn exists_call(&self, db: &'db dyn Db, arg: Expression<'db, Dst>) -> Expression<'db, Dst> {
-		let is_par = arg.ty().known_par(db);
 		let origin = arg.origin();
-		Expression::new_unchecked(
-			if is_par {
-				self.tys.par_bool
-			} else {
-				self.tys.var_bool
-			},
-			Call {
-				function: Callable::Builtin,
-				arguments: vec![
-					Expression::new(
-						db,
-						&self.totalised_model,
-						arg.origin(),
-						StringLiteral(
-							if arg.ty().known_par(db) {
-								self.ids.builtins.mzn_exists_par
-							} else {
-								self.ids.builtins.mzn_exists_var
-							}
-							.0,
-						),
-					),
-					arg,
-				],
-			},
+		Expression::new(
+			db,
+			&self.totalised_model,
 			origin,
+			LookupCall {
+				function: self.ids.builtins.exists.into(),
+				arguments: vec![arg],
+			},
 		)
 	}
 }

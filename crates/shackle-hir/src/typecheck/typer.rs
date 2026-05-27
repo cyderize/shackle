@@ -173,27 +173,27 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			// If annotation is shackle_type("...") then treat as sanity check for type
 			if let Expression::Call(c) = &self.data[*ann]
 				&& let Expression::Identifier(i) = &self.data[c.function]
-					&& *i == self.identifiers.annotations.shackle_type
-						&& let Expression::StringLiteral(sl) = &self.data[c.arguments[0]] {
-							let expected = sl.value(db);
-							let actual = ty.pretty_print(db);
-							if actual != expected {
-								let (src, span) =
-									ExpressionRef::new(db, self.item, expr).source_span(db);
-								self.ctx.add_diagnostic(
-									db,
-									self.item,
-									TypeMismatch {
-										src,
-										span,
-										msg: format!(
-											"shackle_type: expected computed type '{}' but got '{}'",
-											expected, actual
-										),
-									},
-								);
-							}
-						}
+				&& *i == self.identifiers.annotations.shackle_type
+				&& let Expression::StringLiteral(sl) = &self.data[c.arguments[0]]
+			{
+				let expected = sl.value(db);
+				let actual = ty.pretty_print(db);
+				if actual != expected {
+					let (src, span) = ExpressionRef::new(db, self.item, expr).source_span(db);
+					self.ctx.add_diagnostic(
+						db,
+						self.item,
+						TypeMismatch {
+							src,
+							span,
+							msg: format!(
+								"shackle_type: expected computed type '{}' but got '{}'",
+								expected, actual
+							),
+						},
+					);
+				}
+			}
 		}
 	}
 
@@ -1658,20 +1658,6 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			return error;
 		}
 
-		if i == self.identifiers.functions.mzn_builtin {
-			// Special interpreter builtin
-			let op = Ty::function(
-				db,
-				FunctionType {
-					return_type: self.types.bottom,
-					params: args.to_vec().into_boxed_slice(),
-				},
-			);
-			self.ctx
-				.add_expression(db, ExpressionRef::new(db, self.item, expr), op);
-			return (op, self.types.bottom);
-		}
-
 		// If there's a variable in scope which is a function, use it
 		if let Some(p) = self.find_variable(expr, i) {
 			let d = self.ctx.type_pattern(db, p);
@@ -1784,21 +1770,22 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 				let mut new_overloads = Vec::new();
 				for p in patterns.iter() {
 					if let PatternTy::Function(function) = self.ctx.type_pattern(db, *p)
-						&& let Item::Function(f) = p.item(db) {
-							let fi = f.function(db);
-							if let Some(param) = fi.parameters.first() {
-								let has_annotated_expression =
-									param.annotations.iter().any(|ann| match &fi[*ann] {
-										Expression::Identifier(i) => {
-											*i == self.identifiers.annotations.annotated_expression
-										}
-										_ => false,
-									});
-								if has_annotated_expression {
-									new_overloads.push((*p, *function.clone()));
-								}
+						&& let Item::Function(f) = p.item(db)
+					{
+						let fi = f.function(db);
+						if let Some(param) = fi.parameters.first() {
+							let has_annotated_expression =
+								param.annotations.iter().any(|ann| match &fi[*ann] {
+									Expression::Identifier(i) => {
+										*i == self.identifiers.annotations.annotated_expression
+									}
+									_ => false,
+								});
+							if has_annotated_expression {
+								new_overloads.push((*p, *function.clone()));
 							}
 						}
+					}
 				}
 				return FunctionEntry::match_fn(db, new_overloads, &new_args);
 			}

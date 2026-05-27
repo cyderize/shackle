@@ -15,7 +15,7 @@ impl Errors {
 	/// Create and accumulate an error
 	pub fn add(db: &dyn Db, error: impl Into<Error>) {
 		let e = error.into();
-		log::error!("{}", e);
+		log::error!("{:#?}", e);
 		Errors(e).accumulate(db);
 	}
 

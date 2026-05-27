@@ -145,9 +145,10 @@ impl<'db> ItemCollector<'db> {
 					// Ignore destructuring and recording resolution for now since these can't have bodies which refer
 					// to parameters anyway
 					if let Some(p) = param.pattern
-						&& let Some(i) = a[p].identifier() {
-							param_decl.set_name(i);
-						}
+						&& let Some(i) = a[p].identifier()
+					{
+						param_decl.set_name(i);
+					}
 					let idx = self
 						.model
 						.add_declaration(DeclarationItem::new(param_decl, item));
@@ -284,46 +285,45 @@ impl<'db> ItemCollector<'db> {
 		let types = item.types(db);
 		let ty = &types[e.pattern];
 		match ty {
-			PatternTy::Enum(ty) => {
-				match ty.lookup(self.db) {
-					TyData::Set(VarType::Par, OptType::NonOpt, element) => {
-						match element.lookup(self.db) {
-							TyData::Enum(_, _, t) => {
-								let mut enumeration = Enumeration::new(*t);
-								{
-									let mut collector =
-										ExpressionCollector::new(self, e.data(), item, &types);
-									enumeration.annotations_mut().extend(
-										e.annotations
-											.iter()
-											.map(|ann| collector.collect_expression(*ann)),
-									);
-								}
-								if let Some(def) = &e.definition {
-									enumeration.set_definition(def.iter().map(|c| {
-										self.collect_enum_case(c, e.data(), item, &types)
-									}))
-								}
-								let idx = self
-									.model
-									.add_enumeration(EnumerationItem::new(enumeration, item));
-								let _ = self.resolutions.insert(
-									PatternRef::new(self.db, item, e.pattern),
-									LoweredIdentifier::ResolvedIdentifier(idx.into()),
+			PatternTy::Enum(ty) => match ty.lookup(self.db) {
+				TyData::Set(VarType::Par, OptType::NonOpt, element) => {
+					match element.lookup(self.db) {
+						TyData::Enum(_, _, t) => {
+							let mut enumeration = Enumeration::new(*t);
+							{
+								let mut collector =
+									ExpressionCollector::new(self, e.data(), item, &types);
+								enumeration.annotations_mut().extend(
+									e.annotations
+										.iter()
+										.map(|ann| collector.collect_expression(*ann)),
 								);
-								self.add_enum_resolutions(
-									idx,
-									item,
-									e.definition.iter().flat_map(|cs| cs.iter()),
-								);
-								idx
 							}
-							_ => unreachable!(),
+							if let Some(def) = &e.definition {
+								enumeration.set_definition(
+									def.iter()
+										.map(|c| self.collect_enum_case(c, e.data(), item, &types)),
+								)
+							}
+							let idx = self
+								.model
+								.add_enumeration(EnumerationItem::new(enumeration, item));
+							let _ = self.resolutions.insert(
+								PatternRef::new(self.db, item, e.pattern),
+								LoweredIdentifier::ResolvedIdentifier(idx.into()),
+							);
+							self.add_enum_resolutions(
+								idx,
+								item,
+								e.definition.iter().flat_map(|cs| cs.iter()),
+							);
+							idx
 						}
+						_ => unreachable!(),
 					}
-					_ => unreachable!(),
 				}
-			}
+				_ => unreachable!(),
+			},
 			_ => unreachable!(),
 		}
 	}
@@ -465,7 +465,8 @@ impl<'db> ItemCollector<'db> {
 			PatternTy::Function(fn_entry) => {
 				let domain =
 					collector.collect_domain(f.return_type, fn_entry.overload.return_type(), false);
-				let mut function = Function::new(f[f.pattern].identifier().unwrap().into(), domain);
+				let name = f[f.pattern].identifier().unwrap();
+				let mut function = Function::new(name.into(), domain);
 				function.annotations_mut().extend(
 					f.annotations
 						.iter()
@@ -877,39 +878,33 @@ impl<'db, 'a, 'b, 'c> ExpressionCollector<'db, 'a, 'b, 'c> {
 			}
 			shackle_hir::Expression::BooleanLiteral(b) => alloc_expression(*b, self, origin),
 			shackle_hir::Expression::Call(c) => {
-				let function =
-					if let shackle_hir::Expression::Identifier(name) = self.data[c.function] {
-						if name == self.parent.ids.functions.mzn_builtin {
-							Callable::Builtin
-						} else {
-							let res = self.types.name_resolution(c.function).unwrap_or_else(|| {
-								panic!(
-									"No name resolution in types for {:?} at {:?}",
-									c.function,
-									ExpressionRef::new(self.parent.db, self.item, c.function)
-										.source_span(self.parent.db)
-								);
-							});
-							let ident = self.parent.resolutions.get(&res).unwrap_or_else(|| {
-								let f = ExpressionRef::new(self.parent.db, self.item, c.function);
-								panic!(
-									"Did not lower {:?} at {:?} used by {:?} at {:?}",
-									res,
-									res.into_entity(self.parent.db).source_span(self.parent.db),
-									f,
-									f.source_span(self.parent.db),
-								)
-							});
-							match ident {
-								LoweredIdentifier::Callable(c) => c.clone(),
-								_ => Callable::Expression(Box::new(
-									self.collect_expression(c.function),
-								)),
-							}
-						}
-					} else {
-						Callable::Expression(Box::new(self.collect_expression(c.function)))
-					};
+				let function = if let shackle_hir::Expression::Identifier(_) = self.data[c.function]
+				{
+					let res = self.types.name_resolution(c.function).unwrap_or_else(|| {
+						panic!(
+							"No name resolution in types for {:?} at {:?}",
+							c.function,
+							ExpressionRef::new(self.parent.db, self.item, c.function)
+								.source_span(self.parent.db)
+						);
+					});
+					let ident = self.parent.resolutions.get(&res).unwrap_or_else(|| {
+						let f = ExpressionRef::new(self.parent.db, self.item, c.function);
+						panic!(
+							"Did not lower {:?} at {:?} used by {:?} at {:?}",
+							res,
+							res.into_entity(self.parent.db).source_span(self.parent.db),
+							f,
+							f.source_span(self.parent.db),
+						)
+					});
+					match ident {
+						LoweredIdentifier::Callable(c) => c.clone(),
+						_ => Callable::Expression(Box::new(self.collect_expression(c.function))),
+					}
+				} else {
+					Callable::Expression(Box::new(self.collect_expression(c.function)))
+				};
 				alloc_expression(
 					Call {
 						function,
@@ -1378,60 +1373,59 @@ impl<'db, 'a, 'b, 'c> ExpressionCollector<'db, 'a, 'b, 'c> {
 				};
 
 				if let Callable::Function(f) = &function
-					&& self.parent.model[*f].parameters().len() > c.arguments.len() {
-						// Add the annotated declaration identifier as first argument
-						let mut arguments = Vec::with_capacity(c.arguments.len() + 1);
-						arguments.push(alloc_expression(
-							ResolvedIdentifier::Declaration(decl),
-							self,
-							origin,
-						));
-						arguments
-							.extend(c.arguments.iter().map(|arg| self.collect_expression(*arg)));
+					&& self.parent.model[*f].parameters().len() > c.arguments.len()
+				{
+					// Add the annotated declaration identifier as first argument
+					let mut arguments = Vec::with_capacity(c.arguments.len() + 1);
+					arguments.push(alloc_expression(
+						ResolvedIdentifier::Declaration(decl),
+						self,
+						origin,
+					));
+					arguments.extend(c.arguments.iter().map(|arg| self.collect_expression(*arg)));
 
-						let ann_decl = self.introduce_declaration(
-							self.parent.model[decl].top_level(),
-							origin,
-							|collector| {
+					let ann_decl = self.introduce_declaration(
+						self.parent.model[decl].top_level(),
+						origin,
+						|collector| {
+							alloc_expression(
+								Call {
+									function,
+									arguments,
+								},
+								collector,
+								origin,
+							)
+						},
+					);
+
+					let annotate = alloc_expression(
+						LookupCall {
+							function: self.parent.ids.functions.annotate.into(),
+							arguments: vec![
 								alloc_expression(
-									Call {
-										function,
-										arguments,
-									},
-									collector,
+									ResolvedIdentifier::Declaration(decl),
+									self,
 									origin,
-								)
-							},
-						);
+								),
+								alloc_expression(
+									ResolvedIdentifier::Declaration(ann_decl),
+									self,
+									origin,
+								),
+							],
+						},
+						self,
+						origin,
+					);
+					let constraint = Constraint::new(self.parent.model[decl].top_level(), annotate);
+					let c_idx = self
+						.parent
+						.model
+						.add_constraint(ConstraintItem::new(constraint, origin));
 
-						let annotate = alloc_expression(
-							LookupCall {
-								function: self.parent.ids.functions.annotate.into(),
-								arguments: vec![
-									alloc_expression(
-										ResolvedIdentifier::Declaration(decl),
-										self,
-										origin,
-									),
-									alloc_expression(
-										ResolvedIdentifier::Declaration(ann_decl),
-										self,
-										origin,
-									),
-								],
-							},
-							self,
-							origin,
-						);
-						let constraint =
-							Constraint::new(self.parent.model[decl].top_level(), annotate);
-						let c_idx = self
-							.parent
-							.model
-							.add_constraint(ConstraintItem::new(constraint, origin));
-
-						return LoweredAnnotation::Items(vec![ann_decl.into(), c_idx.into()]);
-					}
+					return LoweredAnnotation::Items(vec![ann_decl.into(), c_idx.into()]);
+				}
 
 				// Return as is
 				return LoweredAnnotation::Expression(alloc_expression(

@@ -157,31 +157,31 @@ impl<'db> Ty<'db> {
 		if inst == VarType::Par {
 			return Some(self.make_par(db));
 		}
-		let result = match self.lookup(db).clone() {
-			TyData::Boolean(_, o) => TyData::Boolean(inst, o),
-			TyData::Integer(_, o) => TyData::Integer(inst, o),
-			TyData::Float(_, o) => TyData::Float(inst, o),
-			TyData::Enum(_, o, e) => TyData::Enum(inst, o, e),
-			TyData::Set(_, o, e) if e.known_enumerable(db) => TyData::Set(inst, o, e),
+		let result = match self.lookup(db) {
+			TyData::Boolean(_, o) => TyData::Boolean(inst, *o),
+			TyData::Integer(_, o) => TyData::Integer(inst, *o),
+			TyData::Float(_, o) => TyData::Float(inst, *o),
+			TyData::Enum(_, o, e) => TyData::Enum(inst, *o, *e),
+			TyData::Set(_, o, e) if e.known_enumerable(db) => TyData::Set(inst, *o, *e),
 			TyData::Array { opt, dim, element } => TyData::Array {
-				opt,
-				dim,
+				opt: *opt,
+				dim: *dim,
 				element: element.with_inst(db, inst)?,
 			},
 			TyData::Tuple(o, fs) => TyData::Tuple(
-				o,
+				*o,
 				fs.iter()
 					.map(|f| f.with_inst(db, inst))
 					.collect::<Option<_>>()?,
 			),
 			TyData::Record(o, fs) => TyData::Record(
-				o,
+				*o,
 				fs.iter()
 					.map(|(i, f)| Some((*i, f.with_inst(db, inst)?)))
 					.collect::<Option<_>>()?,
 			),
 			TyData::Function(_, _) if inst == VarType::Par => return Some(*self),
-			TyData::TyVar(_, o, t) if t.varifiable => TyData::TyVar(Some(inst), o, t),
+			TyData::TyVar(_, o, t) if t.varifiable => TyData::TyVar(Some(inst), *o, t.clone()),
 			TyData::Bottom(_) | TyData::Error => return Some(*self),
 			_ => return None,
 		};
@@ -201,24 +201,24 @@ impl<'db> Ty<'db> {
 	fn make_par_inner(&self, db: &'db dyn Db) -> Ty<'db> {
 		Ty::new(
 			db,
-			match self.lookup(db).clone() {
-				TyData::Boolean(_, o) => TyData::Boolean(VarType::Par, o),
-				TyData::Integer(_, o) => TyData::Integer(VarType::Par, o),
-				TyData::Float(_, o) => TyData::Float(VarType::Par, o),
-				TyData::Enum(_, o, e) => TyData::Enum(VarType::Par, o, e),
+			match self.lookup(db) {
+				TyData::Boolean(_, o) => TyData::Boolean(VarType::Par, *o),
+				TyData::Integer(_, o) => TyData::Integer(VarType::Par, *o),
+				TyData::Float(_, o) => TyData::Float(VarType::Par, *o),
+				TyData::Enum(_, o, e) => TyData::Enum(VarType::Par, *o, *e),
 				TyData::Array { opt, dim, element } => TyData::Array {
-					opt,
-					dim,
+					opt: *opt,
+					dim: *dim,
 					element: element.make_par(db),
 				},
-				TyData::Set(_, o, e) => TyData::Set(VarType::Par, o, e),
+				TyData::Set(_, o, e) => TyData::Set(VarType::Par, *o, *e),
 				TyData::Tuple(o, fs) => {
-					TyData::Tuple(o, fs.iter().map(|f| f.make_par(db)).collect())
+					TyData::Tuple(*o, fs.iter().map(|f| f.make_par(db)).collect())
 				}
 				TyData::Record(o, fs) => {
-					TyData::Record(o, fs.iter().map(|(i, f)| (*i, f.make_par(db))).collect())
+					TyData::Record(*o, fs.iter().map(|(i, f)| (*i, f.make_par(db))).collect())
 				}
-				TyData::TyVar(_, o, t) => TyData::TyVar(Some(VarType::Par), o, t),
+				TyData::TyVar(_, o, t) => TyData::TyVar(Some(VarType::Par), *o, t.clone()),
 				_ => return *self,
 			},
 		)
@@ -228,20 +228,24 @@ impl<'db> Ty<'db> {
 	pub fn with_opt(&self, db: &'db dyn Db, opt: OptType) -> Ty<'db> {
 		Ty::new(
 			db,
-			match self.lookup(db).clone() {
-				TyData::Boolean(i, _) => TyData::Boolean(i, opt),
-				TyData::Integer(i, _) => TyData::Integer(i, opt),
-				TyData::Float(i, _) => TyData::Float(i, opt),
-				TyData::Enum(i, _, e) => TyData::Enum(i, opt, e),
+			match self.lookup(db) {
+				TyData::Boolean(i, _) => TyData::Boolean(*i, opt),
+				TyData::Integer(i, _) => TyData::Integer(*i, opt),
+				TyData::Float(i, _) => TyData::Float(*i, opt),
+				TyData::Enum(i, _, e) => TyData::Enum(*i, opt, *e),
 				TyData::String(_) => TyData::String(opt),
 				TyData::Annotation(_) => TyData::Annotation(opt),
 				TyData::Bottom(_) => TyData::Bottom(opt),
-				TyData::Array { dim, element, .. } => TyData::Array { opt, dim, element },
-				TyData::Set(i, _, e) => TyData::Set(i, opt, e),
-				TyData::Tuple(_, fs) => TyData::Tuple(opt, fs),
-				TyData::Record(_, fs) => TyData::Record(opt, fs),
-				TyData::Function(_, f) => TyData::Function(opt, f),
-				TyData::TyVar(i, _, t) => TyData::TyVar(i, Some(opt), t),
+				TyData::Array { dim, element, .. } => TyData::Array {
+					opt,
+					dim: *dim,
+					element: *element,
+				},
+				TyData::Set(i, _, e) => TyData::Set(*i, opt, *e),
+				TyData::Tuple(_, fs) => TyData::Tuple(opt, fs.clone()),
+				TyData::Record(_, fs) => TyData::Record(opt, fs.clone()),
+				TyData::Function(_, f) => TyData::Function(opt, f.clone()),
+				TyData::TyVar(i, _, t) => TyData::TyVar(*i, Some(opt), t.clone()),
 				TyData::Error => return *self,
 			},
 		)
@@ -689,41 +693,43 @@ impl<'db> Ty<'db> {
 			.map(Some)
 			.reduce(|a, b| {
 				// E.g. t1 = var opt bool, t2 = var int, then super type is var opt int
-				let result = match (a?.lookup(db).clone(), b?.lookup(db).clone()) {
+				let result = match (a?.lookup(db), b?.lookup(db)) {
 					(TyData::Error, _) | (_, TyData::Error) => TyData::Error,
 					(TyData::Boolean(i1, o1), TyData::Boolean(i2, o2)) => {
-						TyData::Boolean(i1.max(i2), o1.max(o2))
+						TyData::Boolean((*i1).max(*i2), (*o1).max(*o2))
 					}
 					(TyData::Boolean(i1, o1), TyData::Integer(i2, o2))
 					| (TyData::Integer(i2, o2), TyData::Boolean(i1, o1))
 					| (TyData::Integer(i1, o1), TyData::Integer(i2, o2)) => {
-						TyData::Integer(i1.max(i2), o1.max(o2))
+						TyData::Integer((*i1).max(*i2), (*o1).max(*o2))
 					}
 					(TyData::Boolean(i1, o1), TyData::Float(i2, o2))
 					| (TyData::Float(i2, o2), TyData::Boolean(i1, o1))
 					| (TyData::Integer(i1, o1), TyData::Float(i2, o2))
 					| (TyData::Float(i2, o2), TyData::Integer(i1, o1))
-					| (TyData::Float(i2, o2), TyData::Float(i1, o1)) => TyData::Float(i1.max(i2), o1.max(o2)),
+					| (TyData::Float(i2, o2), TyData::Float(i1, o1)) => {
+						TyData::Float((*i1).max(*i2), (*o1).max(*o2))
+					}
 					(TyData::Enum(i1, o1, e1), TyData::Enum(i2, o2, e2)) if e1 == e2 => {
-						TyData::Enum(i1.max(i2), o1.max(o2), e1)
+						TyData::Enum((*i1).max(*i2), (*o1).max(*o2), *e1)
 					}
-					(TyData::String(o1), TyData::String(o2)) => TyData::String(o1.max(o2)),
+					(TyData::String(o1), TyData::String(o2)) => TyData::String((*o1).max(*o2)),
 					(TyData::Annotation(o1), TyData::Annotation(o2)) => {
-						TyData::Annotation(o1.max(o2))
+						TyData::Annotation((*o1).max(*o2))
 					}
-					(TyData::Bottom(o1), TyData::Bottom(o2)) => TyData::Bottom(o1.max(o2)),
+					(TyData::Bottom(o1), TyData::Bottom(o2)) => TyData::Bottom((*o1).max(*o2)),
 					(TyData::Bottom(o1), TyData::Boolean(i, o2))
-					| (TyData::Boolean(i, o2), TyData::Bottom(o1)) => TyData::Boolean(i, o1.max(o2)),
+					| (TyData::Boolean(i, o2), TyData::Bottom(o1)) => TyData::Boolean(*i, (*o1).max(*o2)),
 					(TyData::Bottom(o1), TyData::Integer(i, o2))
-					| (TyData::Integer(i, o2), TyData::Bottom(o1)) => TyData::Integer(i, o1.max(o2)),
+					| (TyData::Integer(i, o2), TyData::Bottom(o1)) => TyData::Integer(*i, (*o1).max(*o2)),
 					(TyData::Bottom(o1), TyData::Float(i, o2))
-					| (TyData::Float(i, o2), TyData::Bottom(o1)) => TyData::Float(i, o1.max(o2)),
+					| (TyData::Float(i, o2), TyData::Bottom(o1)) => TyData::Float(*i, (*o1).max(*o2)),
 					(TyData::Bottom(o1), TyData::Enum(i, o2, e))
-					| (TyData::Enum(i, o2, e), TyData::Bottom(o1)) => TyData::Enum(i, o1.max(o2), e),
+					| (TyData::Enum(i, o2, e), TyData::Bottom(o1)) => TyData::Enum(*i, (*o1).max(*o2), *e),
 					(TyData::Bottom(o1), TyData::String(o2))
-					| (TyData::String(o2), TyData::Bottom(o1)) => TyData::String(o1.max(o2)),
+					| (TyData::String(o2), TyData::Bottom(o1)) => TyData::String((*o1).max(*o2)),
 					(TyData::Bottom(o1), TyData::Annotation(o2))
-					| (TyData::Annotation(o2), TyData::Bottom(o1)) => TyData::Annotation(o1.max(o2)),
+					| (TyData::Annotation(o2), TyData::Bottom(o1)) => TyData::Annotation((*o1).max(*o2)),
 					(
 						TyData::Bottom(o1),
 						TyData::Array {
@@ -740,29 +746,33 @@ impl<'db> Ty<'db> {
 						},
 						TyData::Bottom(o1),
 					) => TyData::Array {
-						opt: o1.max(o2),
-						dim,
-						element,
+						opt: (*o1).max(*o2),
+						dim: *dim,
+						element: *element,
 					},
 					(TyData::Bottom(o1), TyData::Set(inst, o2, element))
 					| (TyData::Set(inst, o2, element), TyData::Bottom(o1)) => {
-						TyData::Set(inst, o1.max(o2), element)
+						TyData::Set(*inst, (*o1).max(*o2), *element)
 					}
 					(TyData::Bottom(o1), TyData::Tuple(o2, fields))
-					| (TyData::Tuple(o2, fields), TyData::Bottom(o1)) => TyData::Tuple(o1.max(o2), fields),
+					| (TyData::Tuple(o2, fields), TyData::Bottom(o1)) => {
+						TyData::Tuple((*o1).max(*o2), fields.clone())
+					}
 					(TyData::Bottom(o1), TyData::Record(o2, fields))
-					| (TyData::Record(o2, fields), TyData::Bottom(o1)) => TyData::Record(o1.max(o2), fields),
+					| (TyData::Record(o2, fields), TyData::Bottom(o1)) => {
+						TyData::Record((*o1).max(*o2), fields.clone())
+					}
 					(TyData::Bottom(o1), TyData::Function(o2, f))
-					| (TyData::Function(o2, f), TyData::Bottom(o1)) => TyData::Function(o1.max(o2), f),
+					| (TyData::Function(o2, f), TyData::Bottom(o1)) => TyData::Function((*o1).max(*o2), f.clone()),
 					(TyData::Bottom(o1), TyData::TyVar(inst, o2, tv))
 					| (TyData::TyVar(inst, o2, tv), TyData::Bottom(o1)) => TyData::TyVar(
-						inst,
-						if o1 == OptType::Opt {
+						*inst,
+						if *o1 == OptType::Opt {
 							Some(OptType::Opt)
 						} else {
-							o2.map(|o2| o1.max(o2))
+							(*o2).map(|o2| (*o1).max(o2))
 						},
-						tv,
+						tv.clone(),
 					),
 					(
 						TyData::Array {
@@ -776,26 +786,28 @@ impl<'db> Ty<'db> {
 							element: e2,
 						},
 					) => TyData::Array {
-						opt: o1.max(o2),
-						dim: Ty::most_specific_supertype(db, [d1, d2])?,
-						element: Ty::most_specific_supertype(db, [e1, e2])?,
+						opt: (*o1).max(*o2),
+						dim: Ty::most_specific_supertype(db, [*d1, *d2])?,
+						element: Ty::most_specific_supertype(db, [*e1, *e2])?,
 					},
 					(TyData::Set(i1, o1, e1), TyData::Set(i2, o2, e2)) => TyData::Set(
-						i1.max(i2),
-						o1.max(o2),
-						Ty::most_specific_supertype(db, [e1, e2])?,
+						(*i1).max(*i2),
+						(*o1).max(*o2),
+						Ty::most_specific_supertype(db, [*e1, *e2])?,
 					),
-					(TyData::Tuple(o1, f1), TyData::Tuple(o2, f2)) => TyData::Tuple(o1.max(o2), {
-						if f1.len() != f2.len() {
-							return None;
-						}
-						f1.iter()
-							.zip(f2.iter())
-							.map(|(t1, t2)| Ty::most_specific_supertype(db, [*t1, *t2]))
-							.collect::<Option<_>>()?
-					}),
+					(TyData::Tuple(o1, f1), TyData::Tuple(o2, f2)) => {
+						TyData::Tuple((*o1).max(*o2), {
+							if f1.len() != f2.len() {
+								return None;
+							}
+							f1.iter()
+								.zip(f2.iter())
+								.map(|(t1, t2)| Ty::most_specific_supertype(db, [*t1, *t2]))
+								.collect::<Option<_>>()?
+						})
+					}
 					(TyData::Record(o1, f1), TyData::Record(o2, f2)) => TyData::Record(
-						o1.max(o2),
+						(*o1).max(*o2),
 						// Intersection and supertype fields
 						// e.g. super type of `record(int: a, bool: b)` and `record(bool: a)` is `record(int: a)`
 						f1.iter()
@@ -807,7 +819,7 @@ impl<'db> Ty<'db> {
 							.collect(),
 					),
 					(TyData::Function(o1, f1), TyData::Function(o2, f2)) => TyData::Function(
-						o1.max(o2),
+						(*o1).max(*o2),
 						FunctionType {
 							return_type: Ty::most_specific_supertype(
 								db,
@@ -827,14 +839,14 @@ impl<'db> Ty<'db> {
 					),
 					(TyData::TyVar(i1, o1, t1), TyData::TyVar(i2, o2, t2)) if t1 == t2 => {
 						TyData::TyVar(
-							match (i1, i2) {
+							match (*i1, *i2) {
 								(Some(VarType::Var), _) | (_, Some(VarType::Var)) => {
 									Some(VarType::Var)
 								}
 								(Some(VarType::Par), Some(VarType::Par)) => Some(VarType::Par),
 								_ => None,
 							},
-							match (o1, o2) {
+							match (*o1, *o2) {
 								(Some(OptType::Opt), _) | (_, Some(OptType::Opt)) => {
 									Some(OptType::Opt)
 								}
@@ -843,7 +855,7 @@ impl<'db> Ty<'db> {
 								}
 								_ => None,
 							},
-							t1,
+							t1.clone(),
 						)
 					}
 					_ => {
@@ -876,25 +888,29 @@ impl<'db> Ty<'db> {
 		ts.into_iter()
 			.map(Some)
 			.reduce(|a, b| {
-				let result = match (a?.lookup(db).clone(), b?.lookup(db).clone()) {
+				let result = match (a?.lookup(db), b?.lookup(db)) {
 					(TyData::Error, _) | (_, TyData::Error) => TyData::Error,
 					(TyData::Boolean(i1, o1), TyData::Boolean(i2, o2))
 					| (TyData::Boolean(i1, o1), TyData::Integer(i2, o2))
 					| (TyData::Integer(i2, o2), TyData::Boolean(i1, o1))
 					| (TyData::Boolean(i1, o1), TyData::Float(i2, o2))
-					| (TyData::Float(i2, o2), TyData::Boolean(i1, o1)) => TyData::Boolean(i1.min(i2), o1.min(o2)),
+					| (TyData::Float(i2, o2), TyData::Boolean(i1, o1)) => {
+						TyData::Boolean((*i1).min(*i2), (*o1).min(*o2))
+					}
 					(TyData::Integer(i1, o1), TyData::Integer(i2, o2))
 					| (TyData::Integer(i1, o1), TyData::Float(i2, o2))
-					| (TyData::Float(i2, o2), TyData::Integer(i1, o1)) => TyData::Integer(i1.min(i2), o1.min(o2)),
+					| (TyData::Float(i2, o2), TyData::Integer(i1, o1)) => {
+						TyData::Integer((*i1).min(*i2), (*o1).min(*o2))
+					}
 					(TyData::Float(i1, o1), TyData::Float(i2, o2)) => {
-						TyData::Float(i1.min(i2), o1.min(o2))
+						TyData::Float((*i1).min(*i2), (*o1).min(*o2))
 					}
 					(TyData::Enum(i1, o1, e1), TyData::Enum(i2, o2, e2)) if e1 == e2 => {
-						TyData::Enum(i1.min(i2), o1.min(o2), e1)
+						TyData::Enum((*i1).min(*i2), (*o1).min(*o2), *e1)
 					}
-					(TyData::String(o1), TyData::String(o2)) => TyData::String(o1.min(o2)),
+					(TyData::String(o1), TyData::String(o2)) => TyData::String((*o1).min(*o2)),
 					(TyData::Annotation(o1), TyData::Annotation(o2)) => {
-						TyData::Annotation(o1.min(o2))
+						TyData::Annotation((*o1).min(*o2))
 					}
 					(TyData::Bottom(o1), TyData::Bottom(o2))
 					| (TyData::Bottom(o1), TyData::Boolean(_, o2))
@@ -918,10 +934,10 @@ impl<'db> Ty<'db> {
 					| (TyData::Bottom(o1), TyData::Record(o2, _))
 					| (TyData::Record(o2, _), TyData::Bottom(o1))
 					| (TyData::Bottom(o1), TyData::Function(o2, _))
-					| (TyData::Function(o2, _), TyData::Bottom(o1)) => TyData::Bottom(o1.min(o2)),
+					| (TyData::Function(o2, _), TyData::Bottom(o1)) => TyData::Bottom((*o1).min(*o2)),
 					(TyData::Bottom(o1), TyData::TyVar(_, o2, _))
 					| (TyData::TyVar(_, o2, _), TyData::Bottom(o1)) => {
-						TyData::Bottom(Some(o1).min(o2).unwrap_or(OptType::NonOpt))
+						TyData::Bottom((*o1).min((*o2).unwrap_or(OptType::NonOpt)))
 					}
 					(
 						TyData::Array {
@@ -935,24 +951,26 @@ impl<'db> Ty<'db> {
 							element: e2,
 						},
 					) => TyData::Array {
-						opt: o1.min(o2),
-						dim: Ty::most_general_subtype(db, [d1, d2])?,
-						element: Ty::most_general_subtype(db, [e1, e2])?,
+						opt: (*o1).min(*o2),
+						dim: Ty::most_general_subtype(db, [*d1, *d2])?,
+						element: Ty::most_general_subtype(db, [*e1, *e2])?,
 					},
 					(TyData::Set(i1, o1, e1), TyData::Set(i2, o2, e2)) => TyData::Set(
-						i1.min(i2),
-						o1.min(o2),
-						Ty::most_general_subtype(db, [e1, e2])?,
+						(*i1).min(*i2),
+						(*o1).min(*o2),
+						Ty::most_general_subtype(db, [*e1, *e2])?,
 					),
-					(TyData::Tuple(o1, f1), TyData::Tuple(o2, f2)) => TyData::Tuple(o1.max(o2), {
-						if f1.len() != f2.len() {
-							return None;
-						}
-						f1.iter()
-							.zip(f2.iter())
-							.map(|(t1, t2)| Ty::most_general_subtype(db, [*t1, *t2]))
-							.collect::<Option<_>>()?
-					}),
+					(TyData::Tuple(o1, f1), TyData::Tuple(o2, f2)) => {
+						TyData::Tuple((*o1).max(*o2), {
+							if f1.len() != f2.len() {
+								return None;
+							}
+							f1.iter()
+								.zip(f2.iter())
+								.map(|(t1, t2)| Ty::most_general_subtype(db, [*t1, *t2]))
+								.collect::<Option<_>>()?
+						})
+					}
 					(TyData::Record(o1, f1), TyData::Record(o2, f2)) => {
 						// Union and subtype fields
 						// e.g. subtype of `record(int: a, bool: b)` and `record(bool: a)` is `record(bool: a, bool b)`
@@ -972,7 +990,7 @@ impl<'db> Ty<'db> {
 						let mut result = fields.into_iter().collect::<Vec<_>>();
 						result.sort_by_key(|(_, (i, _))| *i);
 						TyData::Record(
-							o1.max(o2),
+							(*o1).max(*o2),
 							result
 								.into_iter()
 								.map(|(name, (_, ty))| (name, ty))
@@ -980,7 +998,7 @@ impl<'db> Ty<'db> {
 						)
 					}
 					(TyData::Function(o1, f1), TyData::Function(o2, f2)) => TyData::Function(
-						o1.max(o2),
+						(*o1).max(*o2),
 						FunctionType {
 							return_type: Ty::most_general_subtype(
 								db,
@@ -1000,21 +1018,21 @@ impl<'db> Ty<'db> {
 					),
 					(TyData::TyVar(i1, o1, t1), TyData::TyVar(i2, o2, t2)) if t1 == t2 => {
 						TyData::TyVar(
-							match (i1, i2) {
+							match (*i1, *i2) {
 								(Some(VarType::Par), _) | (_, Some(VarType::Par)) => {
 									Some(VarType::Par)
 								}
 								(Some(VarType::Var), Some(VarType::Var)) => Some(VarType::Var),
 								_ => None,
 							},
-							match (o1, o2) {
+							match (*o1, *o2) {
 								(Some(OptType::NonOpt), _) | (_, Some(OptType::NonOpt)) => {
 									Some(OptType::NonOpt)
 								}
 								(Some(OptType::Opt), Some(OptType::Opt)) => Some(OptType::Opt),
 								_ => None,
 							},
-							t1,
+							t1.clone(),
 						)
 					}
 					_ => {
@@ -1162,15 +1180,15 @@ impl<'db> Ty<'db> {
 		db: &'db dyn Db,
 		ty_vars: &TyParamInstantiations<'db>,
 	) -> Ty<'db> {
-		match self.lookup(db).clone() {
+		match self.lookup(db) {
 			TyData::TyVar(i, o, t) if ty_vars.contains_key(&t.ty_var) => {
 				let mut ty = ty_vars[&t.ty_var];
-				if let Some(inst) = i {
+				if let Some(inst) = *i {
 					ty = ty
 						.with_inst(db, inst)
 						.expect("Type-inst is incompatible with type-inst var");
 				}
-				if let Some(opt) = o {
+				if let Some(opt) = *o {
 					ty = ty.with_opt(db, opt);
 				}
 				ty
@@ -1178,18 +1196,18 @@ impl<'db> Ty<'db> {
 			TyData::Array { opt, dim, element } => Ty::new(
 				db,
 				TyData::Array {
-					opt,
+					opt: *opt,
 					dim: dim.instantiate_ty_vars(db, ty_vars),
 					element: element.instantiate_ty_vars(db, ty_vars),
 				},
 			),
 			TyData::Set(i, o, t) => {
-				Ty::new(db, TyData::Set(i, o, t.instantiate_ty_vars(db, ty_vars)))
+				Ty::new(db, TyData::Set(*i, *o, t.instantiate_ty_vars(db, ty_vars)))
 			}
 			TyData::Tuple(o, fs) => Ty::new(
 				db,
 				TyData::Tuple(
-					o,
+					*o,
 					fs.iter()
 						.map(|f| f.instantiate_ty_vars(db, ty_vars))
 						.collect(),
@@ -1198,7 +1216,7 @@ impl<'db> Ty<'db> {
 			TyData::Record(o, fs) => Ty::new(
 				db,
 				TyData::Record(
-					o,
+					*o,
 					fs.iter()
 						.map(|(i, f)| (*i, f.instantiate_ty_vars(db, ty_vars)))
 						.collect(),

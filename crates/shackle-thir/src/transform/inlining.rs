@@ -20,6 +20,7 @@ struct Inliner<'db, Dst: Marker, Src: Marker = ()> {
 	replacement_map: ReplacementMap<'db, Dst, Src>,
 	ids: &'db IdentifierRegistry<'db>,
 	map: FxHashMap<DeclarationId<'db, Src>, Expression<'db, Dst>>,
+	depth: u16,
 }
 
 impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, Dst, Src> {
@@ -105,6 +106,14 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 								model[*f].name().pretty_print(db)
 							);
 
+							let old_depth = self.depth;
+							self.depth += 1;
+
+							assert!(
+								self.depth < 100,
+								"Exceeded maximum inlining depth, likely due to infinite recursion"
+							);
+
 							let mut restore = Vec::with_capacity(c.arguments.len());
 							let items = c
 								.arguments
@@ -134,6 +143,8 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 									let _ = self.map.remove(param);
 								}
 							}
+
+							self.depth = old_depth;
 							return if items.is_empty() {
 								inlined
 							} else {
@@ -156,6 +167,15 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 								"Inlining {} using call by name semantics",
 								model[*f].name().pretty_print(db)
 							);
+
+							let old_depth = self.depth;
+							self.depth += 1;
+
+							assert!(
+								self.depth < 100,
+								"Exceeded maximum inlining depth, likely due to infinite recursion"
+							);
+
 							let mut restore = Vec::with_capacity(c.arguments.len());
 							for (param, arg) in
 								model[*f].parameters().iter().zip(c.arguments.iter())
@@ -172,6 +192,9 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 									let _ = self.map.remove(param);
 								}
 							}
+
+							self.depth = old_depth;
+
 							return inlined;
 						}
 					}
@@ -201,6 +224,7 @@ pub fn inline_functions<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model
 		model: Model::with_capacities(&model.item_counts()),
 		ids: IdentifierRegistry::lookup(db),
 		map: FxHashMap::default(),
+		depth: 0,
 	};
 	inliner.add_model(db, &model);
 	Ok(inliner.model)

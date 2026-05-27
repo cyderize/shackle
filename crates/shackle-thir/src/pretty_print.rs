@@ -586,7 +586,6 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 						})()
 					}
 					Callable::Expression(e) => format!("({})", self.pretty_print_expression(e)),
-					Callable::Builtin => "mzn_builtin".to_owned(),
 				};
 				let args = c
 					.arguments

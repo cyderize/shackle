@@ -50,7 +50,7 @@ pub fn topological_sort<'db>(db: &'db dyn Db) -> Vec<Item<'db>> {
 	for item in items.iter() {
 		topo_sorter.run(*item);
 	}
-	
+
 	topo_sorter.finish()
 }
 
@@ -230,7 +230,7 @@ impl<'db> TopoSorter<'db> {
 					PatternTy::Function(f) => {
 						let (is_self, _, _) =
 							FunctionEntry::match_fn(self.db, overloads, f.overload.params())
-								.unwrap_or_else(|e| unreachable!("Unexpected error: {:?}", e));
+								.unwrap_or_else(|e| unreachable!("Unexpected error: {:#?}", e));
 						if !is_self {
 							// Ignore this function since it has been subsumed by another
 							return;

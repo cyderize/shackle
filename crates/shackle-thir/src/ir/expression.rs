@@ -792,8 +792,6 @@ pub enum Callable<'db, T: Marker = ()> {
 	EnumDestructor(EnumMemberId<'db, T>),
 	/// Call to a lambda expression
 	Expression(Box<Expression<'db, T>>),
-	/// Call to an interpreter builtin
-	Builtin,
 }
 
 /// A function call
@@ -962,26 +960,15 @@ impl<'db, T: Marker> Call<'db, T> {
 					});
 				ft.clone()
 			}
-			Callable::Builtin => {
-				let arg_tys = self.arguments.iter().map(|e| e.ty()).collect::<Vec<_>>();
-				FunctionType {
-					params: arg_tys.into_boxed_slice(),
-					return_type: Ty::bottom(db),
-				}
-			}
 		}
 	}
 
-	/// Whether or not this is a call to the given builtin
-	pub fn matches_builtin(&self, f: Identifier) -> bool {
-		let Callable::Builtin = &self.function else {
+	/// Whether or not this is a call to the given builtin (function with no body with the given name).
+	pub fn matches_builtin(&self, model: &Model<'db, T>, builtin: Identifier<'db>) -> bool {
+		let Callable::Function(f) = &self.function else {
 			return false;
 		};
-		assert!(!self.arguments.is_empty());
-		let ExpressionData::StringLiteral(s) = &*self.arguments[0] else {
-			return false;
-		};
-		s.0 == f.0
+		model[*f].name() == builtin && model[*f].body().is_none()
 	}
 }
 
@@ -993,37 +980,6 @@ impl<'db, T: Marker> ExpressionBuilder<'db, T> for Call<'db, T> {
 		origin: Origin<'db>,
 	) -> Expression<'db, T> {
 		Expression::new_unchecked(self.function_type(db, model).return_type, self, origin)
-	}
-}
-
-/// A call to an interpreter builtin
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BuiltinCall<'db, T: Marker = ()> {
-	/// Name
-	pub name: Identifier<'db>,
-	/// Arguments
-	pub arguments: Vec<Expression<'db, T>>,
-}
-
-impl<'db, T: Marker> ExpressionBuilder<'db, T> for BuiltinCall<'db, T> {
-	fn build(
-		mut self,
-		db: &'db dyn Db,
-		model: &Model<'db, T>,
-		origin: Origin<'db>,
-	) -> Expression<'db, T> {
-		self.arguments.insert(
-			0,
-			Expression::new(db, model, origin, StringLiteral(self.name.into())),
-		);
-		Expression::new_unchecked(
-			Ty::bottom(db),
-			Call {
-				function: Callable::Builtin,
-				arguments: self.arguments,
-			},
-			origin,
-		)
 	}
 }
 
@@ -1126,6 +1082,24 @@ impl<'db, T: Marker> ExpressionBuilder<'db, T> for Let<'db, T> {
 			return Expression::new_unchecked(types.var_bool, self, origin);
 		}
 		Expression::new_unchecked(self.in_expression.ty(), self, origin)
+	}
+}
+
+/// A let expression produced during totalisation
+///
+/// Needed because normal lets promote par bool to var when it can't prove that
+/// the definedness is always par.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, salsa::Update, From)]
+pub struct TotalLet<'db, T: Marker = ()>(pub Let<'db, T>);
+
+impl<'db, T: Marker> ExpressionBuilder<'db, T> for TotalLet<'db, T> {
+	fn build(
+		self,
+		_db: &'db dyn Db,
+		_model: &Model<'db, T>,
+		origin: Origin<'db>,
+	) -> Expression<'db, T> {
+		Expression::new_unchecked(self.0.in_expression.ty(), self.0, origin)
 	}
 }
 

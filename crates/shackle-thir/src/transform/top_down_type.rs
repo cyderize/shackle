@@ -308,9 +308,6 @@ impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
 								.collect::<Vec<_>>()
 						}
 					}
-					Callable::Builtin => {
-						return false;
-					}
 				};
 				self.extend(c.arguments.iter().zip(params));
 				return false;
@@ -453,6 +450,40 @@ mod tests {
     array [int] of opt int: z = [let {
       opt int: _DECL_5 = 1;
     } in _DECL_5];
+    solve satisfy;
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_top_down_type_builtin() {
+		check_no_stdlib(
+			top_down_type,
+			r#"
+				annotation mzn_inline_call_by_name;
+				function var bool: forall(array [$T] of var bool: x) :: mzn_inline_call_by_name =
+					mzn_builtin("mzn_forall_var", x);
+				function var bool: exists(array [$T] of var bool: x) :: mzn_inline_call_by_name =
+					mzn_builtin("mzn_exists_var", x);
+				function var bool: forall(array [int] of var bool: x) :: mzn_inline_call_by_name =
+					mzn_builtin("mzn_forall_var", x);
+				function var bool: exists(array [int] of var bool: x) :: mzn_inline_call_by_name =
+					mzn_builtin("mzn_exists_var", x);
+				"#,
+			expect!([r#"
+    annotation mzn_inline_call_by_name;
+    function var bool: forall(array [$T] of var bool: x) :: (mzn_inline_call_by_name) = let {
+      var bool: _DECL_5 = mzn_builtin("mzn_forall_var", x);
+    } in _DECL_5;
+    function var bool: exists(array [$T] of var bool: x) :: (mzn_inline_call_by_name) = let {
+      var bool: _DECL_6 = mzn_builtin("mzn_exists_var", x);
+    } in _DECL_6;
+    function var bool: forall(array [int] of var bool: x) :: (mzn_inline_call_by_name) = let {
+      var bool: _DECL_7 = mzn_builtin("mzn_forall_var", x);
+    } in _DECL_7;
+    function var bool: exists(array [int] of var bool: x) :: (mzn_inline_call_by_name) = let {
+      var bool: _DECL_8 = mzn_builtin("mzn_exists_var", x);
+    } in _DECL_8;
     solve satisfy;
 "#]),
 		)

@@ -3,14 +3,16 @@ use crate::{Db, Identifier};
 
 macro_rules! id_registry {
 	($struct:ident, $($tail:tt)*) => {
-		id_registry!(@def $struct ($($tail)*) ());
-		id_registry!(@imp $struct db ($($tail)*) ());
+		id_registry!(@def $struct all ($($tail)*) ());
+		id_registry!(@imp $struct db all ($($tail)*) ());
 	};
 
-	(@def $struct:ident ($($name:ident $(:$value:expr)?)?) ($($rest:tt)*)) => {
+	(@def $struct:ident $all:ident ($($name:ident $(:$value:expr)?)?) ($($rest:tt)*)) => {
 		/// Registry for common identifiers
 		#[derive(Clone, Debug, PartialEq, Eq, Hash, salsa::Update)]
 		pub struct $struct<'db> {
+			/// All identifiers
+			pub $all: Vec<Identifier<'db>>,
 			$($rest)*
 			$(
 				#[allow(missing_docs, reason = "Fields are self-explanatory")]
@@ -18,38 +20,37 @@ macro_rules! id_registry {
 			)?
 		}
 	};
-	(@def $struct:ident ($name:ident $(:$value:expr)?, $($todo:tt)*) ($($rest:tt)*)) => {
-		id_registry!(@def $struct ($($todo)*) (
+	(@def $struct:ident $all:ident ($name:ident $(:$value:expr)?, $($todo:tt)*) ($($rest:tt)*)) => {
+		id_registry!(@def $struct $all ($($todo)*) (
 			$($rest)*
 			#[allow(missing_docs, reason = "Fields are self-explanatory")]
 			pub $name: Identifier<'db>,
 		));
 	};
 
-	(@imp $struct:ident $db:ident ($($name:ident)?) ($($rest:tt)*)) => {
+	(@imp $struct:ident $db:ident  $all:ident () ($($rest:tt)*)) => {
 		impl<'db> $struct<'db> {
 			/// Create a new identifier registry
 			pub fn new($db: &'db dyn Db) -> Self {
+				let mut $all = Vec::new();
 				Self {
 					$($rest)*
-					$(
-						$name: Identifier::new($db, stringify!($name)),
-					)?
+					$all
 				}
 			}
 		}
 	};
-	(@imp $struct:ident $db:ident ($name:ident, $($todo:tt)*) ($($rest:tt)*)) => {
-		id_registry!(@imp $struct $db ($($todo)*) (
+	(@imp $struct:ident $db:ident $all:ident ($name:ident, $($todo:tt)*) ($($rest:tt)*)) => {
+		id_registry!(@imp $struct $db $all ($($todo)*) (
 			$($rest)*
-			$name: Identifier::new($db, stringify!($name)),
+			$name: { let ident = Identifier::new($db, stringify!($name)); $all.push(ident); ident },
 		));
 	};
 
-	(@imp $struct:ident $db:ident ($name:ident: $value:expr, $($todo:tt)*) ($($rest:tt)*)) => {
-		id_registry!(@imp $struct $db ($($todo)*) (
+	(@imp $struct:ident $db:ident $all:ident ($name:ident: $value:expr, $($todo:tt)*) ($($rest:tt)*)) => {
+		id_registry!(@imp $struct $db $all ($($todo)*) (
 			$($rest)*
-			$name: Identifier::new($db, $value),
+			$name: { let ident = Identifier::new($db, $value); $all.push(ident); ident },
 		));
 	};
 }
@@ -57,158 +58,126 @@ macro_rules! id_registry {
 id_registry!(
 	Builtins,
 	mzn_get_parameter,
-	mzn_forall_par,
-	mzn_forall_var,
-	mzn_exists_par,
-	mzn_exists_var,
+	forall,
+	exists,
 	mzn_indexed_array,
 	mzn_element_internal,
 	mzn_slice_internal,
-	mzn_array_to_set,
-	mzn_array_plus_plus,
-	mzn_array_length,
-	mzn_index_sets_agree,
-	mzn_index_sets,
-	mzn_array_xd,
-	mzn_array_kd,
 	mzn_array2set,
-	mzn_compute_div_bounds,
-	mzn_compute_mod_bounds,
-	mzn_compute_float_div_bounds,
-	mzn_compute_pow_bounds,
-	mzn_normal,
-	mzn_uniform_float,
-	mzn_uniform_int,
-	mzn_poisson,
-	mzn_gamma,
-	mzn_weibull,
-	mzn_exponential,
-	mzn_lognormal,
-	mzn_chisquared,
-	mzn_cauchy,
-	mzn_fdistribution,
-	mzn_tdistribution,
-	mzn_discrete_distribution,
-	mzn_bernoulli,
-	mzn_binomial,
+	plus_plus: "++",
+	length,
+	index_sets_agree,
+	index_sets,
+	array_xd: "arrayXd",
+	mzn_array_kd,
+	compute_div_bounds,
+	compute_mod_bounds,
+	compute_float_div_bounds,
+	compute_pow_bounds,
+	normal,
+	uniform_float,
+	uniform_int,
+	poisson,
+	gamma,
+	weibull,
+	exponential,
+	lognormal,
+	chisquared,
+	cauchy,
+	fdistribution,
+	tdistribution,
+	discrete_distribution,
+	bernoulli,
+	binomial,
 	mzn_add_warning,
-	mzn_trace_exp,
-	mzn_trace_to_section,
-	mzn_logstream_to_string,
-	mzn_abort,
+	trace_exp,
+	trace_to_section,
+	logstream_to_string,
+	abort,
 	mzn_internal_check_debug_mode,
-	mzn_lb,
-	mzn_ub,
-	mzn_lb_array,
-	mzn_ub_array,
-	mzn_dom,
-	mzn_dom_array,
-	mzn_dom_bounds_array,
-	mzn_has_bounds,
-	mzn_has_ub_set,
-	mzn_is_fixed,
-	mzn_fix,
-	mzn_has_ann,
-	mzn_annotate,
-	mzn_is_same,
+	lb,
+	ub,
+	lb_array,
+	ub_array,
+	dom,
+	dom_array,
+	dom_bounds_array,
+	has_bounds,
+	has_ub_set,
+	is_fixed,
+	fix,
+	has_ann,
+	annotate,
+	is_same,
 	mzn_compiler_version,
-	mzn_string_plus_plus,
-	mzn_string_length,
-	mzn_concat,
-	mzn_join,
-	mzn_lt_par,
-	mzn_lt_var,
-	mzn_le_par,
-	mzn_le_var,
-	mzn_ne_par,
-	mzn_ne_var,
-	mzn_eq_par,
-	mzn_eq_var,
-	mzn_and_par,
-	mzn_and_var,
-	mzn_or_par,
-	mzn_or_var,
-	mzn_implies_par,
-	mzn_implies_var,
-	mzn_xor_par,
-	mzn_xor_var,
-	mzn_not_par,
-	mzn_not_var,
-	mzn_xorall,
-	mzn_iffall,
-	mzn_clause_var,
-	mzn_clause_par,
-	mzn_sort,
-	mzn_sort_by,
-	mzn_show,
-	mzn_show_dzn,
-	mzn_show_dzn_id,
-	mzn_show_checker_output,
-	mzn_show_json,
-	mzn_format,
-	mzn_format_justify_string,
-	mzn_output_to_section,
-	mzn_output_to_json_section,
-	mzn_set_range_int,
-	mzn_set_range_float,
-	mzn_in_par,
-	mzn_in_var,
-	mzn_subset_par,
-	mzn_subset_var,
-	mzn_superset_par,
-	mzn_superset_var,
-	mzn_union_par,
-	mzn_union_var,
-	mzn_intersect_par,
-	mzn_intersect_var,
-	mzn_diff_par,
-	mzn_diff_var,
-	mzn_symdiff_par,
-	mzn_symdiff_var,
-	mzn_set_to_ranges,
-	mzn_ceil,
-	mzn_floor,
-	mzn_round,
-	mzn_set_to_array,
-	mzn_add_par,
-	mzn_add_var,
-	mzn_sub_par,
-	mzn_sub_var,
-	mzn_times_par,
-	mzn_times_var,
-	mzn_pow,
-	mzn_neg_par,
-	mzn_neg_var,
-	mzn_div_int,
-	mzn_mod,
-	mzn_div_float,
-	mzn_sum_par,
-	mzn_sum_var,
-	mzn_product_par,
-	mzn_product_var,
-	mzn_minimum,
-	mzn_maximum,
-	mzn_min_array,
-	mzn_max_array,
-	mzn_arg_min,
-	mzn_arg_max,
-	mzn_abs,
-	mzn_sqrt,
-	mzn_exp,
-	mzn_ln,
-	mzn_log10,
-	mzn_sin,
-	mzn_cos,
-	mzn_tan,
-	mzn_asin,
-	mzn_acos,
-	mzn_atan,
-	mzn_sinh,
-	mzn_cosh,
-	mzn_tanh,
-	mzn_asinh,
-	mzn_acosh,
-	mzn_atanh,
+	concat,
+	join,
+	lt: "<",
+	le: "<=",
+	ne: "!=",
+	eq: "==",
+	and: "/\\",
+	or: "\\/",
+	implies: "->",
+	xor,
+	not,
+	xorall,
+	iffall,
+	clause,
+	sort,
+	sort_by,
+	show,
+	show_dzn,
+	show_dzn_id,
+	show_checker_output,
+	show_json,
+	format,
+	format_justify_string,
+	output_to_section,
+	output_to_json_section,
+	dot_dot: "..",
+	set_in: "in",
+	subset,
+	superset,
+	union,
+	intersect,
+	diff,
+	symdiff,
+	set_to_ranges,
+	ceil,
+	floor,
+	round,
+	set2array,
+	plus: "+",
+	minus: "-",
+	times: "*",
+	pow,
+	div,
+	modulo: "mod",
+	div_float: "/",
+	sum,
+	product,
+	min,
+	max,
+	arg_min,
+	arg_max,
+	abs,
+	sqrt,
+	exp,
+	ln,
+	log10,
+	sin,
+	cos,
+	tan,
+	asin,
+	acos,
+	atan,
+	sinh,
+	cosh,
+	tanh,
+	asinh,
+	acosh,
+	atanh,
 );
 
 id_registry!(
@@ -225,6 +194,7 @@ id_registry!(
 	mzn_inline_call_by_name,
 	mzn_unreachable,
 	mzn_opt_bool,
+	mzn_builtin,
 );
 
 id_registry!(
@@ -241,7 +211,6 @@ id_registry!(
 
 id_registry!(
 	Functions,
-	mzn_builtin,
 	forall,
 	exists,
 	sum,

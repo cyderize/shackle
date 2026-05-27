@@ -8,13 +8,14 @@ use miette::SourceSpan;
 use shackle_diagnostics::SourceFile;
 use shackle_hir::{
 	Item,
+	db::with_attached_database,
 	ids::{EntityRef, NodeRef},
 };
 
 use crate::Db;
 
 /// The HIR node which produced a THIR node
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, salsa::Update)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, salsa::Update)]
 pub enum Origin<'db> {
 	/// Comes from a real HIR node
 	HirNode(NodeRef<'db>),
@@ -37,6 +38,13 @@ impl<'db> From<Item<'db>> for Origin<'db> {
 impl<'db> From<EntityRef<'db>> for Origin<'db> {
 	fn from(entity: EntityRef<'db>) -> Self {
 		NodeRef::from(entity).into()
+	}
+}
+
+impl<'db> std::fmt::Debug for Origin<'db> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		with_attached_database(|db| write!(f, "{}", self.pretty_print(db)))
+			.unwrap_or_else(|| f.debug_struct("Origin").finish())
 	}
 }
 

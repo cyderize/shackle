@@ -1086,7 +1086,6 @@ pub fn fold_callable<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> + ?
 			Callable::Expression(Box::new(folder.fold_expression(db, model, e)))
 		}
 		Callable::Function(f) => Callable::Function(folder.fold_function_id(db, model, *f)),
-		Callable::Builtin => Callable::Builtin,
 	}
 }
 

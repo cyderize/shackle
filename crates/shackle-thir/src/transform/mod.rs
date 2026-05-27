@@ -8,10 +8,17 @@ use shackle_diagnostics::Result;
 use totalise::totalise;
 
 use self::{
-	capturing_fn::decapture_model, comprehension::desugar_comprehension,
-	domain_constraint::rewrite_domains, erase_enum::erase_enum, erase_opt::erase_opt,
-	erase_record::erase_record, function_dispatch::function_dispatch, inlining::inline_functions,
-	name_mangle::mangle_names, output::generate_output, top_down_type::top_down_type,
+	// capturing_fn::decapture_model,
+	comprehension::desugar_comprehension,
+	domain_constraint::rewrite_domains,
+	erase_enum::erase_enum,
+	erase_opt::erase_opt,
+	erase_record::erase_record,
+	function_dispatch::function_dispatch,
+	inlining::inline_functions,
+	name_mangle::mangle_names,
+	output::generate_output,
+	top_down_type::top_down_type,
 	type_specialise::type_specialise,
 };
 use super::Model;
@@ -58,7 +65,7 @@ pub fn thir_transforms() -> impl for<'db> FnMut(&'db dyn Db, Model<'db>) -> Resu
 		erase_enum,
 		desugar_comprehension,
 		erase_opt,
-		decapture_model,
+		// decapture_model,
 		inline_functions,
 		totalise,
 	];

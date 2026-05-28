@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "crates/rangelist",
   "crates/shackle",
   "crates/shackle-cli",
   "crates/shackle-compiler",

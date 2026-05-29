@@ -92,8 +92,8 @@ impl Model {
 			enums,
 		} = ModelIoInterface::new(&self.db);
 		let legacy_enums = enums
-			.iter()
-			.filter_map(|(_, e)| {
+			.values()
+			.filter_map(|e| {
 				if e.state.lock().unwrap().deref() == &EnumInner::NoDefinition {
 					Some(e.clone())
 				} else {

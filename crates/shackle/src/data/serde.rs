@@ -130,7 +130,7 @@ impl<'de> Visitor<'de> for SerdeValueVisitor<'_> {
 				}
 				debug_assert_eq!(dim.len(), sizes.len());
 				let mut indices = Vec::with_capacity(sizes.capacity());
-				for (ty, len) in dim.iter().zip_eq(sizes.into_iter()) {
+				for (ty, len) in dim.iter().zip_eq(sizes) {
 					match ty {
 						Type::Integer(OptType::NonOpt) => {
 							indices.push((ParserVal::Integer(1), ParserVal::Integer(len)))
@@ -951,10 +951,8 @@ mod tests {
 		assert_eq!(a, b);
 
 		let ty = Type::Enum(OptType::NonOpt, a.clone());
-		let mut i = 1;
-		for v in vals {
+		for (i, v) in (1..).zip(vals) {
 			check_serialization(v, &ty, &expected[i]);
-			i += 1;
 		}
 	}
 

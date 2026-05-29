@@ -649,10 +649,8 @@ mod tests {
 		assert_eq!(a, b);
 
 		let ty = Type::Enum(OptType::NonOpt, a.clone());
-		let mut i = 1;
-		for v in vals {
+		for (i, v) in (1..).zip(vals) {
 			check_serialization(v, &ty, &expected[i]);
-			i += 1;
 		}
 	}
 

@@ -9,13 +9,13 @@
 
 use std::collections::hash_map::Entry;
 
-use shackle_utils::hash::Map;
 use shackle_diagnostics::{
 	AdditionalSolveItem, ConstructorAlreadyDefined, DuplicateAssignment, DuplicateConstructor,
 	DuplicateFunction, FunctionAlreadyDefined, IllegalOverload, IllegalOverloading,
 	MultipleAssignments, MultipleSolveItems,
 };
 use shackle_ty::{FunctionEntry, OverloadingError};
+use shackle_utils::hash::Map;
 
 use crate::{
 	Db, GlobalScope, Item, PatternTy,
@@ -139,6 +139,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 
 	// Check for multiple assignments to variables
 	let mut assignments: Map<_, Vec<NodeRef<'db>>> = Map::default();
+	let mut multiple_asgs = Vec::new();
 	for model in lower_models(db).iter() {
 		for it in model.items(db).iter() {
 			match it {
@@ -148,7 +149,11 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 					if let Some(p) = types.name_resolution(a.assignee) {
 						match assignments.entry(p) {
 							Entry::Occupied(mut e) => {
-								e.get_mut().push((*it).into());
+								let asgs = e.get_mut();
+								if asgs.len() == 1 {
+									multiple_asgs.push(p);
+								}
+								asgs.push((*it).into());
 							}
 							Entry::Vacant(e) => {
 								let mut v = Vec::new();
@@ -161,6 +166,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 											.into_entity(db)
 											.into(),
 									);
+									multiple_asgs.push(p);
 								}
 								v.push((*it).into());
 								let _ = e.insert(v);
@@ -174,7 +180,11 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 					if let Some(p) = types.name_resolution(a.assignee) {
 						match assignments.entry(p) {
 							Entry::Occupied(mut e) => {
-								e.get_mut().push((*it).into());
+								let asgs = e.get_mut();
+								if asgs.len() == 1 {
+									multiple_asgs.push(p);
+								}
+								asgs.push((*it).into());
 							}
 							Entry::Vacant(e) => {
 								let mut v = Vec::new();
@@ -183,6 +193,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 									&& e.enumeration(db).definition.is_some()
 								{
 									v.push(p.into_entity(db).into());
+									multiple_asgs.push(p);
 								}
 								v.push((*it).into());
 								let _ = e.insert(v);
@@ -194,27 +205,26 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 			}
 		}
 	}
-	for (p, asgs) in assignments {
-		if asgs.len() > 1 {
-			let variable = p.identifier(db).unwrap().pretty_print(db);
-			let mut asgs = asgs.into_iter();
-			let (src, span) = asgs.next().unwrap().source_span(db);
-			let others = asgs
-				.map(|i| {
-					let (src, span) = i.source_span(db);
-					DuplicateAssignment { src, span }
-				})
-				.collect();
-			Errors::add(
-				db,
-				MultipleAssignments {
-					src,
-					span,
-					variable,
-					others,
-				},
-			)
-		}
+	for p in multiple_asgs.into_iter() {
+		let asgs = &assignments[&p];
+		let variable = p.identifier(db).unwrap().pretty_print(db);
+		let mut asgs = asgs.into_iter();
+		let (src, span) = asgs.next().unwrap().source_span(db);
+		let others = asgs
+			.map(|i| {
+				let (src, span) = i.source_span(db);
+				DuplicateAssignment { src, span }
+			})
+			.collect();
+		Errors::add(
+			db,
+			MultipleAssignments {
+				src,
+				span,
+				variable,
+				others,
+			},
+		)
 	}
 
 	// Check for multiple solve items

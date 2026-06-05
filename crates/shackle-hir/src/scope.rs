@@ -6,12 +6,12 @@
 use std::collections::hash_map::Entry;
 
 use derive_more::Deref;
-use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::{IdentifierAlreadyDefined, IdentifierShadowing, InvalidPattern};
 use shackle_ty::FunctionEntry;
 use shackle_utils::{
 	InternedString,
 	arena::{Arena, ArenaIndex, ArenaMap},
+	hash::{Map, Set},
 	maybe_grow_stack,
 };
 
@@ -72,14 +72,8 @@ impl std::fmt::Debug for GlobalScope {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		with_attached_database(|db| {
 			f.debug_struct("GlobalScope")
-				.field(
-					"functions",
-					&Map::from_iter(GlobalScope::functions(db)),
-				)
-				.field(
-					"variables",
-					&Map::from_iter(GlobalScope::variables(db)),
-				)
+				.field("functions", &Map::from_iter(GlobalScope::functions(db)))
+				.field("variables", &Map::from_iter(GlobalScope::variables(db)))
 				.finish()
 		})
 		.unwrap_or_else(|| f.debug_struct("GlobalScope").finish())
@@ -337,7 +331,9 @@ fn collect_global_scope<'db>(db: &'db dyn Db) -> ScopeData<'db> {
 #[derive(Clone, Debug, Default, PartialEq, Eq, salsa::Update)]
 pub struct ScopeData<'db> {
 	functions: Map<Identifier<'db>, Vec<(PatternRef<'db>, u32)>>,
+	function_names: Vec<Identifier<'db>>,
 	variables: Map<Identifier<'db>, (PatternRef<'db>, u32)>,
+	variable_names: Vec<Identifier<'db>>,
 	/// Identifiers which do not cause pattern matching to add new variable bindings
 	atoms: Set<Identifier<'db>>,
 }
@@ -346,15 +342,21 @@ impl<'db> ScopeData<'db> {
 	fn from_iter<T: IntoIterator<Item = &'db Self>>(db: &'db dyn Db, iter: T) -> Self {
 		let mut result = Self::default();
 		for scope in iter {
-			for (i, fs) in scope.functions.iter() {
-				result
-					.functions
-					.entry(*i)
-					.or_default()
-					.extend(fs.iter().copied());
+			for i in scope.function_names.iter() {
+				let fs = &scope.functions[i];
+				match result.functions.entry(*i) {
+					Entry::Vacant(e) => {
+						let _ = e.insert(fs.clone());
+						result.function_names.push(*i);
+					}
+					Entry::Occupied(mut e) => {
+						e.get_mut().extend(fs.iter().copied());
+					}
+				}
 			}
-			for (i, (p, g)) in scope.variables.iter() {
-				result.add_variable(db, *i, *g, *p, false);
+			for i in scope.variable_names.iter() {
+				let (p, g) = scope.variables[i];
+				result.add_variable(db, *i, g, p, false);
 			}
 			result.atoms.extend(scope.atoms.iter().copied());
 		}
@@ -376,6 +378,7 @@ impl<'db> ScopeData<'db> {
 			}
 			Entry::Vacant(e) => {
 				let _ = e.insert(vec![(pattern, generation)]);
+				self.function_names.push(identifier);
 			}
 		}
 	}
@@ -406,6 +409,7 @@ impl<'db> ScopeData<'db> {
 				if is_atom {
 					let _ = self.atoms.insert(identifier);
 				}
+				self.variable_names.push(identifier);
 			}
 		}
 	}
@@ -482,12 +486,9 @@ impl<'db> ScopeData<'db> {
 		&self,
 		generation: u32,
 	) -> impl Iterator<Item = (Identifier<'db>, PatternRef<'db>)> {
-		self.variables.iter().filter_map(move |(i, (p, g))| {
-			if generation >= *g {
-				Some((*i, *p))
-			} else {
-				None
-			}
+		self.variable_names.iter().filter_map(move |i| {
+			let (p, g) = self.variables[&i];
+			if generation >= g { Some((*i, p)) } else { None }
 		})
 	}
 
@@ -496,10 +497,11 @@ impl<'db> ScopeData<'db> {
 		&self,
 		generation: u32,
 	) -> impl Iterator<Item = (Identifier<'db>, Vec<PatternRef<'db>>)> {
-		self.functions.iter().map(move |(i, ps)| {
+		self.function_names.iter().map(move |i| {
 			(
 				*i,
-				ps.iter()
+				self.functions[i]
+					.iter()
 					.filter_map(|(p, g)| if generation >= *g { Some(*p) } else { None })
 					.collect(),
 			)

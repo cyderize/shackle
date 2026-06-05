@@ -13,6 +13,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 ///
 /// Entries are rendered in ascending order by the `Debug` representation of
 /// the key, which makes snapshot tests stable.
+///
+/// Care must still be taken to not iterate over the map without sorting since this is non-deterministic.
 #[derive(Clone)]
 pub struct Map<K, V>(FxHashMap<K, V>);
 
@@ -234,6 +236,8 @@ impl<K: Debug, V: Debug> Debug for Map<K, V> {
 ///
 /// Entries are rendered in ascending order by the `Debug` representation of
 /// each item, which makes snapshot tests stable.
+///
+/// Care must still be taken to not iterate over the set without sorting since this is non-deterministic.
 #[derive(Clone)]
 pub struct Set<T>(FxHashSet<T>);
 

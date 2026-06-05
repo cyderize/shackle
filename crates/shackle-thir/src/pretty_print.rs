@@ -8,9 +8,9 @@ use shackle_ty::registry::TypeRegistry;
 use shackle_utils::maybe_grow_stack;
 
 use crate::{
-	AnnotationId, Callable, ConstraintId, Db, DeclarationId, Domain, DomainData, DummyValue,
-	EnumerationId, Expression, ExpressionData, FunctionId, Generator, Goal, ItemId, LetItem,
-	Marker, Model, OutputId, Pattern, PatternData, ResolvedIdentifier,
+	AnnotationId, Callable, ConstraintId, Db, DeclarationId, Domain, DomainData, EnumerationId,
+	Expression, ExpressionData, FunctionId, Generator, Goal, ItemId, LetItem, Marker, Model,
+	OutputId, Pattern, PatternData, ResolvedIdentifier,
 };
 
 static MINIZINC_COMPAT: &str = include_str!("../../../share/minizinc/compat.mzn");
@@ -20,7 +20,7 @@ pub struct PrettyPrinter<'db, T: Marker = ()> {
 	db: &'db dyn Db,
 	model: &'db Model<'db, T>,
 	ids: &'db IdentifierRegistry<'db>,
-	/// Whether to output a model compatible with old MiniZinc (default `true`)
+	/// Whether to output a model compatible with old MiniZinc (default `false`)
 	pub old_compat: bool,
 	/// Add an extra annotation on each expression using the given function
 	pub expression_annotator: Option<Box<dyn Fn(&Expression<'db, T>) -> Option<String> + 'db>>,
@@ -461,44 +461,44 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 				}
 			}
 			ExpressionData::Call(c) => {
-				if (c.arguments.len() == 1 || c.arguments.len() == 2)
-					&& let Callable::Function(f) = &c.function
-					&& self.model[*f].specialised_from().is_none()
-				{
-					let name = self.model[*f].name().as_identifier(self.db).lookup(self.db);
-					if c.arguments.len() == 1 {
-						if matches!(name, "o.." | "o<.." | "o..<" | "o<..<") {
-							return format!(
-								"({}({}))",
-								&name[1..],
-								self.pretty_print_expression(&c.arguments[0])
-							);
-						}
-						if shackle_syntax::is_prefix_operator(name) {
-							return format!(
-								"({}({}))",
-								name,
-								self.pretty_print_expression(&c.arguments[0])
-							);
-						}
-						if name.len() > 1
-							&& shackle_syntax::is_postfix_operator(&name[..name.len() - 1])
-						{
-							return format!(
-								"(({}){})",
-								self.pretty_print_expression(&c.arguments[0]),
-								&name[..name.len() - 1],
-							);
-						};
-					} else if shackle_syntax::is_infix_operator(name) {
-						return format!(
-							"(({}) {} ({}))",
-							self.pretty_print_expression(&c.arguments[0]),
-							name,
-							self.pretty_print_expression(&c.arguments[1])
-						);
-					}
-				}
+				// if (c.arguments.len() == 1 || c.arguments.len() == 2)
+				// 	&& let Callable::Function(f) = &c.function
+				// 	&& self.model[*f].specialised_from().is_none()
+				// {
+				// 	let name = self.model[*f].name().as_identifier(self.db).lookup(self.db);
+				// 	if c.arguments.len() == 1 {
+				// 		if matches!(name, "o.." | "o<.." | "o..<" | "o<..<") {
+				// 			return format!(
+				// 				"({}({}))",
+				// 				&name[1..],
+				// 				self.pretty_print_expression(&c.arguments[0])
+				// 			);
+				// 		}
+				// 		if shackle_syntax::is_prefix_operator(name) {
+				// 			return format!(
+				// 				"({}({}))",
+				// 				name,
+				// 				self.pretty_print_expression(&c.arguments[0])
+				// 			);
+				// 		}
+				// 		if name.len() > 1
+				// 			&& shackle_syntax::is_postfix_operator(&name[..name.len() - 1])
+				// 		{
+				// 			return format!(
+				// 				"(({}){})",
+				// 				self.pretty_print_expression(&c.arguments[0]),
+				// 				&name[..name.len() - 1],
+				// 			);
+				// 		};
+				// 	} else if shackle_syntax::is_infix_operator(name) {
+				// 		return format!(
+				// 			"(({}) {} ({}))",
+				// 			self.pretty_print_expression(&c.arguments[0]),
+				// 			name,
+				// 			self.pretty_print_expression(&c.arguments[1])
+				// 		);
+				// 	}
+				// }
 
 				let f = match &c.function {
 					Callable::Annotation(a) => self.model[*a]
@@ -552,19 +552,6 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 								} else {
 									" \\/ "
 								});
-						}
-						if self.old_compat && name == self.ids.functions.mzn_destruct_partial {
-							let dummy = Expression::new(
-								self.db,
-								self.model,
-								c.arguments[0].origin(),
-								DummyValue(c.arguments[0].ty()),
-							);
-							return format!(
-								"((true, {}) default (false, {}))",
-								self.pretty_print_expression(&c.arguments[0]),
-								self.pretty_print_expression(&dummy)
-							);
 						}
 						if self.old_compat && name == self.ids.builtins.mzn_slice_internal {
 							return format!(
@@ -814,10 +801,15 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 				let decl = &self.model[*assignment];
 				(
 					format!(
-						"{} = {}",
+						"{}{} = {}",
 						decl.name()
 							.map(|n| n.pretty_print(self.db))
 							.unwrap_or_else(|| format!("_DECL_{}", Into::<u32>::into(*assignment))),
+						decl.annotations()
+							.iter()
+							.map(|ann| { format!(" :: ({})", self.pretty_print_expression(ann)) })
+							.collect::<Vec<_>>()
+							.join(""),
 						self.pretty_print_expression(decl.definition().unwrap())
 					),
 					where_clause,

@@ -178,6 +178,7 @@ id_registry!(
 	asinh,
 	acosh,
 	atanh,
+	mzn_default_partial,
 );
 
 id_registry!(
@@ -195,6 +196,7 @@ id_registry!(
 	mzn_unreachable,
 	mzn_opt_bool,
 	mzn_builtin,
+	mzn_internal_representation,
 );
 
 id_registry!(
@@ -267,8 +269,6 @@ id_registry!(
 	mzn_show_array_access,
 	mzn_show_tuple_access,
 	mzn_show_record_access,
-	mzn_construct_partial,
-	mzn_destruct_partial,
 	mzn_array_access_valid,
 	mzn_array_access_known_valid,
 	if_then_else,

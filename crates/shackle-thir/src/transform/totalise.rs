@@ -35,6 +35,18 @@ struct Totaliser<'a, 'db, Dst: Marker> {
 	in_root_fns: bool,
 }
 
+struct BoundExpression<'db, Dst: Marker> {
+	declaration: DeclarationId<'db, Dst>,
+	ident: Expression<'db, Dst>,
+}
+
+struct BoundPartialExpression<'db, Dst: Marker> {
+	declaration: DeclarationId<'db, Dst>,
+	ident: Expression<'db, Dst>,
+	definedness: Expression<'db, Dst>,
+	value: Expression<'db, Dst>,
+}
+
 impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 	fn model(&mut self) -> &mut Model<'db, Dst> {
 		&mut self.totalised_model
@@ -60,6 +72,11 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 	}
 
 	fn add_function(&mut self, db: &'db dyn Db, model: &Model<'db>, f: FunctionId<'db>) {
+		if model[f].name() == self.ids.builtins.mzn_default_partial {
+			// `default` calls rewritten so function no longer needed
+			return;
+		}
+
 		let function_totality = self.totality[f];
 
 		log::debug!(
@@ -69,7 +86,7 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 		);
 
 		let orig_return = model[f].return_type();
-		let return_type = if orig_return == self.tys.par_bool || orig_return == self.tys.var_bool {
+		let return_type = if self.is_boolean_ty(orig_return) {
 			// Booleans remain boolean
 			orig_return
 		} else {
@@ -83,22 +100,43 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 		if function_totality.needs_root {
 			let root_name = model[f].name().root(db);
 
-			if let Ok(existing) = model.lookup_function(
-				db,
-				root_name,
-				&model[f]
-					.parameters()
-					.iter()
-					.map(|p| model[*p].ty())
-					.collect::<Vec<_>>(),
-			) {
+			if let Some((existing, _)) = model.top_level_functions().find(|(_, func)| {
+				func.mangled_name(db)
+					== model[f].mangled_param_tys().map_or_else(
+						move || root_name.as_identifier(db),
+						move |params| root_name.mangled(db, params.iter().copied()),
+					)
+			}) {
 				// Root version already exists
-				let folded = self.fold_function_id(db, model, existing.function);
-				let _ = self.root_fn_map.insert(f, folded);
+				log::debug!(
+					"Root version already exists: {}",
+					PrettyPrinter::new(db, model).pretty_print_signature(existing.into()),
+				);
+				let folded = self.fold_function_id(db, model, existing);
+				let old = self.root_fn_map.insert(f, folded);
+				assert!(
+					old.is_none(),
+					"Tried to add another root version of {} to root fn map",
+					PrettyPrinter::new(db, model).pretty_print_signature(f.into())
+				);
 			} else {
 				// Add root version
+				assert!(
+					model
+						.all_functions()
+						.all(|(_, func)| func.name() != root_name
+							|| func.mangled_param_tys() != model[f].mangled_param_tys()),
+					"Root version of {} already exists",
+					PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
+				);
+
 				let root_idx = self.add_fn_decl(db, model, f, root_name, orig_return);
-				let _ = self.root_fn_map.insert(f, root_idx);
+				let old = self.root_fn_map.insert(f, root_idx);
+				assert!(
+					old.is_none(),
+					"Tried to add another root version of {} to root fn map",
+					PrettyPrinter::new(db, model).pretty_print_signature(f.into())
+				);
 				for (idx, root) in model[f]
 					.parameters()
 					.iter()
@@ -278,29 +316,18 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 						ResolvedIdentifier::Declaration(idx),
 					);
 					if partial {
-						definedness.push(Expression::new(
+						definedness.push(self.tuple_access(
 							db,
-							&self.totalised_model,
 							model[*d].origin(),
-							TupleAccess {
-								tuple: Box::new(ident.clone()),
-								field: IntegerLiteral(1),
-							},
+							ident.clone(),
+							1,
 						));
 						// Ensure references to the variable now get the just the value
 						let value_idx = self.totalised_model.add_declaration(Item::new(
 							Declaration::from_expression(
 								db,
 								false,
-								Expression::new(
-									db,
-									&self.totalised_model,
-									model[*d].origin(),
-									TupleAccess {
-										tuple: Box::new(ident),
-										field: IntegerLiteral(2),
-									},
-								),
+								self.tuple_access(db, model[*d].origin(), ident, 2),
 							),
 							model[*d].origin(),
 						));
@@ -326,28 +353,12 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 				o,
 				ResolvedIdentifier::Declaration(idx),
 			);
-			definedness.push(Expression::new(
-				db,
-				&self.totalised_model,
-				o,
-				TupleAccess {
-					tuple: Box::new(ident.clone()),
-					field: IntegerLiteral(1),
-				},
-			));
+			definedness.push(self.tuple_access(db, o, ident.clone(), 1));
 			items.push(LetItem::Declaration(idx));
-			in_expression = Expression::new(
-				db,
-				&self.totalised_model,
-				o,
-				TupleAccess {
-					tuple: Box::new(ident),
-					field: IntegerLiteral(2),
-				},
-			);
+			in_expression = self.tuple_access(db, o, ident, 2);
 		}
 
-		if in_expression.ty() == self.tys.par_bool || in_expression.ty() == self.tys.var_bool {
+		if self.is_boolean_ty(in_expression.ty()) {
 			// Capture partiality here
 			definedness.push(in_expression);
 			let parts = std::mem::take(&mut definedness);
@@ -411,6 +422,10 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		} else {
 			self.modes.get(e)
 		}
+	}
+
+	fn is_boolean_ty(&self, ty: Ty<'db>) -> bool {
+		ty == self.tys.par_bool || ty == self.tys.var_bool
 	}
 
 	fn add_fn_decl(
@@ -490,24 +505,8 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				if t {
 					values.push(ident);
 				} else {
-					definedness.push(Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						TupleAccess {
-							tuple: Box::new(ident.clone()),
-							field: IntegerLiteral(1),
-						},
-					));
-					values.push(Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						TupleAccess {
-							tuple: Box::new(ident),
-							field: IntegerLiteral(2),
-						},
-					));
+					definedness.push(self.tuple_access(db, o, ident.clone(), 1));
+					values.push(self.tuple_access(db, o, ident, 2));
 				}
 			}
 			let def = self.forall_call(
@@ -570,7 +569,11 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					assignment,
 					where_clause,
 				} => {
-					let declaration = self.fold_declaration(db, model, &model[*assignment]);
+					let mut declaration = self.fold_declaration(db, model, &model[*assignment]);
+					let is_var_where_clause = declaration.annotations_mut().remove(
+						&self.totalised_model,
+						self.ids.annotations.mzn_var_where_clause,
+					);
 					let partial = declaration.ty() != model[*assignment].ty();
 					let o = model[*assignment].origin();
 					let idx = self
@@ -588,15 +591,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						let value_decl = Declaration::from_expression(
 							db,
 							false,
-							Expression::new(
-								db,
-								&self.totalised_model,
-								o,
-								TupleAccess {
-									tuple: Box::new(ident.clone()),
-									field: IntegerLiteral(2),
-								},
-							),
+							self.tuple_access(db, o, ident.clone(), 2),
 						);
 						let value_idx = self
 							.totalised_model
@@ -624,10 +619,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						break;
 					}
 					self.replacement_map.insert_declaration(*assignment, idx);
-					if model[*assignment]
-						.annotations()
-						.has(model, self.ids.annotations.mzn_var_where_clause)
-					{
+					if is_var_where_clause {
 						var_where_clauses.push(Expression::new(
 							db,
 							&self.totalised_model,
@@ -670,15 +662,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 
 						let inner_generator = Generator::Iterator {
 							declarations: indices,
-							collection: Expression::new(
-								db,
-								&self.totalised_model,
-								o,
-								TupleAccess {
-									tuple: Box::new(ident.clone()),
-									field: IntegerLiteral(2),
-								},
-							),
+							collection: self.tuple_access(db, o, ident.clone(), 2),
 							where_clause: where_clause
 								.as_ref()
 								.map(|w| self.fold_expression(db, model, w)),
@@ -715,19 +699,16 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			.iter()
 			.map(|idx| {
 				let o = self.totalised_model[*idx].origin();
-				Expression::new(
+				self.tuple_access(
 					db,
-					&self.totalised_model,
 					o,
-					TupleAccess {
-						tuple: Box::new(Expression::new(
-							db,
-							&self.totalised_model,
-							o,
-							ResolvedIdentifier::Declaration(*idx),
-						)),
-						field: IntegerLiteral(1),
-					},
+					Expression::new(
+						db,
+						&self.totalised_model,
+						o,
+						ResolvedIdentifier::Declaration(*idx),
+					),
+					1,
 				)
 			})
 			.collect::<Vec<_>>();
@@ -755,15 +736,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					ResolvedIdentifier::Declaration(idx),
 				);
 
-				var_where_clauses.push(Expression::new(
-					db,
-					&self.totalised_model,
-					o,
-					TupleAccess {
-						tuple: Box::new(ident.clone()),
-						field: IntegerLiteral(1),
-					},
-				));
+				var_where_clauses.push(self.tuple_access(db, o, ident.clone(), 1));
 
 				Expression::new(
 					db,
@@ -785,15 +758,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 										ArrayLiteral(var_where_clauses),
 									),
 								),
-								Expression::new(
-									db,
-									&self.totalised_model,
-									o,
-									TupleAccess {
-										tuple: Box::new(ident),
-										field: IntegerLiteral(2),
-									},
-								),
+								self.tuple_access(db, o, ident, 2),
 							]),
 						)),
 					}),
@@ -841,19 +806,16 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						where_clause: None,
 					}],
 					indices: None,
-					template: Box::new(Expression::new(
+					template: Box::new(self.tuple_access(
 						db,
-						&self.totalised_model,
 						o,
-						TupleAccess {
-							tuple: Box::new(Expression::new(
-								db,
-								&self.totalised_model,
-								o,
-								ResolvedIdentifier::Declaration(def_iter_idx),
-							)),
-							field: IntegerLiteral(1),
-						},
+						Expression::new(
+							db,
+							&self.totalised_model,
+							o,
+							ResolvedIdentifier::Declaration(def_iter_idx),
+						),
+						1,
 					)),
 				},
 			);
@@ -868,19 +830,16 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			let val_extract_decl = Declaration::from_expression(
 				db,
 				false,
-				Expression::new(
+				self.tuple_access(
 					db,
-					&self.totalised_model,
 					o,
-					TupleAccess {
-						tuple: Box::new(Expression::new(
-							db,
-							&self.totalised_model,
-							o,
-							ResolvedIdentifier::Declaration(val_iter_idx),
-						)),
-						field: IntegerLiteral(2),
-					},
+					Expression::new(
+						db,
+						&self.totalised_model,
+						o,
+						ResolvedIdentifier::Declaration(val_iter_idx),
+					),
+					2,
 				),
 			);
 			let val_extract_ty = val_extract_decl.ty();
@@ -1038,34 +997,15 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				origin,
 				ResolvedIdentifier::Declaration(idx),
 			);
-			let definedness = Expression::new(
+			let definedness = self.tuple_access(db, origin, ident.clone(), 1);
+			let value = self.tuple_access(
 				db,
-				&self.totalised_model,
 				origin,
-				TupleAccess {
-					tuple: Box::new(ident.clone()),
-					field: IntegerLiteral(1),
-				},
-			);
-			let value = Expression::new(
-				db,
-				&self.totalised_model,
-				origin,
-				TupleAccess {
-					tuple: Box::new(Expression::new(
-						db,
-						&self.totalised_model,
-						origin,
-						TupleAccess {
-							tuple: Box::new(ident),
-							field: IntegerLiteral(2),
-						},
-					)),
-					field: ta.field,
-				},
+				self.tuple_access(db, origin, ident, 2),
+				ta.field.0,
 			);
 
-			if value.ty() == self.tys.par_bool || value.ty() == self.tys.var_bool {
+			if self.is_boolean_ty(value.ty()) {
 				// Capture partiality in boolean
 				return Expression::new(
 					db,
@@ -1101,15 +1041,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				}),
 			);
 		}
-		Expression::new(
-			db,
-			&self.totalised_model,
-			origin,
-			TupleAccess {
-				tuple: Box::new(tuple),
-				field: ta.field,
-			},
-		)
+		self.tuple_access(db, origin, tuple, ta.field.0)
 	}
 
 	fn totalise_if_then_else(
@@ -1299,18 +1231,8 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				ResolvedIdentifier::Declaration(decl_idx),
 			);
 
-			let constraint = Constraint::new(
-				false,
-				Expression::new(
-					db,
-					&self.totalised_model,
-					origin,
-					TupleAccess {
-						tuple: Box::new(ident.clone()),
-						field: IntegerLiteral(1),
-					},
-				),
-			);
+			let constraint =
+				Constraint::new(false, self.tuple_access(db, origin, ident.clone(), 1));
 			let constraint_idx = self
 				.totalised_model
 				.add_constraint(Item::new(constraint, origin));
@@ -1324,15 +1246,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 						LetItem::Declaration(decl_idx),
 						LetItem::Constraint(constraint_idx),
 					],
-					in_expression: Box::new(Expression::new(
-						db,
-						&self.totalised_model,
-						origin,
-						TupleAccess {
-							tuple: Box::new(ident),
-							field: IntegerLiteral(2),
-						},
-					)),
+					in_expression: Box::new(self.tuple_access(db, origin, ident, 2)),
 				}),
 			)
 		}
@@ -1358,17 +1272,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				.map(|(i, inner_ty)| {
 					let inner_results = results
 						.iter()
-						.map(|r| {
-							Expression::new(
-								db,
-								&self.totalised_model,
-								origin,
-								TupleAccess {
-									tuple: Box::new(r.clone()),
-									field: IntegerLiteral(i as i64 + 1),
-								},
-							)
-						})
+						.map(|r| self.tuple_access(db, origin, r.clone(), i as i64 + 1))
 						.collect();
 					maybe_grow_stack(|| {
 						self.decompose_tuple_ite(
@@ -1399,6 +1303,249 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		)
 	}
 
+	fn bind_expression(
+		&mut self,
+		db: &'db dyn Db,
+		origin: Origin<'db>,
+		expression: Expression<'db, Dst>,
+	) -> BoundExpression<'db, Dst> {
+		let decl = Declaration::from_expression(db, false, expression);
+		let idx = self
+			.totalised_model
+			.add_declaration(Item::new(decl, origin));
+		let ident = Expression::new(
+			db,
+			&self.totalised_model,
+			origin,
+			ResolvedIdentifier::Declaration(idx),
+		);
+		BoundExpression {
+			declaration: idx,
+			ident,
+		}
+	}
+
+	fn tuple_access(
+		&self,
+		db: &'db dyn Db,
+		origin: Origin<'db>,
+		tuple: Expression<'db, Dst>,
+		field: i64,
+	) -> Expression<'db, Dst> {
+		Expression::new(
+			db,
+			&self.totalised_model,
+			origin,
+			TupleAccess {
+				tuple: Box::new(tuple),
+				field: IntegerLiteral(field),
+			},
+		)
+	}
+
+	fn bind_partial_expression(
+		&mut self,
+		db: &'db dyn Db,
+		origin: Origin<'db>,
+		expression: Expression<'db, Dst>,
+	) -> BoundPartialExpression<'db, Dst> {
+		let bound = self.bind_expression(db, origin, expression);
+		let definedness = self.tuple_access(db, origin, bound.ident.clone(), 1);
+		let value = self.tuple_access(db, origin, bound.ident.clone(), 2);
+		BoundPartialExpression {
+			declaration: bound.declaration,
+			ident: bound.ident,
+			definedness,
+			value,
+		}
+	}
+
+	fn totalise_default(
+		&mut self,
+		db: &'db dyn Db,
+		model: &Model<'db>,
+		origin: Origin<'db>,
+		e: &Expression<'db>,
+		val: &Expression<'db>,
+		def: &Expression<'db>,
+	) -> Expression<'db, Dst> {
+		let totalised_val = self.fold_expression(db, model, val);
+		let val_is_total = self.is_total(db, model, val, &totalised_val);
+		if val_is_total {
+			// LHS is already total, so just return it
+			return totalised_val;
+		}
+
+		let BoundPartialExpression {
+			declaration: val_idx,
+			ident: val_ident,
+			definedness: val_defined,
+			value: val_value,
+		} = self.bind_partial_expression(db, val.origin(), totalised_val);
+
+		let totalised_def = self.fold_expression(db, model, def);
+		let def_is_total = self.is_total(db, model, def, &totalised_def);
+		let BoundExpression {
+			declaration: def_idx,
+			ident: def_ident,
+		} = self.bind_expression(db, def.origin(), totalised_def);
+
+		let mut items = vec![LetItem::Declaration(val_idx), LetItem::Declaration(def_idx)];
+		let val_is_par = val_defined.ty() == self.tys.par_bool;
+		assert!(val_is_par || val_defined.ty() == self.tys.var_bool);
+
+		let in_expression = match (def_is_total, val_is_par) {
+			// RHS is total, so result is always defined
+			(true, true) => Expression::new(
+				db,
+				&self.totalised_model,
+				origin,
+				IfThenElse {
+					branches: vec![Branch {
+						condition: val_defined,
+						result: val_value,
+					}],
+					else_result: Box::new(def_ident),
+				},
+			),
+			(true, false) => Expression::new(
+				db,
+				&self.totalised_model,
+				origin,
+				LookupCall {
+					function: self.ids.functions.if_then_else.into(),
+					arguments: vec![
+						Expression::new(
+							db,
+							&self.totalised_model,
+							origin,
+							ArrayLiteral(vec![
+								val_defined,
+								Expression::new(
+									db,
+									&self.totalised_model,
+									origin,
+									BooleanLiteral(true),
+								),
+							]),
+						),
+						Expression::new(
+							db,
+							&self.totalised_model,
+							origin,
+							ArrayLiteral(vec![val_value, def_ident]),
+						),
+					],
+				},
+			),
+			// RHS is partial and condition is par bool
+			(false, true) => {
+				let ite = Expression::new(
+					db,
+					&self.totalised_model,
+					origin,
+					IfThenElse {
+						branches: vec![Branch {
+							condition: val_defined,
+							result: val_ident,
+						}],
+						else_result: Box::new(def_ident),
+					},
+				);
+
+				if self.get_mode(e).is_root() {
+					let BoundPartialExpression {
+						declaration: result_declaration,
+						definedness: result_definedness,
+						value: result_value,
+						..
+					} = self.bind_partial_expression(db, origin, ite);
+					items.push(LetItem::Declaration(result_declaration));
+					let constraint = Constraint::new(false, result_definedness);
+					let constraint_idx = self
+						.totalised_model
+						.add_constraint(Item::new(constraint, origin));
+					items.push(LetItem::Constraint(constraint_idx));
+					result_value
+				} else {
+					ite
+				}
+			}
+			// RHS is partial and condition is var bool
+			(false, false) => {
+				let def_defined = self.tuple_access(db, val.origin(), def_ident.clone(), 1);
+				let def_value = self.tuple_access(db, val.origin(), def_ident, 2);
+
+				let ite = Expression::new(
+					db,
+					&self.totalised_model,
+					origin,
+					LookupCall {
+						function: self.ids.functions.if_then_else.into(),
+						arguments: vec![
+							Expression::new(
+								db,
+								&self.totalised_model,
+								origin,
+								ArrayLiteral(vec![
+									val_defined.clone(),
+									Expression::new(
+										db,
+										&self.totalised_model,
+										origin,
+										BooleanLiteral(true),
+									),
+								]),
+							),
+							Expression::new(
+								db,
+								&self.totalised_model,
+								origin,
+								ArrayLiteral(vec![val_value, def_value]),
+							),
+						],
+					},
+				);
+
+				let defined = self.exists_call(
+					db,
+					Expression::new(
+						db,
+						&self.totalised_model,
+						origin,
+						ArrayLiteral(vec![val_defined, def_defined]),
+					),
+				);
+
+				if self.get_mode(e).is_root() {
+					let constraint = Constraint::new(false, defined);
+					let constraint_idx = self
+						.totalised_model
+						.add_constraint(Item::new(constraint, origin));
+					items.push(LetItem::Constraint(constraint_idx));
+					ite
+				} else {
+					Expression::new(
+						db,
+						&self.totalised_model,
+						origin,
+						TupleLiteral(vec![defined, ite]),
+					)
+				}
+			}
+		};
+
+		Expression::new(
+			db,
+			&self.totalised_model,
+			origin,
+			TotalLet::from(Let {
+				items,
+				in_expression: Box::new(in_expression),
+			}),
+		)
+	}
+
 	fn totalise_call(
 		&mut self,
 		db: &'db dyn Db,
@@ -1407,6 +1554,11 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		origin: Origin<'db>,
 		e: &Expression<'db>,
 	) -> Expression<'db, Dst> {
+		if c.matches_builtin(model, self.ids.builtins.mzn_default_partial) && c.arguments.len() == 2
+		{
+			return self.totalise_default(db, model, origin, e, &c.arguments[0], &c.arguments[1]);
+		}
+
 		let mut definedness = Vec::new();
 		let mut items = Vec::new();
 		let mut is_partial = false;
@@ -1436,35 +1588,13 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			.collect::<Vec<_>>();
 		let totalised_function = match (&c.function, function) {
 			(Callable::Expression(f1), Callable::Expression(f2)) if f1.ty() != f2.ty() => {
-				let decl = Declaration::from_expression(db, false, *f2);
-				let idx = self
-					.totalised_model
-					.add_declaration(Item::new(decl, f1.origin()));
+				let BoundExpression {
+					declaration: idx,
+					ident,
+				} = self.bind_expression(db, f1.origin(), *f2);
 				items.push(LetItem::Declaration(idx));
-				let ident = Expression::new(
-					db,
-					&self.totalised_model,
-					f1.origin(),
-					ResolvedIdentifier::Declaration(idx),
-				);
-				definedness.push(Expression::new(
-					db,
-					&self.totalised_model,
-					f1.origin(),
-					TupleAccess {
-						tuple: Box::new(ident.clone()),
-						field: IntegerLiteral(1),
-					},
-				));
-				Callable::Expression(Box::new(Expression::new(
-					db,
-					&self.totalised_model,
-					f1.origin(),
-					TupleAccess {
-						tuple: Box::new(ident),
-						field: IntegerLiteral(2),
-					},
-				)))
+				definedness.push(self.tuple_access(db, f1.origin(), ident.clone(), 1));
+				Callable::Expression(Box::new(self.tuple_access(db, f1.origin(), ident, 2)))
 			}
 			(_, f) => f,
 		};
@@ -1475,33 +1605,15 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					totalised.push(arg);
 				} else {
 					let o = arg.origin();
-					let decl = Declaration::from_expression(db, false, arg);
-					let idx = self.totalised_model.add_declaration(Item::new(decl, o));
+					let BoundPartialExpression {
+						declaration: idx,
+						definedness: arg_defined,
+						value: arg_value,
+						..
+					} = self.bind_partial_expression(db, o, arg);
 					items.push(LetItem::Declaration(idx));
-					let ident = Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						ResolvedIdentifier::Declaration(idx),
-					);
-					definedness.push(Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						TupleAccess {
-							tuple: Box::new(ident.clone()),
-							field: IntegerLiteral(1),
-						},
-					));
-					totalised.push(Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						TupleAccess {
-							tuple: Box::new(ident),
-							field: IntegerLiteral(2),
-						},
-					));
+					definedness.push(arg_defined);
+					totalised.push(arg_value);
 				}
 			}
 			totalised
@@ -1523,7 +1635,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			return val;
 		}
 
-		if val.ty() == self.tys.par_bool || val.ty() == self.tys.var_bool {
+		if self.is_boolean_ty(val.ty()) {
 			// Capture partiality in boolean
 			definedness.push(val);
 			return Expression::new(
@@ -1548,33 +1660,15 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		if !self.is_total(db, model, e, &val) {
 			// Call returns partial value
 			let o = e.origin();
-			let decl = Declaration::from_expression(db, false, val);
-			let idx = self.totalised_model.add_declaration(Item::new(decl, o));
+			let BoundPartialExpression {
+				declaration: idx,
+				definedness: call_defined,
+				value: call_value,
+				..
+			} = self.bind_partial_expression(db, o, val);
 			items.push(LetItem::Declaration(idx));
-			let ident = Expression::new(
-				db,
-				&self.totalised_model,
-				o,
-				ResolvedIdentifier::Declaration(idx),
-			);
-			definedness.push(Expression::new(
-				db,
-				&self.totalised_model,
-				o,
-				TupleAccess {
-					tuple: Box::new(ident.clone()),
-					field: IntegerLiteral(1),
-				},
-			));
-			val = Expression::new(
-				db,
-				&self.totalised_model,
-				o,
-				TupleAccess {
-					tuple: Box::new(ident),
-					field: IntegerLiteral(2),
-				},
-			);
+			definedness.push(call_defined);
+			val = call_value;
 		}
 
 		let def = self.forall_call(
@@ -1635,40 +1729,20 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					}
 
 					let o = e.origin();
-					let declaration = Declaration::from_expression(db, false, folded);
-					let idx = self
-						.totalised_model
-						.add_declaration(Item::new(declaration, o));
+					let BoundPartialExpression {
+						declaration: idx,
+						definedness: bounded_defined,
+						value: bounded_value,
+						..
+					} = self.bind_partial_expression(db, o, folded);
 					items.push(LetItem::Declaration(idx));
-					let ident = Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						ResolvedIdentifier::Declaration(idx),
-					);
-					definedness.push(Expression::new(
-						db,
-						&self.totalised_model,
-						o,
-						TupleAccess {
-							tuple: Box::new(ident.clone()),
-							field: IntegerLiteral(1),
-						},
-					));
+					definedness.push(bounded_defined);
 					Domain::bounded(
 						db,
 						origin,
 						domain.ty().inst(db).unwrap(),
 						OptType::NonOpt,
-						Expression::new(
-							db,
-							&self.totalised_model,
-							o,
-							TupleAccess {
-								tuple: Box::new(ident),
-								field: IntegerLiteral(2),
-							},
-						),
+						bounded_value,
 					)
 				}
 				// All other domains are always unbounded (rewritten in an earlier pass)
@@ -1699,7 +1773,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		});
 		assert!(
 			field_tys.len() == 2
-				&& (field_tys[0] == self.tys.par_bool || field_tys[0] == self.tys.var_bool)
+				&& self.is_boolean_ty(field_tys[0])
 				&& field_tys[1].is_subtype_of(db, original.ty()),
 			"Totalisation of {} with type {} gave incorrect type {}",
 			PrettyPrinter::new(db, model).pretty_print_expression(original),
@@ -1770,13 +1844,8 @@ mod tests {
 
 	use super::totalise;
 	use crate::transform::{
-		comprehension::desugar_comprehension,
-		domain_constraint::rewrite_domains,
-		erase_opt::erase_opt,
-		tests::{check, check_no_stdlib},
-		top_down_type::top_down_type,
+		comprehension::desugar_comprehension, erase_opt::erase_opt, tests::check_no_stdlib,
 		transformer,
-		type_specialise::type_specialise,
 	};
 
 	#[test]
@@ -1784,14 +1853,16 @@ mod tests {
 		check_no_stdlib(
 			totalise,
 			r#"
+				test forall(array [int] of bool);
 				bool: x = let {
                     constraint false;
                 } in true;
 			"#,
 			expect!([r#"
+    function bool: forall(array [int] of bool: _DECL_1);
     bool: x = let {
-      bool: _DECL_1 = false;
-    } in mzn_builtin("mzn_forall_par", [_DECL_1, true]);
+      bool: _DECL_2 = false;
+    } in forall([_DECL_2, true]);
     solve satisfy;
 "#]),
 		)
@@ -1802,6 +1873,7 @@ mod tests {
 		check_no_stdlib(
 			totalise,
 			r#"
+				test forall(array [int] of bool);
                 function int: foo() = let {
                     constraint false;
                 } in 1;
@@ -1811,16 +1883,17 @@ mod tests {
                 int: z = foo();
 			"#,
 			expect!([r#"
+    function bool: forall(array [int] of bool: _DECL_1);
     function int: foo_root() = let {
       constraint false;
     } in 1;
     function tuple(bool, int): foo() = let {
-      bool: _DECL_5 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_5]), 1);
+      bool: _DECL_6 = false;
+    } in (forall([_DECL_6]), 1);
     bool: x = let {
       tuple(bool, int): a = foo();
-      int: _DECL_2 = (a).2;
-    } in mzn_builtin("mzn_forall_par", [(a).1, true]);
+      int: _DECL_3 = (a).2;
+    } in forall([(a).1, true]);
     int: z = foo_root();
     solve satisfy;
 "#]),
@@ -1832,6 +1905,7 @@ mod tests {
 		check_no_stdlib(
 			totalise,
 			r#"
+				test forall(array [int] of bool);
                 function var bool: if_then_else(array [int] of var bool: c, array [int] of var bool: x);
                 function var int: if_then_else(array [int] of var bool: c, array [int] of var int: x);
                 function var int: foo(var bool: b) =
@@ -1852,31 +1926,32 @@ mod tests {
                     endif;
 			"#,
 			expect!([r#"
+    function bool: forall(array [int] of bool: _DECL_1);
     function var bool: if_then_else(array [int] of var bool: c, array [int] of var bool: x);
     function var int: if_then_else(array [int] of var bool: c, array [int] of var int: x);
     function var int: foo_root(var bool: b) = let {
-      tuple(var bool, var int): _DECL_18 = let {
-      tuple(bool, int): _DECL_15 = let {
-      bool: _DECL_14 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_14]), 1);
-      tuple(bool, int): _DECL_16 = (true, 2);
-      array [int] of var bool: _DECL_17 = [b, true];
-    } in (if_then_else(_DECL_17, [(_DECL_15).1, (_DECL_16).1]), if_then_else(_DECL_17, [(_DECL_15).2, (_DECL_16).2]));
-      constraint (_DECL_18).1;
-    } in (_DECL_18).2;
+      tuple(var bool, var int): _DECL_19 = let {
+      tuple(bool, int): _DECL_16 = let {
+      bool: _DECL_15 = false;
+    } in (forall([_DECL_15]), 1);
+      tuple(bool, int): _DECL_17 = (true, 2);
+      array [int] of var bool: _DECL_18 = [b, true];
+    } in (if_then_else(_DECL_18, [(_DECL_16).1, (_DECL_17).1]), if_then_else(_DECL_18, [(_DECL_16).2, (_DECL_17).2]));
+      constraint (_DECL_19).1;
+    } in (_DECL_19).2;
     function tuple(var bool, var int): foo(var bool: b) = let {
-      tuple(bool, int): _DECL_10 = let {
-      bool: _DECL_9 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_9]), 1);
-      tuple(bool, int): _DECL_11 = (true, 2);
-      array [int] of var bool: _DECL_12 = [b, true];
-    } in (if_then_else(_DECL_12, [(_DECL_10).1, (_DECL_11).1]), if_then_else(_DECL_12, [(_DECL_10).2, (_DECL_11).2]));
+      tuple(bool, int): _DECL_11 = let {
+      bool: _DECL_10 = false;
+    } in (forall([_DECL_10]), 1);
+      tuple(bool, int): _DECL_12 = (true, 2);
+      array [int] of var bool: _DECL_13 = [b, true];
+    } in (if_then_else(_DECL_13, [(_DECL_11).1, (_DECL_12).1]), if_then_else(_DECL_13, [(_DECL_11).2, (_DECL_12).2]));
     function int: bar_root(var bool: b) = if true then let {
       constraint false;
     } in 1 else 2 endif;
     function tuple(bool, int): bar(var bool: b) = if true then let {
-      bool: _DECL_13 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_13]), 1) else (true, 2) endif;
+      bool: _DECL_14 = false;
+    } in (forall([_DECL_14]), 1) else (true, 2) endif;
     solve satisfy;
 "#]),
 		)
@@ -1909,20 +1984,20 @@ mod tests {
     function tuple(bool, array [int] of int): bar() = let {
       array [int] of tuple(bool, int): _DECL_10 = [let {
       bool: _DECL_9 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_9]), 1) | i in {1}, j in {2}, k in {3}];
-    } in (mzn_builtin("mzn_forall_par", [mzn_builtin("mzn_forall_par", [(_DECL_11).1 | _DECL_11 in _DECL_10])]), [_DECL_13 | _DECL_12 in _DECL_10, _DECL_13 = (_DECL_12).2]);
+    } in (forall([_DECL_9]), 1) | i in {1}, j in {2}, k in {3}];
+    } in (forall([forall([(_DECL_11).1 | _DECL_11 in _DECL_10])]), [_DECL_13 | _DECL_12 in _DECL_10, _DECL_13 = (_DECL_12).2]);
     function set of int: iter_root() = let {
       constraint false;
     } in {1};
     function tuple(bool, set of int): iter() = let {
       bool: _DECL_14 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_14]), {1});
+    } in (forall([_DECL_14]), {1});
     function array [int] of int: qux_root() = [1 | i in {1}, j in iter_root(), k in {3}];
     function tuple(bool, array [int] of int): qux() = let {
       array [int] of tuple(bool, array [int] of int): _DECL_19 = [let {
       tuple(bool, set of int): _DECL_17 = iter();
-    } in (mzn_builtin("mzn_forall_par", [(_DECL_17).1]), [1 | j in (_DECL_17).2, k in {3}]) | i in {1}];
-    } in (mzn_builtin("mzn_forall_par", [mzn_builtin("mzn_forall_par", [(_DECL_20).1 | _DECL_20 in _DECL_19])]), [_DECL_23 | _DECL_21 in _DECL_19, _DECL_22 = (_DECL_21).2, _DECL_23 in _DECL_22]);
+    } in (forall([(_DECL_17).1]), [1 | j in (_DECL_17).2, k in {3}]) | i in {1}];
+    } in (forall([forall([(_DECL_20).1 | _DECL_20 in _DECL_19])]), [_DECL_23 | _DECL_21 in _DECL_19, _DECL_22 = (_DECL_21).2, _DECL_23 in _DECL_22]);
     solve satisfy;
 "#]),
 		)
@@ -1930,69 +2005,69 @@ mod tests {
 
 	#[test]
 	fn test_totalise_var_comp() {
-		check(
-			transformer(vec![
-				rewrite_domains,
-				top_down_type,
-				type_specialise,
-				desugar_comprehension,
-				erase_opt,
-				totalise,
-			]),
+		check_no_stdlib(
+			transformer(vec![desugar_comprehension, erase_opt, totalise]),
 			r#"
+				annotation mzn_var_where_clause;
+                predicate forall(array [int] of var bool);
+                test forall(array [int] of bool);
+                predicate exists(array [int] of var bool);
+				function var bool: if_then_else(array [int] of var bool, array [int] of bool);
+				function var int: if_then_else(array [int] of var bool, array [int] of int);
                 predicate bar(int: x) = false;
                 function set of int: qux() = let { constraint false } in {3, 4};
                 function array [int] of var opt int: foo() =
                     [1 | i in {1, 2} where bar(i), j in qux()];
 			"#,
 			expect!([r#"
+    annotation mzn_var_where_clause;
+    function var bool: forall(array [int] of var bool: _DECL_1);
+    function bool: forall(array [int] of bool: _DECL_2);
+    function var bool: exists(array [int] of var bool: _DECL_3);
+    function var bool: if_then_else(array [int] of var bool: _DECL_4, array [int] of bool: _DECL_5);
+    function var int: if_then_else(array [int] of var bool: _DECL_6, array [int] of int: _DECL_7);
     function var bool: bar(int: x) = false;
     function set of int: qux_root() = let {
       constraint false;
     } in {3, 4};
     function tuple(bool, set of int): qux() = let {
-      bool: _DECL_1 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_1]), {3, 4});
+      bool: _DECL_9 = false;
+    } in (forall([_DECL_9]), {3, 4});
     function array [int] of tuple(var bool, var int): foo_root() = [let {
-      tuple(var bool, var int): _DECL_3 = let {
-      tuple(var bool, var int): _DECL_4 = (true, 1);
-    } in _DECL_4;
-      tuple(var bool, var int): _DECL_5 = let {
-      tuple(var bool, var int): _DECL_6 = (false, 0);
-    } in _DECL_6;
-      array [int] of var bool: _DECL_7 = [_DECL_2, true];
-    } in (if_then_else(_DECL_7, [(_DECL_3).1, (_DECL_5).1]), if_then_else(_DECL_7, [(_DECL_3).2, (_DECL_5).2])) | i in {1, 2}, _DECL_2 = bar(i), j in qux_root()];
+      tuple(bool, int): _DECL_30 = let {
+      tuple(bool, int): _DECL_28 = (true, 1);
+    } in _DECL_28;
+      tuple(bool, int): _DECL_31 = let {
+      tuple(bool, int): _DECL_29 = (false, 0);
+    } in _DECL_29;
+      array [int] of var bool: _DECL_32 = [_DECL_26, true];
+    } in (if_then_else(_DECL_32, [(_DECL_30).1, (_DECL_31).1]), if_then_else(_DECL_32, [(_DECL_30).2, (_DECL_31).2])) | i in {1, 2}, _DECL_26 = bar(i), j in qux_root()];
     function tuple(var bool, array [int] of tuple(var bool, var int)): foo() = let {
-      array [int] of tuple(var bool, array [int] of tuple(var bool, var int)): _DECL_8 = [let {
-      tuple(bool, array [int] of tuple(var bool, var int)): _DECL_10 = let {
-      tuple(bool, set of int): _DECL_11 = qux();
-    } in (mzn_builtin("mzn_forall_par", [(_DECL_11).1]), [let {
-      tuple(var bool, var int): _DECL_12 = let {
-      tuple(var bool, var int): _DECL_13 = (true, 1);
-    } in _DECL_13;
-      tuple(var bool, var int): _DECL_14 = let {
-      tuple(var bool, var int): _DECL_15 = (false, 0);
+      array [int] of tuple(var bool, array [int] of tuple(var bool, var int)): _DECL_20 = [let {
+      tuple(bool, array [int] of tuple(var bool, var int)): _DECL_19 = let {
+      tuple(bool, set of int): _DECL_13 = qux();
+    } in (forall([(_DECL_13).1]), [let {
+      tuple(bool, int): _DECL_16 = let {
+      tuple(bool, int): _DECL_14 = (true, 1);
+    } in _DECL_14;
+      tuple(bool, int): _DECL_17 = let {
+      tuple(bool, int): _DECL_15 = (false, 0);
     } in _DECL_15;
-      array [int] of var bool: _DECL_16 = [_DECL_9, true];
-    } in (if_then_else(_DECL_16, [(_DECL_12).1, (_DECL_14).1]), if_then_else(_DECL_16, [(_DECL_12).2, (_DECL_14).2])) | j in (_DECL_11).2]);
-    } in (mzn_builtin("mzn_exists_var", [_DECL_9, (_DECL_10).1]), (_DECL_10).2) | i in {1, 2}, _DECL_9 = bar(i)];
-    } in (mzn_builtin("mzn_forall_var", [mzn_builtin("mzn_forall_var", [(_DECL_17).1 | _DECL_17 in _DECL_8])]), [_DECL_20 | _DECL_18 in _DECL_8, _DECL_19 = (_DECL_18).2, _DECL_20 in _DECL_19]);
+      array [int] of var bool: _DECL_18 = [_DECL_11, true];
+    } in (if_then_else(_DECL_18, [(_DECL_16).1, (_DECL_17).1]), if_then_else(_DECL_18, [(_DECL_16).2, (_DECL_17).2])) | j in (_DECL_13).2]);
+    } in (exists([_DECL_11, (_DECL_19).1]), (_DECL_19).2) | i in {1, 2}, _DECL_11 = bar(i)];
+    } in (forall([forall([(_DECL_21).1 | _DECL_21 in _DECL_20])]), [_DECL_24 | _DECL_22 in _DECL_20, _DECL_23 = (_DECL_22).2, _DECL_24 in _DECL_23]);
+    solve satisfy;
 "#]),
 		)
 	}
 
 	#[test]
 	fn test_totalise_bool_fns() {
-		check(
-			transformer(vec![
-				rewrite_domains,
-				top_down_type,
-				type_specialise,
-				desugar_comprehension,
-				erase_opt,
-				totalise,
-			]),
+		check_no_stdlib(
+			totalise,
 			r#"
+    			function bool: forall(array [int] of bool: _DECL_2);
 				function int: foo(int: x) = let {
 					constraint false;
 				} in 1;
@@ -2002,37 +2077,30 @@ mod tests {
 				constraint bar(1);
 			"#,
 			expect!([r#"
+    function bool: forall(array [int] of bool: _DECL_2);
     function int: foo_root(int: x) = let {
       constraint false;
     } in 1;
     function tuple(bool, int): foo(int: x) = let {
-      bool: _DECL_1 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_1]), 1);
-    function bool: bar_root(int: x) = let {
-      int: f = foo_root(x);
-      constraint false;
-    } in true;
+      bool: _DECL_5 = false;
+    } in (forall([_DECL_5]), 1);
     function bool: bar(int: x) = let {
       tuple(bool, int): f = foo(x);
-      int: _DECL_2 = (f).2;
-    } in mzn_builtin("mzn_forall_par", [(f).1, false]);
-    constraint bar_root(1);
+      int: _DECL_7 = (f).2;
+    } in forall([(f).1, false]);
+    constraint bar(1);
+    solve satisfy;
 "#]),
 		)
 	}
 
 	#[test]
 	fn test_totalise_predicate_with_ite() {
-		check(
-			transformer(vec![
-				rewrite_domains,
-				top_down_type,
-				type_specialise,
-				desugar_comprehension,
-				erase_opt,
-				totalise,
-			]),
+		check_no_stdlib(
+			totalise,
 			r#"
+                predicate forall(array [int] of var bool);
+                test forall(array [int] of bool);
 				function var int: qux(var int: x) = let {
 					constraint false;
 				} in x;
@@ -2046,23 +2114,22 @@ mod tests {
 				constraint foo(v);
 			"#,
 			expect!([r#"
+    function var bool: forall(array [int] of var bool: _DECL_1);
+    function bool: forall(array [int] of bool: _DECL_2);
     function var int: qux_root(var int: x) = let {
       constraint false;
     } in x;
     function tuple(bool, var int): qux(var int: x) = let {
-      bool: _DECL_1 = false;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_1]), x);
+      bool: _DECL_8 = false;
+    } in (forall([_DECL_8]), x);
     function var bool: bar(var int: x);
-    function var bool: foo_root(var int: x) = if true then let {
-      var int: x = qux_root(3);
-      constraint bar(x);
-    } in true else true endif;
     function var bool: foo(var int: x) = if true then let {
       tuple(bool, var int): x = qux(3);
-      var int: _DECL_2 = (x).2;
-    } in mzn_builtin("mzn_forall_var", [(x).1, bar(_DECL_2)]) else true endif;
+      var int: _DECL_10 = (x).2;
+    } in forall([(x).1, bar(_DECL_10)]) else true endif;
     var int: v;
-    constraint foo_root(v);
+    constraint foo(v);
+    solve satisfy;
 "#]),
 		)
 	}
@@ -2109,7 +2176,7 @@ mod tests {
       array [int] of var bool: _DECL_15 = [q(x), true];
     } in if_then_else(_DECL_15, [_DECL_13, _DECL_14]);
       var bool: _DECL_17 = q(x);
-    } in (mzn_builtin("mzn_forall_var", [_DECL_17]), foo_root(xx));
+    } in (forall([_DECL_17]), foo_root(xx));
     solve satisfy;
 "#]),
 		)
@@ -2132,13 +2199,53 @@ mod tests {
     function bool: forall(array [int] of bool: _DECL_1);
     function bool: abort(string: msg);
     function bool: bar(int: x);
-    function int: foo_root(int: x) = let {
+    function int: foo(int: x) = let {
       constraint if bar(x) then abort("foo") else true endif;
     } in x;
-    function tuple(bool, int): foo(int: x) = let {
-      bool: _DECL_7 = if bar(x) then abort("foo") else true endif;
-    } in (mzn_builtin("mzn_forall_par", [_DECL_7]), x);
-    int: a = foo_root(2);
+    int: a = foo(2);
+    solve satisfy;
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_totalise_default() {
+		check_no_stdlib(
+			totalise,
+			r#"
+                test forall(array [int] of bool);
+                function var int: mzn_default_partial(var int: x, var int: def);
+				function int: foo() = mzn_default_partial(1, 2);
+				function int: bar(bool: b) = mzn_default_partial(let { constraint b } in 1, 2);
+				function int: qux(bool: b, bool: c) = mzn_default_partial(let { constraint b } in 1, let { constraint c } in 2);
+			"#,
+			expect!([r#"
+    function bool: forall(array [int] of bool: _DECL_1);
+    function int: foo() = 1;
+    function int: bar(bool: b) = let {
+      tuple(bool, int): _DECL_8 = let {
+      bool: _DECL_7 = b;
+    } in (forall([_DECL_7]), 1);
+      int: _DECL_9 = 2;
+    } in if (_DECL_8).1 then (_DECL_8).2 else _DECL_9 endif;
+    function int: qux_root(bool: b, bool: c) = let {
+      tuple(bool, int): _DECL_15 = let {
+      bool: _DECL_14 = b;
+    } in (forall([_DECL_14]), 1);
+      tuple(bool, int): _DECL_17 = let {
+      bool: _DECL_16 = c;
+    } in (forall([_DECL_16]), 2);
+      tuple(bool, int): _DECL_18 = if (_DECL_15).1 then _DECL_15 else _DECL_17 endif;
+      constraint (_DECL_18).1;
+    } in (_DECL_18).2;
+    function tuple(bool, int): qux(bool: b, bool: c) = let {
+      tuple(bool, int): _DECL_11 = let {
+      bool: _DECL_10 = b;
+    } in (forall([_DECL_10]), 1);
+      tuple(bool, int): _DECL_13 = let {
+      bool: _DECL_12 = c;
+    } in (forall([_DECL_12]), 2);
+    } in if (_DECL_11).1 then _DECL_11 else _DECL_13 endif;
     solve satisfy;
 "#]),
 		)

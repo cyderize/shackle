@@ -41,6 +41,7 @@ struct TypeSpecialiser<'a, 'db, Dst: Marker> {
 	count: usize,
 	reached_recursion_limit: Option<FunctionId<'db>>,
 	original_functions: OverloadMap<'a, 'db>,
+	to_remove: FxHashSet<FunctionId<'db, Dst>>,
 }
 
 impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst> {
@@ -126,16 +127,17 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst
 		{
 			let _ = self.position.insert(f, last);
 		}
+
+		let idx = add_function(self, db, model, f);
+
 		if model[f].is_polymorphic() && model[f].body().is_some()
 			|| model[f]
 				.annotations()
 				.has(model, self.ids.annotations.mzn_unreachable)
 		{
 			// Remove non-builtin polymorphic and unreachable functions
-			return;
+			let _ = self.to_remove.insert(idx);
 		}
-
-		let _ = add_function(self, db, model, f);
 	}
 
 	fn fold_declaration_id(
@@ -216,6 +218,23 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 			.lookup_function(db, name, args)
 			.unwrap_or_else(|e| panic!("{}", e.pretty_print(db)));
 		let f = lookup.function;
+
+		// Also instantiate root versions of functions
+		if !name.is_root(db) {
+			if let Ok(lookup) = self
+				.original_functions
+				.lookup_function(db, name.root(db), args)
+			{
+				let f = lookup.function;
+				if model[f].is_polymorphic()
+					&& !model[f]
+						.annotations()
+						.has(model, self.ids.annotations.mzn_unreachable)
+				{
+					let _ = self.instantiate(db, model, name.root(db), args);
+				}
+			}
+		}
 
 		// Also instantiate subtyped polymorphic functions so we can dispatch to them
 		let fns = self.original_functions.get(&name).unwrap().clone();
@@ -801,6 +820,29 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 	}
 }
 
+struct RemoveUnreachableFunctions<'db, Dst: Marker> {
+	model: Model<'db, Dst>,
+	replacement_map: ReplacementMap<'db, Dst>,
+	to_remove: FxHashSet<FunctionId<'db>>,
+}
+
+impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for RemoveUnreachableFunctions<'db, Dst> {
+	fn model(&mut self) -> &mut Model<'db, Dst> {
+		&mut self.model
+	}
+
+	fn replacement_map(&mut self) -> &mut ReplacementMap<'db, Dst> {
+		&mut self.replacement_map
+	}
+
+	fn add_function(&mut self, db: &'db dyn Db, model: &'_ Model<'db, ()>, f: FunctionId<'db, ()>) {
+		if self.to_remove.contains(&f) {
+			return;
+		}
+		let _ = add_function(self, db, model, f);
+	}
+}
+
 /// Type specialise a model
 pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<'db>> {
 	log::info!("Performing type specialisation");
@@ -816,6 +858,7 @@ pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<
 		count: 0,
 		reached_recursion_limit: None,
 		original_functions: model.overload_map(),
+		to_remove: FxHashSet::default(),
 	};
 	ts.add_model(db, &model);
 	log::info!("Created {} specialised functions", ts.count);
@@ -828,7 +871,13 @@ pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<
 		}
 		.into());
 	}
-	Ok(ts.specialised_model)
+	let mut ruf = RemoveUnreachableFunctions {
+		model: Model::with_capacities(&ts.specialised_model.item_counts()),
+		replacement_map: ReplacementMap::default(),
+		to_remove: ts.to_remove,
+	};
+	ruf.add_model(db, &ts.specialised_model);
+	Ok(ruf.model)
 }
 
 #[cfg(test)]

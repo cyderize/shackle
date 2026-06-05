@@ -488,6 +488,15 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 						{
 							self.update(&c.arguments[0], it.mode, false);
 							return;
+						} else if name == self.ids.builtins.mzn_default_partial
+							&& c.arguments.len() == 2
+						{
+							let mode = Mode::NonRoot {
+								conditional_depth: it.mode.conditional_depth() + 1,
+							};
+							self.update(&c.arguments[0], mode, it.update_bools);
+							self.update(&c.arguments[1], mode, it.update_bools);
+							return;
 						}
 					}
 					Callable::Expression(e) => {
@@ -892,6 +901,30 @@ mod tests {
     function int: foo(int: x) = let {
       constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
     } in x:: ctx_root:: ctx_root;
+"#]],
+			true,
+		);
+	}
+
+	#[test]
+	fn test_bool_ctx_default() {
+		let program = r#"
+			function var int: mzn_default_partial(var int, var int);
+			function var int: foo() = mzn_default_partial(1, 2);
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function var int: mzn_default_partial(var int: _DECL_1, var int: _DECL_2);
+    function var int: foo() = mzn_default_partial(1:: ctx_non_root, 2:: ctx_non_root):: ctx_non_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function var int: mzn_default_partial(var int: _DECL_1, var int: _DECL_2);
+    function var int: foo() = mzn_default_partial(1:: ctx_non_root, 2:: ctx_non_root):: ctx_root;
 "#]],
 			true,
 		);

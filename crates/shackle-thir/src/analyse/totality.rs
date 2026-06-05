@@ -8,11 +8,11 @@ use shackle_utils::{arena::ArenaMap, maybe_grow_stack};
 
 use super::ModeAnalysis;
 use crate::{
-	ArrayComprehension, Callable, ConstraintId, Db, Expression, FunctionId, FunctionItem,
+	ArrayComprehension, Call, Callable, ConstraintId, Db, Expression, FunctionId, FunctionItem,
 	IfThenElse, Model,
 	traverse::{
-		Visitor, visit_array_comprehension, visit_callable, visit_constraint, visit_expression,
-		visit_if_then_else,
+		Visitor, visit_array_comprehension, visit_call, visit_callable, visit_constraint,
+		visit_expression, visit_if_then_else,
 	},
 };
 
@@ -206,6 +206,17 @@ impl<'a, 'db> Visitor<'a, 'db> for TotalityVisitor<'a, 'db> {
 			}
 		}
 		visit_callable(self, model, callable);
+	}
+
+	fn visit_call(&mut self, model: &'a Model<'db>, call: &'a Call<'db>) {
+		if call.matches_builtin(model, self.ids.builtins.mzn_default_partial)
+			&& call.arguments.len() == 2
+		{
+			// Totality only depends on RHS
+			self.visit_expression(model, &call.arguments[1]);
+			return;
+		}
+		visit_call(self, model, call);
 	}
 
 	fn visit_expression(&mut self, model: &'a Model<'db>, expression: &'a Expression<'db>) {

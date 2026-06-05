@@ -37,7 +37,7 @@ impl<'db, T: Marker> DerefMut for Annotations<'db, T> {
 
 impl<'db, T: Marker> Annotations<'db, T> {
 	/// Whether or not there is is an annotation atom with the given name
-	pub fn has(&self, model: &'db Model<'db, T>, name: Identifier<'db>) -> bool {
+	pub fn has(&self, model: &Model<'db, T>, name: Identifier<'db>) -> bool {
 		self.annotations.iter().any(|ann| match &**ann {
 			ExpressionData::Identifier(ResolvedIdentifier::Annotation(item)) => {
 				model[*item].name == Some(name)
@@ -46,10 +46,27 @@ impl<'db, T: Marker> Annotations<'db, T> {
 		})
 	}
 
+	/// Remove an annotation atom with the given name, returning whether or not it was present
+	pub fn remove(&mut self, model: &Model<'db, T>, name: Identifier<'db>) -> bool {
+		let mut had_ann = false;
+		self.annotations.retain(|ann| match &**ann {
+			ExpressionData::Identifier(ResolvedIdentifier::Annotation(item)) => {
+				if model[*item].name == Some(name) {
+					had_ann = true;
+					false
+				} else {
+					true
+				}
+			}
+			_ => true,
+		});
+		had_ann
+	}
+
 	/// Find an annotation which is a call with the given name
 	pub fn get_call(
 		&self,
-		model: &'db Model<'db, T>,
+		model: &Model<'db, T>,
 		name: Identifier<'db>,
 	) -> Option<&Expression<'db, T>> {
 		self.annotations.iter().find(|ann| match &***ann {

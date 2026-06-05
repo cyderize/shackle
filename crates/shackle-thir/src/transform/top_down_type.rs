@@ -456,34 +456,18 @@ mod tests {
 	}
 
 	#[test]
-	fn test_top_down_type_builtin() {
+	fn test_coercions() {
 		check_no_stdlib(
 			top_down_type,
 			r#"
-				annotation mzn_inline_call_by_name;
-				function var bool: forall(array [$T] of var bool: x) :: mzn_inline_call_by_name =
-					mzn_builtin("mzn_forall_var", x);
-				function var bool: exists(array [$T] of var bool: x) :: mzn_inline_call_by_name =
-					mzn_builtin("mzn_exists_var", x);
-				function var bool: forall(array [int] of var bool: x) :: mzn_inline_call_by_name =
-					mzn_builtin("mzn_forall_var", x);
-				function var bool: exists(array [int] of var bool: x) :: mzn_inline_call_by_name =
-					mzn_builtin("mzn_exists_var", x);
+				float: f = let {
+					int: i = true;
+				} in i;
 				"#,
 			expect!([r#"
-    annotation mzn_inline_call_by_name;
-    function var bool: forall(array [$T] of var bool: x) :: (mzn_inline_call_by_name) = let {
-      var bool: _DECL_5 = mzn_builtin("mzn_forall_var", x);
-    } in _DECL_5;
-    function var bool: exists(array [$T] of var bool: x) :: (mzn_inline_call_by_name) = let {
-      var bool: _DECL_6 = mzn_builtin("mzn_exists_var", x);
-    } in _DECL_6;
-    function var bool: forall(array [int] of var bool: x) :: (mzn_inline_call_by_name) = let {
-      var bool: _DECL_7 = mzn_builtin("mzn_forall_var", x);
-    } in _DECL_7;
-    function var bool: exists(array [int] of var bool: x) :: (mzn_inline_call_by_name) = let {
-      var bool: _DECL_8 = mzn_builtin("mzn_exists_var", x);
-    } in _DECL_8;
+    float: f = let {
+      int: i = true;
+    } in i;
     solve satisfy;
 "#]),
 		)

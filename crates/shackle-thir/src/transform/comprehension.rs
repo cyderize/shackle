@@ -328,11 +328,10 @@ impl<'db, Dst: Marker> ComprehensionRewriter<'db, Dst> {
 		// where clause.
 		//
 		// Here we rewrite [x | i in foo where bar] (where bar is var bool)
-		// into [if w then x else <> endif | i in foo, w = bar where w]
+		// into [if w then x else <> endif | i in foo, w :: mzn_var_where_clause = bar]
 		//
-		// This way the where clause stays around and can be handled during
-		// totalisation but the option type part has already been introduced
-		// and can be erased accordingly.
+		// This way the where clause can be detected during totalisation but the
+		// option type part has already been introduced and can be erased accordingly.
 		if !var_where.is_empty() {
 			// Add new assignment generators for each var where clause as early
 			// as possible.

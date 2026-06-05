@@ -245,11 +245,6 @@ impl<'db> TopoSorter<'db> {
 									PatternTy::Function(fe) => {
 										fe.overload.params().len() == f.overload.params().len()
 									}
-									// .instantiate_ty_params(
-									// 	self.db.upcast(),
-									// 	f.overload.params(),
-									// )
-									// .is_ok(),
 									_ => false,
 								};
 								if matches {
@@ -485,6 +480,20 @@ mod tests {
     int: y;
     int: x;
     x = y;
+"#]),
+		);
+	}
+
+	#[test]
+	fn test_topological_sort_root() {
+		check_toposort(
+			r#"
+			test foo(int: x) = true;
+			test foo_root(int: x) = true;
+		"#,
+			expect!([r#"
+	test foo_root(int: x) = true;
+	test foo(int: x) = true;
 "#]),
 		);
 	}

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use rustc_hash::FxHashMap;
+use shackle_utils::hash::Map;
 use shackle_diagnostics::{InvalidArrayLiteral, InvalidNumericLiteral, SyntaxError};
 use shackle_syntax::{ast::AstNode, minizinc};
 use shackle_utils::maybe_grow_stack;
@@ -960,7 +960,7 @@ impl<'db, 'a> Debug for ExpressionCollector<'db, 'a> {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TypeInstIdentifiers<'db> {
 	/// The named type-inst ids
-	pub tiids: FxHashMap<Identifier<'db>, (bool, TypeInstIdentifierDeclaration<'db>)>,
+	pub tiids: Map<Identifier<'db>, (bool, TypeInstIdentifierDeclaration<'db>)>,
 	/// Anonymous type-inst ids
 	pub anons: Vec<TypeInstIdentifierDeclaration<'db>>,
 }

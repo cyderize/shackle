@@ -4,7 +4,7 @@
 /// - Annotations on items
 /// - RHS of variable declarations
 /// - Bodies of functions
-use rustc_hash::FxHashMap;
+use shackle_utils::hash::Map;
 use shackle_diagnostics::Error;
 use shackle_ty::{Ty, registry::TypeRegistry};
 use shackle_utils::arena::ArenaMap;
@@ -22,9 +22,9 @@ pub struct BodyTypes<'db> {
 	/// Types of expressions
 	pub expressions: ArenaMap<Expression<'db>, Ty<'db>>,
 	/// Identifier resolution
-	pub identifier_resolution: FxHashMap<ExpressionId<'db>, PatternRef<'db>>,
+	pub identifier_resolution: Map<ExpressionId<'db>, PatternRef<'db>>,
 	/// Pattern resolution
-	pub pattern_resolution: FxHashMap<PatternId<'db>, PatternRef<'db>>,
+	pub pattern_resolution: Map<PatternId<'db>, PatternRef<'db>>,
 }
 
 impl<'db> Item<'db> {
@@ -64,8 +64,8 @@ impl<'db> BodyTypeContext<'db> {
 			data: BodyTypes {
 				patterns: ArenaMap::with_capacity(patterns + 1),
 				expressions: ArenaMap::with_capacity(expressions + 1),
-				identifier_resolution: FxHashMap::default(),
-				pattern_resolution: FxHashMap::default(),
+				identifier_resolution: Map::default(),
+				pattern_resolution: Map::default(),
 			},
 		}
 	}

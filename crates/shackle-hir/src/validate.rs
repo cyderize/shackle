@@ -9,7 +9,7 @@
 
 use std::collections::hash_map::Entry;
 
-use rustc_hash::FxHashMap;
+use shackle_utils::hash::Map;
 use shackle_diagnostics::{
 	AdditionalSolveItem, ConstructorAlreadyDefined, DuplicateAssignment, DuplicateConstructor,
 	DuplicateFunction, FunctionAlreadyDefined, IllegalOverload, IllegalOverloading,
@@ -138,7 +138,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 	}
 
 	// Check for multiple assignments to variables
-	let mut assignments: FxHashMap<_, Vec<NodeRef<'db>>> = FxHashMap::default();
+	let mut assignments: Map<_, Vec<NodeRef<'db>>> = Map::default();
 	for model in lower_models(db).iter() {
 		for it in model.items(db).iter() {
 			match it {

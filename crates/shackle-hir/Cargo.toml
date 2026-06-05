@@ -16,7 +16,6 @@ derive_more = {workspace = true, features = [
   "try_unwrap",
 ]}
 log = {workspace = true}
-rustc-hash = {workspace = true}
 salsa = {workspace = true}
 shackle-diagnostics = {path = "../shackle-diagnostics"}
 shackle-syntax = {path = "../shackle-syntax"}

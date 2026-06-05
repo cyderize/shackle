@@ -1,6 +1,6 @@
 use std::{collections::hash_map::Entry, fmt::Write};
 
-use rustc_hash::FxHashMap;
+use shackle_utils::hash::Map;
 use shackle_diagnostics::{
 	AmbiguousCall, BranchMismatch, Error, IllegalType, InvalidArrayLiteral, InvalidFieldAccess,
 	NoMatchingFunction, SyntaxError, TypeInferenceFailure, TypeMismatch, UndefinedIdentifier,
@@ -595,7 +595,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 
 	fn collect_record_literal(&mut self, rl: &RecordLiteral<'db>) -> Ty<'db> {
 		let db = self.db;
-		let mut fields = FxHashMap::default();
+		let mut fields = Map::default();
 		for (i, f) in rl.fields.iter() {
 			let ident = self.data[*i]
 				.identifier()
@@ -2120,7 +2120,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			},
 			Pattern::Record { fields } => match expected.lookup(db) {
 				TyData::Record(_, fs) => {
-					let mut map = FxHashMap::default();
+					let mut map = Map::default();
 					for (i, f) in fs.iter() {
 						let _ = map.insert(*i, *f);
 					}
@@ -2534,7 +2534,7 @@ supported in operation types."
 				.with_opt(db, *opt),
 			},
 			Type::Record { opt, fields: fs } => {
-				let mut fields = FxHashMap::default();
+				let mut fields = Map::default();
 				for (p, t) in fs.iter() {
 					let i = self.data[*p]
 						.identifier()

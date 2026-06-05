@@ -6,7 +6,7 @@
 //! Also ensures that globals (possibly transitively) used in function bodies
 //! appear before the function declaration.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::CyclicDefinition;
 use shackle_ty::FunctionEntry;
 
@@ -25,7 +25,7 @@ pub fn topological_sort<'db>(db: &'db dyn Db) -> Vec<Item<'db>> {
 	log::info!("Topologically sorting items");
 	let models = lower_models(db);
 	let mut items = Vec::with_capacity(models.iter().map(|m| m.items(db).len()).sum());
-	let mut assignments = FxHashMap::default();
+	let mut assignments = Map::default();
 	for m in models.iter() {
 		for item in m.items(db) {
 			match item {
@@ -60,20 +60,20 @@ pub struct TopoSorter<'db> {
 	db: &'db dyn Db,
 	ids: &'db IdentifierRegistry<'db>,
 	sorted: Vec<Item<'db>>,
-	visited: FxHashSet<Item<'db>>,
-	current: FxHashSet<PatternRef<'db>>,
-	assignments: FxHashMap<Item<'db>, Item<'db>>,
+	visited: Set<Item<'db>>,
+	current: Set<PatternRef<'db>>,
+	assignments: Map<Item<'db>, Item<'db>>,
 }
 
 impl<'db> TopoSorter<'db> {
 	/// Create a new topological sorter
-	pub fn new(db: &'db dyn Db, assignments: FxHashMap<Item<'db>, Item<'db>>) -> Self {
+	pub fn new(db: &'db dyn Db, assignments: Map<Item<'db>, Item<'db>>) -> Self {
 		Self {
 			db,
 			ids: IdentifierRegistry::lookup(db),
 			sorted: Vec::new(),
-			visited: FxHashSet::default(),
-			current: FxHashSet::default(),
+			visited: Set::default(),
+			current: Set::default(),
 			assignments,
 		}
 	}
@@ -346,7 +346,7 @@ impl<'db> TopoSorter<'db> {
 		visit_call_body: Option<PatternRef<'db>>,
 	) {
 		let mut todo = vec![expression];
-		let mut seen = visit_call_body.into_iter().collect::<FxHashSet<_>>();
+		let mut seen = visit_call_body.into_iter().collect::<Set<_>>();
 		while let Some(expression) = todo.pop() {
 			let item = expression.item(self.db);
 			let data = item.data(self.db);

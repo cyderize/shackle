@@ -3,7 +3,7 @@
 //! E.g.
 //! - Function parameter/return type
 //! - Variable declaration LHS types
-use rustc_hash::FxHashMap;
+use shackle_utils::hash::Map;
 use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch};
 use shackle_ty::{
 	EnumRef, FunctionEntry, FunctionType, OverloadedFunction, PolymorphicFunctionType, Ty, TyData,
@@ -53,13 +53,13 @@ fn unknown_item_signature<'db>(
 #[derive(Clone, Debug, PartialEq, Eq, salsa::Update, Default)]
 pub struct SignatureTypes<'db> {
 	/// Types of declarations
-	pub patterns: FxHashMap<PatternId<'db>, PatternTy<'db>>,
+	pub patterns: Map<PatternId<'db>, PatternTy<'db>>,
 	/// Types of expressions
-	pub expressions: FxHashMap<ExpressionId<'db>, Ty<'db>>,
+	pub expressions: Map<ExpressionId<'db>, Ty<'db>>,
 	/// Identifier resolution
-	pub identifier_resolution: FxHashMap<ExpressionId<'db>, PatternRef<'db>>,
+	pub identifier_resolution: Map<ExpressionId<'db>, PatternRef<'db>>,
 	/// Pattern resolution
-	pub pattern_resolution: FxHashMap<PatternId<'db>, PatternRef<'db>>,
+	pub pattern_resolution: Map<PatternId<'db>, PatternRef<'db>>,
 }
 
 /// Context for typing an item signature

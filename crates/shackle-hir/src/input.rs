@@ -7,7 +7,7 @@ use std::{
 };
 
 use derive_more::From;
-use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_utils::hash::{Map, Set};
 use salsa::Setter;
 use shackle_diagnostics::{Error as ShackleError, IncludeError, SourceFile};
 use shackle_syntax::{
@@ -450,7 +450,7 @@ pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 	log::info!("Resolving includes");
 	let inputs = InputFiles::get(db);
 	let mut result = vec![];
-	let mut seen = FxHashSet::default();
+	let mut seen = Set::default();
 	let mut todo = inputs.files(db).iter().rev().copied().collect::<Vec<_>>();
 	todo.extend(auto_includes(db).iter().copied().rev());
 	while let Some(model) = todo.pop() {
@@ -469,7 +469,7 @@ pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 }
 
 #[salsa::tracked(returns(ref))]
-fn model_file_map(db: &dyn Db) -> FxHashMap<PathBuf, NamedModelFile> {
+fn model_file_map(db: &dyn Db) -> Map<PathBuf, NamedModelFile> {
 	resolve_includes(db)
 		.iter()
 		.filter_map(|f| f.try_unwrap_named().ok().map(|n| (n.path(db).clone(), n)))

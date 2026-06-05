@@ -3,7 +3,7 @@
 //! See <http://moscova.inria.fr/~maranget/papers/warn/warn.pdf> for algorithm details
 
 use derive_more::From;
-use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::{NonExhaustivePatternMatching, UnreachablePattern};
 use shackle_ty::{EnumRef, OptType, Ty, TyData, registry::TypeRegistry};
 use shackle_utils::InternedString;
@@ -18,8 +18,8 @@ use crate::{
 
 /// Compute a mapping from (non-introduced) enum types to the constructors for the enum
 #[salsa::tracked(returns(ref))]
-pub fn enum_constructors<'db>(db: &'db dyn Db) -> FxHashMap<EnumRef<'db>, Vec<PatternRef<'db>>> {
-	let mut result = FxHashMap::default();
+pub fn enum_constructors<'db>(db: &'db dyn Db) -> Map<EnumRef<'db>, Vec<PatternRef<'db>>> {
+	let mut result = Map::default();
 	for model in lower_models(db).iter() {
 		for it in model.items(db).iter() {
 			match it {
@@ -456,7 +456,7 @@ impl<'db> ExhaustivenessChecker<'db> {
 			_ => return Err(SemanticPattern::Wildcard(ty)),
 		}
 
-		let used_ctors = FxHashSet::from_iter(constructors);
+		let used_ctors = Set::from_iter(constructors);
 		for c in required_ctors {
 			if !used_ctors.contains(&&c) {
 				// Give this constructor as one which needs to be added to the case expression
@@ -586,7 +586,7 @@ impl<'db> ExhaustivenessChecker<'db> {
 				)
 			}
 			(Pattern::Record { fields }, PatternTy::Destructuring(ty)) => {
-				let field_pats = FxHashMap::from_iter(fields.iter().copied());
+				let field_pats = Map::from_iter(fields.iter().copied());
 				SemanticPattern::Constructor(
 					*ty,
 					PatternConstructor::Structure,

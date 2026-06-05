@@ -6,7 +6,7 @@
 use std::collections::hash_map::Entry;
 
 use derive_more::Deref;
-use rustc_hash::{FxHashMap, FxHashSet};
+use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::{IdentifierAlreadyDefined, IdentifierShadowing, InvalidPattern};
 use shackle_ty::FunctionEntry;
 use shackle_utils::{
@@ -74,11 +74,11 @@ impl std::fmt::Debug for GlobalScope {
 			f.debug_struct("GlobalScope")
 				.field(
 					"functions",
-					&FxHashMap::from_iter(GlobalScope::functions(db)),
+					&Map::from_iter(GlobalScope::functions(db)),
 				)
 				.field(
 					"variables",
-					&FxHashMap::from_iter(GlobalScope::variables(db)),
+					&Map::from_iter(GlobalScope::variables(db)),
 				)
 				.finish()
 		})
@@ -336,10 +336,10 @@ fn collect_global_scope<'db>(db: &'db dyn Db) -> ScopeData<'db> {
 /// Variable scope
 #[derive(Clone, Debug, Default, PartialEq, Eq, salsa::Update)]
 pub struct ScopeData<'db> {
-	functions: FxHashMap<Identifier<'db>, Vec<(PatternRef<'db>, u32)>>,
-	variables: FxHashMap<Identifier<'db>, (PatternRef<'db>, u32)>,
+	functions: Map<Identifier<'db>, Vec<(PatternRef<'db>, u32)>>,
+	variables: Map<Identifier<'db>, (PatternRef<'db>, u32)>,
 	/// Identifiers which do not cause pattern matching to add new variable bindings
-	atoms: FxHashSet<Identifier<'db>>,
+	atoms: Set<Identifier<'db>>,
 }
 
 impl<'db> ScopeData<'db> {
@@ -977,7 +977,7 @@ impl<'db> ScopeResult<'db> {
 		e: ExpressionId<'db>,
 	) -> Vec<(Identifier<'db>, Vec<PatternRef<'db>>)> {
 		let (mut current, generation) = self.expression_scopes[e];
-		let mut combined = FxHashMap::default();
+		let mut combined = Map::default();
 		loop {
 			match &self.scopes[current] {
 				Scope::Local { parent, scope } => {
@@ -1019,7 +1019,7 @@ impl<'db> ScopeResult<'db> {
 		e: ExpressionId<'db>,
 	) -> Vec<(Identifier<'db>, PatternRef<'db>)> {
 		let (mut current, generation) = self.expression_scopes[e];
-		let mut combined = FxHashMap::default();
+		let mut combined = Map::default();
 		loop {
 			match &self.scopes[current] {
 				Scope::Local { parent, scope } => {
@@ -1527,12 +1527,6 @@ mod tests {
                 pattern: <Pattern::1>,
             },
             Identifier(
-                "qux",
-            ): PatternRef {
-                item: file_1:5.4-7.18,
-                pattern: <Pattern::1>,
-            },
-            Identifier(
                 "foo",
             ): PatternRef {
                 item: file_1:3.4-16,
@@ -1542,6 +1536,12 @@ mod tests {
                 "hello",
             ): PatternRef {
                 item: file_2:2.4-29,
+                pattern: <Pattern::1>,
+            },
+            Identifier(
+                "qux",
+            ): PatternRef {
+                item: file_1:5.4-7.18,
                 pattern: <Pattern::1>,
             },
         },

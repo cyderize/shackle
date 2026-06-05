@@ -1,7 +1,8 @@
-use std::{collections::HashMap, iter};
+use std::iter;
 
 use shackle_diagnostics::SourceSpan;
 use shackle_syntax::{ast::AstNode, eprime};
+use shackle_utils::hash::Map;
 
 use crate::{
 	Db,
@@ -148,15 +149,8 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 			assignee,
 			definition,
 		});
-		self.items.push(
-			AssignmentItem::new(
-				self.db,
-				data,
-				sm,
-				Origin::new(self.file, c.span()),
-			)
-			.into(),
-		);
+		self.items
+			.push(AssignmentItem::new(self.db, data, sm, Origin::new(self.file, c.span())).into());
 	}
 
 	fn collect_param_declaration(&mut self, p: &eprime::ParamDeclaration<'tree>) {
@@ -232,13 +226,7 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 				annotations: Box::new([]),
 			});
 			self.items.push(
-				DeclarationItem::new(
-					self.db,
-					data,
-					sm,
-					Origin::new(self.file, name.span()),
-				)
-				.into(),
+				DeclarationItem::new(self.db, data, sm, Origin::new(self.file, name.span())).into(),
 			);
 		}
 	}
@@ -257,13 +245,7 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 			expression,
 		});
 		self.items.push(
-			ConstraintItem::new(
-				self.db,
-				data,
-				sm,
-				Origin::new(self.file, expr.span()),
-			)
-			.into(),
+			ConstraintItem::new(self.db, data, sm, Origin::new(self.file, expr.span())).into(),
 		);
 	}
 
@@ -275,20 +257,14 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 			expression,
 		});
 		self.items.push(
-			OutputItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, i.span()),
-			)
-			.into(),
+			OutputItem::new(self.db, data, source_map, Origin::new(self.file, i.span())).into(),
 		);
 	}
 
 	/// Preprocess the model to collect parameter index sets, and ensure constants are declared
 	pub fn preprocess(&mut self, items: impl Iterator<Item = eprime::Item<'tree>>) {
 		let mut parameter_identifiers = Vec::new();
-		let mut parameter_index_set_map = HashMap::new();
+		let mut parameter_index_set_map = Map::default();
 		for item in items {
 			match item {
 				eprime::Item::ParamDeclaration(p) => {

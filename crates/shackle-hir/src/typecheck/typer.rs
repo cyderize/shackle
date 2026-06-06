@@ -1754,11 +1754,6 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			}
 		}
 
-		if overloads.is_empty() {
-			self.ctx.add_expression(db, expr, self.types.error);
-			return error;
-		}
-
 		let fn_result = FunctionEntry::match_fn(db, overloads, args).or_else(|e| {
 			if let Some(ty) = is_annotation_for {
 				// Also try matching ::annotated_expression functions
@@ -1843,54 +1838,56 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					)
 					.unwrap();
 				}
-				writeln!(&mut msg, "The following overloads could not be used:").unwrap();
-				for (_, f, e) in es.iter() {
-					writeln!(&mut msg, "  {}", f.overload.pretty_print_item(db, i)).unwrap();
-					match e {
-						InstantiationError::ArgumentCountMismatch { expected, actual } => {
-							writeln!(
-								&mut msg,
-								"    {} arguments required, {} given",
-								expected, actual
-							)
-							.unwrap();
-						}
-						InstantiationError::ArgumentMismatch {
-							index,
-							expected,
-							actual,
-						} => {
-							writeln!(
-								&mut msg,
-								"    argument {} expected '{}', but '{}' given",
-								index + 1,
-								expected.pretty_print(db),
-								actual.pretty_print(db)
-							)
-							.unwrap();
-						}
-						InstantiationError::IncompatibleTypeInstVariable { ty_var, types } => {
-							if types.is_empty() {
-								// Should not be possible currently
+				if !es.is_empty() {
+					writeln!(&mut msg, "The following overloads could not be used:").unwrap();
+					for (_, f, e) in es.iter() {
+						writeln!(&mut msg, "  {}", f.overload.pretty_print_item(db, i)).unwrap();
+						match e {
+							InstantiationError::ArgumentCountMismatch { expected, actual } => {
 								writeln!(
 									&mut msg,
-									"    Type-inst parameter '{}' not instantiated",
-									ty_var.pretty_print(db)
+									"    {} arguments required, {} given",
+									expected, actual
 								)
 								.unwrap();
-							} else {
-								let tys = types
-									.iter()
-									.map(|t| format!("'{}'", t.pretty_print(db)))
-									.collect::<Vec<_>>()
-									.join(", ");
+							}
+							InstantiationError::ArgumentMismatch {
+								index,
+								expected,
+								actual,
+							} => {
 								writeln!(
 									&mut msg,
-									"    Type-inst parameter '{}' instantiated with incompatible types {}",
-									ty_var.pretty_print(db),
-									tys
+									"    argument {} expected '{}', but '{}' given",
+									index + 1,
+									expected.pretty_print(db),
+									actual.pretty_print(db)
 								)
 								.unwrap();
+							}
+							InstantiationError::IncompatibleTypeInstVariable { ty_var, types } => {
+								if types.is_empty() {
+									// Should not be possible currently
+									writeln!(
+										&mut msg,
+										"    Type-inst parameter '{}' not instantiated",
+										ty_var.pretty_print(db)
+									)
+									.unwrap();
+								} else {
+									let tys = types
+										.iter()
+										.map(|t| format!("'{}'", t.pretty_print(db)))
+										.collect::<Vec<_>>()
+										.join(", ");
+									writeln!(
+										&mut msg,
+										"    Type-inst parameter '{}' instantiated with incompatible types {}",
+										ty_var.pretty_print(db),
+										tys
+									)
+									.unwrap();
+								}
 							}
 						}
 					}

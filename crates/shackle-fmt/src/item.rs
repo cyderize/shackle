@@ -10,9 +10,10 @@ impl<'tree> Format for minizinc::Item<'tree> {
 		let mut elements = Vec::new();
 		let node = self.cst_node().as_ref();
 		if let Some(p) = node.prev_sibling()
-			&& p.end_position().row < node.start_position().row.saturating_sub(1) {
-				elements.push(Element::line_break());
-			}
+			&& p.end_position().row < node.start_position().row.saturating_sub(1)
+		{
+			elements.push(Element::line_break());
+		}
 		let element = match self {
 			minizinc::Item::Annotation(x) => x.format(formatter),
 			minizinc::Item::Assignment(x) => x.format(formatter),

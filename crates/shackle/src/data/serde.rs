@@ -3,15 +3,15 @@ use std::sync::Arc;
 use itertools::Itertools;
 use rustc_hash::FxHashMap;
 use serde::{
+	Deserialize, Serialize,
 	de::{DeserializeSeed, Error, IgnoredAny, Unexpected, Visitor},
 	ser::{SerializeMap, SerializeSeq},
-	Deserialize, Serialize,
 };
 
 use super::ParserVal;
 use crate::{
-	value::{Array, Constructor, EnumInner, EnumValue, Index, Record, Set},
 	Enum, OptType, Type, Value,
+	value::{Array, Constructor, EnumInner, EnumValue, Index, Record, Set},
 };
 
 #[derive(Clone)]
@@ -422,7 +422,9 @@ impl<'de> Deserialize<'de> for EnumInner {
 										unreachable!()
 									};
 									if s.len() != 1 {
-										todo!("handle non-continuous (and empty) integer sets for constructors")
+										todo!(
+											"handle non-continuous (and empty) integer sets for constructors"
+										)
 									}
 									Index::Integer(s[0].clone())
 								})
@@ -543,9 +545,9 @@ impl<'de, X: DeserializeSeed<'de> + Clone> Visitor<'de> for SerdeSeqVisitor<X> {
 #[derive(Clone)]
 struct SerdeMaybePairVisitor<X: Clone>(X);
 impl<
-		'de,
-		X: DeserializeSeed<'de> + Visitor<'de, Value = <X as DeserializeSeed<'de>>::Value> + Clone,
-	> DeserializeSeed<'de> for SerdeMaybePairVisitor<X>
+	'de,
+	X: DeserializeSeed<'de> + Visitor<'de, Value = <X as DeserializeSeed<'de>>::Value> + Clone,
+> DeserializeSeed<'de> for SerdeMaybePairVisitor<X>
 {
 	type Value = (
 		<X as Visitor<'de>>::Value,
@@ -561,9 +563,9 @@ impl<
 }
 
 impl<
-		'de,
-		X: DeserializeSeed<'de> + Visitor<'de, Value = <X as DeserializeSeed<'de>>::Value> + Clone,
-	> Visitor<'de> for SerdeMaybePairVisitor<X>
+	'de,
+	X: DeserializeSeed<'de> + Visitor<'de, Value = <X as DeserializeSeed<'de>>::Value> + Clone,
+> Visitor<'de> for SerdeMaybePairVisitor<X>
 {
 	type Value = (
 		<X as Visitor<'de>>::Value,
@@ -863,7 +865,7 @@ impl Serialize for ArraySliceSerializer<'_> {
 mod tests {
 	use std::sync::Arc;
 
-	use expect_test::{expect, Expect};
+	use expect_test::{Expect, expect};
 	use rustc_hash::FxHashMap;
 	use serde::Deserializer;
 	use shackle_diagnostics::SourceFile;

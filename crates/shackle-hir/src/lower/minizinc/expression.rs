@@ -1,9 +1,8 @@
 use std::fmt::Debug;
 
-use shackle_utils::hash::Map;
 use shackle_diagnostics::{InvalidArrayLiteral, InvalidNumericLiteral, SyntaxError};
 use shackle_syntax::{ast::AstNode, minizinc};
-use shackle_utils::maybe_grow_stack;
+use shackle_utils::{hash::Map, maybe_grow_stack};
 
 use crate::{
 	Db, constants::IdentifierRegistry, diagnostics::Errors, input::ModelFile, ir::*,
@@ -340,26 +339,29 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 	) -> Type<'db> {
 		match b.domain() {
 			minizinc::Domain::Bounded(e) => {
-				if is_array_dim && b.var_type().is_none() && b.opt_type().is_none()
-					&& let minizinc::Expression::Anonymous(_) = e {
-						if is_fn_parameter {
-							let pattern = self.alloc_pattern(&e, Identifier::new(self.db, "_"));
-							tiids.anons.push(TypeInstIdentifierDeclaration {
-								name: pattern,
-								anonymous: true,
-								is_enum: true,
-								is_varifiable: true,
-								is_indexable: false,
-							});
-							return Type::AnonymousTypeInstVar {
-								inst: Some(VarType::Par),
-								opt: Some(OptType::NonOpt),
-								pattern,
-							};
-						} else {
-							return Type::Any;
-						}
+				if is_array_dim
+					&& b.var_type().is_none()
+					&& b.opt_type().is_none()
+					&& let minizinc::Expression::Anonymous(_) = e
+				{
+					if is_fn_parameter {
+						let pattern = self.alloc_pattern(&e, Identifier::new(self.db, "_"));
+						tiids.anons.push(TypeInstIdentifierDeclaration {
+							name: pattern,
+							anonymous: true,
+							is_enum: true,
+							is_varifiable: true,
+							is_indexable: false,
+						});
+						return Type::AnonymousTypeInstVar {
+							inst: Some(VarType::Par),
+							opt: Some(OptType::NonOpt),
+							pattern,
+						};
+					} else {
+						return Type::Any;
 					}
+				}
 				Type::Bounded {
 					inst: b.var_type(),
 					opt: b.opt_type(),
@@ -527,7 +529,8 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 						InvalidArrayLiteral {
 							src,
 							span,
-							msg: "2D array literal has different row length to index row".to_owned(),
+							msg: "2D array literal has different row length to index row"
+								.to_owned(),
 						},
 					);
 					return self.alloc_expression(al, Expression::Missing);

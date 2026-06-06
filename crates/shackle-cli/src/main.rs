@@ -6,13 +6,13 @@
 
 use std::{ffi::OsStr, fs::File, io::BufReader, ops::Deref, panic, path::PathBuf};
 
-use clap::{crate_version, Args, Parser, Subcommand, ValueEnum};
-use env_logger::{fmt::TimestampPrecision, Builder};
+use clap::{Args, Parser, Subcommand, ValueEnum, crate_version};
+use env_logger::{Builder, fmt::TimestampPrecision};
 use humantime::Duration;
 use log::warn;
 use miette::{IntoDiagnostic, Report, Result};
-use shackle::{error::InternalError, Error, Message, Model, Solver, Status};
-use shackle_fmt::{check_format, format_files, MiniZincFormatOptions};
+use shackle::{Error, Message, Model, Solver, Status, error::InternalError};
+use shackle_fmt::{MiniZincFormatOptions, check_format, format_files};
 
 /// The main function is the entry point for the `shackle` executable.
 ///
@@ -51,7 +51,9 @@ fn main() -> Result<()> {
 	};
 	logger.init();
 
-	log::warn!("Shackle is an unfinished product not ready to be used for any purpose apart from its own development.");
+	log::warn!(
+		"Shackle is an unfinished product not ready to be used for any purpose apart from its own development."
+	);
 
 	// Dispatch to the correct subcommand
 	match panic::catch_unwind(|| match cli.subcmd {

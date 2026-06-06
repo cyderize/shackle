@@ -81,8 +81,8 @@ function var opt $T: '[]'(
 	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
 ) :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 
-function var opt $T: '[]'(array [$$E] of var opt $T: x, var opt $$E: idx) :: mzn_inline_call_by_name =
-	shackle_element_opt_dispatch(x, idx);
+function var opt $T: '[]'(array [$$E] of var opt $T: x, var opt $$E: idx)
+	 :: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx);
 function var opt $T: '[]'(array [$$E] of var opt $T: x, tuple(var opt $$E): idx)
 	:: mzn_inline_call_by_name = shackle_element_opt_dispatch(x, idx.1);
 function var opt $T: '[]'(array [$$E, $$F] of var opt $T: x, tuple(var opt $$E, var opt $$F): idx)
@@ -107,58 +107,101 @@ function var opt $T: '[]'(
 % Par opt index, par element
 function opt $T: shackle_element_opt_dispatch(array [$$E] of $T: x, opt $$E: idx) :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of $T: x, tuple(opt $$E, opt $$F): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 
 % Par opt index, var element
-function var opt $T: shackle_element_opt_dispatch(array [$$E] of var $T: x, opt $$E: idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of var $T: x, tuple(opt $$E, opt $$F): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of var $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(array [$$E] of var $T: x, opt $$E: idx)
+	:: mzn_inline =
+	 let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of var $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 
 % Par opt index, par opt element
-function opt $T: shackle_element_opt_dispatch(array [$$E] of opt $T: x, opt $$E: idx) :: mzn_inline =
+function opt $T: shackle_element_opt_dispatch(array [$$E] of opt $T: x, opt $$E: idx)
+	 :: mzn_inline =
 	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of opt $T: x, tuple(opt $$E, opt $$F): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of opt $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 
 % Par opt index, var opt element
-function var opt $T: shackle_element_opt_dispatch(array [$$E] of var opt $T: x, opt $$E: idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of var opt $T: x, tuple(opt $$E, opt $$F): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) :: mzn_inline =
-	let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(array [$$E] of var opt $T: x, opt $$E: idx)
+	:: mzn_inline =
+	 let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of var opt $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) :: mzn_inline = let { constraint mzn_array_access_valid(x, idx) } in shackle_element_opt(x, idx);
 
 % Var opt index, var (or par) element
 function var opt $T: shackle_element_opt_dispatch(array [$$E] of var $T: x, var opt $$E: idx)
@@ -168,36 +211,46 @@ function var opt $T: shackle_element_opt_dispatch(array [$$E] of var $T: x, var 
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of var $T: x, tuple(var opt $$E, var opt $$F): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of var $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
@@ -212,36 +265,46 @@ function var opt $T: shackle_element_opt_dispatch(array [$$E] of var opt $T: x, 
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F] of var opt $T: x, tuple(var opt $$E, var opt $$F): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
 		shackle_element_opt(x, idx)
 	endif;
-function var opt $T: shackle_element_opt_dispatch(array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx)
-	:: mzn_inline =
+function var opt $T: shackle_element_opt_dispatch(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
 		shackle_element_opt_root(x, idx)
 	else
@@ -253,56 +316,92 @@ function opt $T: shackle_element_opt(array [$$E] of $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
 function opt $T: shackle_element_opt(array [$$E, $$F] of $T: x, tuple(opt $$E, opt $$F): idx) =
 	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G] of $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 
 % Par opt index, var element
 function var opt $T: shackle_element_opt(array [$$E] of var $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F] of var $T: x, tuple(opt $$E, opt $$F): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F] of var $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 
 % Par opt index, par opt element
 function opt $T: shackle_element_opt(array [$$E] of opt $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
 function opt $T: shackle_element_opt(array [$$E, $$F] of opt $T: x, tuple(opt $$E, opt $$F): idx) =
 	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 
 % Par opt index, var opt element
 function var opt $T: shackle_element_opt(array [$$E] of var opt $T: x, opt $$E: idx) =
 	if occurs(idx) then mzn_element_internal(x, deopt(idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F] of var opt $T: x, tuple(opt $$E, opt $$F): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var  opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x, tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx) =
-	if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F] of var opt $T: x,
+	tuple(opt $$E, opt $$F): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+	tuple(opt $$E, opt $$F, opt $$G, opt $$H, opt $$I, opt $$J): idx,
+) = if mzn_all_occurs(idx) then mzn_element_internal(x, mzn_deopt_index(x, idx)) else <> endif;
 
 % Var opt index, var (or par) element
 function var opt $T: shackle_element_opt(array [$$E] of var $T: x, var opt $$E: idx) =
@@ -313,7 +412,10 @@ function var opt $T: shackle_element_opt(array [$$E] of var $T: x, var opt $$E: 
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F] of var $T: x, tuple(var opt $$E, var opt $$F): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F] of var $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_all_occurs(idx) then
@@ -321,7 +423,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F] of var $T: x, tuple(va
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_all_occurs(idx) then
@@ -329,7 +434,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var $T: x, tup
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_all_occurs(idx) then
@@ -337,7 +445,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var $T: x
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_all_occurs(idx) then
@@ -345,7 +456,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var 
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_all_occurs(idx) then
@@ -357,16 +471,26 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of
 % Var opt index, var (or par) element where the access is valid
 function var opt $T: shackle_element_opt_root(array [$$E] of var $T: x, var opt $$E: idx) =
 	if occurs(idx) then shackle_element(x, deopt(idx)) else <> endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F] of var $T: x, tuple(var opt $$E, var opt $$F): idx) =
-	if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx) =
-	if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx) =
-	if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H, $$I] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx) =
-	if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx) =
-	if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F] of var $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) = if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) = if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) = if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H, $$I] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) = if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) = if mzn_all_occurs(idx) then shackle_element(x, mzn_deopt_index(x, idx)) else <> endif;
 
 % Var opt index, var opt (or par opt) element
 function var opt $T: shackle_element_opt(array [$$E] of var opt $T: x, var opt $$E: idx) =
@@ -382,7 +506,10 @@ function var opt $T: shackle_element_opt(array [$$E] of var opt $T: x, var opt $
 		<>
 	endif;
 
-function var opt $T: shackle_element_opt(array [$$E, $$F] of var opt $T: x, tuple(var opt $$E, var opt $$F): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -397,7 +524,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F] of var opt $T: x, tupl
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -412,7 +542,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G] of var opt $T: x,
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -427,7 +560,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H] of var opt $
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -442,7 +578,10 @@ function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I] of var 
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt(array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx) =
+function var opt $T: shackle_element_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) =
 	if length(x) = 0 then
 		let { constraint mzn_all_absent(idx) } in <>
 	elseif mzn_can_extend_array_opt(x, idx) then
@@ -469,50 +608,80 @@ function var opt $T: shackle_element_opt_root(array [$$E] of var opt $T: x, var 
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F] of var opt $T: x, tuple(var opt $$E, var opt $$F): idx) =
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F): idx,
+) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), mzn_deopt_index(x, idx)),
+			shackle_element_root(
+				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
+				mzn_deopt_index(x, idx),
+			),
 		)
 	elseif occurs(idx) then
 		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G): idx) =
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G): idx,
+) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), mzn_deopt_index(x, idx)),
+			shackle_element_root(
+				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
+				mzn_deopt_index(x, idx),
+			),
 		)
 	elseif occurs(idx) then
 		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx) =
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H): idx,
+) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), mzn_deopt_index(x, idx)),
+			shackle_element_root(
+				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
+				mzn_deopt_index(x, idx),
+			),
 		)
 	elseif occurs(idx) then
 		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx) =
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I): idx,
+) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), mzn_deopt_index(x, idx)),
+			shackle_element_root(
+				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
+				mzn_deopt_index(x, idx),
+			),
 		)
 	elseif occurs(idx) then
 		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))
 	else
 		<>
 	endif;
-function var opt $T: shackle_element_opt_root(array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x, tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx) =
+function var opt $T: shackle_element_opt_root(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+	tuple(var opt $$E, var opt $$F, var opt $$G, var opt $$H, var opt $$I, var opt $$J): idx,
+) =
 	if mzn_can_extend_array_opt(x, idx) then
 		mzn_construct_opt(
-			shackle_element_root(mzn_destruct_array_opt(mzn_extend_array_opt(x)), mzn_deopt_index(x, idx)),
+			shackle_element_root(
+				mzn_destruct_array_opt(mzn_extend_array_opt(x)),
+				mzn_deopt_index(x, idx),
+			),
 		)
 	elseif occurs(idx) then
 		mzn_construct_opt(shackle_element_root(mzn_destruct_array_opt(x), mzn_deopt_index(x, idx)))

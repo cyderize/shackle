@@ -1,3 +1,6 @@
+use shackle_diagnostics::Error;
+use shackle_ty::{Ty, registry::TypeRegistry};
+use shackle_utils::arena::ArenaMap;
 /// Types of 'bodies': everything that isn't part of a signature.
 ///
 /// E.g.
@@ -5,9 +8,6 @@
 /// - RHS of variable declarations
 /// - Bodies of functions
 use shackle_utils::hash::Map;
-use shackle_diagnostics::Error;
-use shackle_ty::{Ty, registry::TypeRegistry};
-use shackle_utils::arena::ArenaMap;
 
 use crate::{
 	Db, Expression, ExpressionId, Item, Pattern, PatternId, PatternTy, TypeContext, Typer,

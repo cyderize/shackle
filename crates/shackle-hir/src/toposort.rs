@@ -6,9 +6,9 @@
 //! Also ensures that globals (possibly transitively) used in function bodies
 //! appear before the function declaration.
 
-use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::CyclicDefinition;
 use shackle_ty::FunctionEntry;
+use shackle_utils::hash::{Map, Set};
 
 use super::PatternTy;
 use crate::{

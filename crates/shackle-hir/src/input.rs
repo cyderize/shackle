@@ -7,7 +7,6 @@ use std::{
 };
 
 use derive_more::From;
-use shackle_utils::hash::{Map, Set};
 use salsa::Setter;
 use shackle_diagnostics::{Error as ShackleError, IncludeError, SourceFile};
 use shackle_syntax::{
@@ -17,6 +16,7 @@ use shackle_syntax::{
 	eprime::EPrimeModel,
 	minizinc::{self, MznModel},
 };
+use shackle_utils::hash::{Map, Set};
 
 use crate::{Db, Identifier, diagnostics::Errors};
 

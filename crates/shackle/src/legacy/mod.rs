@@ -10,16 +10,16 @@ use std::{
 use itertools::Itertools;
 use rustc_hash::FxHashMap;
 use serde::{
-	de::{DeserializeSeed, Error as SerdeError, IgnoredAny, Visitor},
 	Deserializer,
+	de::{DeserializeSeed, Error as SerdeError, IgnoredAny, Visitor},
 };
 use shackle_diagnostics::{FileError, InternalError, SourceFile};
 use tempfile::Builder;
 
 use crate::{
+	Enum, Error, Message, OptType, Program, Result, Status, Type,
 	data::serde::SerdeValueVisitor,
 	value::{Array, EnumInner, EnumRangeInclusive, EnumValue, Index, Polarity, Set, Value},
-	Enum, Error, Message, OptType, Program, Result, Status, Type,
 };
 
 impl Program {
@@ -104,7 +104,7 @@ impl Program {
 					return Err(InternalError::new(format!(
 						"Unable to read interpreter output: “{e}”"
 					))
-					.into())
+					.into());
 				}
 				Ok(line) => {
 					match serde_json::Deserializer::from_str(&line)
@@ -115,9 +115,10 @@ impl Program {
 						LegacyOutput::Status(s) => status = s,
 						LegacyOutput::Msg(msg) => {
 							if let Message::Solution(_) = msg
-								&& status == Status::Unknown {
-									status = Status::Satisfied
-								}
+								&& status == Status::Unknown
+							{
+								status = Status::Satisfied
+							}
 							msg_callback(&msg)?
 						}
 						LegacyOutput::Error(err) => return Err(err),
@@ -426,7 +427,7 @@ impl<'de> Visitor<'de> for SerdeMessageVisitor<'_> {
 							return Ok(LegacyOutput::Error(
 								InternalError::new("Error occurred, but no message was provided")
 									.into(),
-							))
+							));
 						} // TODO: Probably should do something, but we now rely on another error message type
 						s => {
 							return Err(SerdeError::unknown_variant(

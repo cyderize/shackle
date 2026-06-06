@@ -34,16 +34,22 @@ function var $T: deopt(var $T: x) = x;
 
 /** @group stdlib.optiontypes Return value of \a x if \a x is not absent. Returns 
   undefined when evaluated on absent value. */
-function $T: deopt(opt $T: x) = let {
-	any: (bx, dx) = mzn_destruct_opt(x);
-	constraint bx;
-} in dx;
+function $T: deopt(
+	opt $T: x,
+) =
+	let {
+		any: (bx, dx) = mzn_destruct_opt(x);
+		constraint bx;
+	} in dx;
 /** @group stdlib.optiontypes Return value of \a x if \a x is not absent. Returns 
   undefined when evaluated on absent value. */
-function var $T: deopt(var opt $T: x) = let {
-	any: (bx, dx) = mzn_destruct_opt(x);
-	constraint bx;
-} in dx;
+function var $T: deopt(
+	var opt $T: x,
+) =
+	let {
+		any: (bx, dx) = mzn_destruct_opt(x);
+		constraint bx;
+	} in dx;
 
 /** @group stdlib.optiontypes.int True if \a x had zero in its original domain.
 
@@ -52,7 +58,7 @@ function var $T: deopt(var opt $T: x) = let {
 function bool: had_zero(var opt $$E: x) = mzn_had_zero(enum2int(x));
 
 function bool: mzn_had_zero(var opt int: x) :: cache_result =
-  not mzn_check_absent_zero() \/ (0 in dom(x));
+	not mzn_check_absent_zero() \/ (0 in dom(x));
 
 /** @group stdlib.optiontypes.int True if \a x had zero in its original domain.
 

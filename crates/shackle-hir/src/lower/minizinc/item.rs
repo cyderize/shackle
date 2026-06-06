@@ -107,13 +107,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 		}
 		let (data, source_map) = ctx.finish(Annotation { constructor });
 		self.items.push(
-			AnnotationItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, a.span()),
-			)
-			.into(),
+			AnnotationItem::new(self.db, data, source_map, Origin::new(self.file, a.span())).into(),
 		);
 	}
 
@@ -125,90 +119,88 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 		if let minizinc::Expression::Identifier(i) = a.assignee()
 			&& enumeration_names(self.db)
 				.contains(&Identifier::new(self.db, i.name(self.text.as_ref())))
-			{
-				// This is an assignment to an enum
-				let mut definition = Vec::new();
-				let mut todo = vec![a.definition()];
-				while let Some(e) = todo.pop() {
-					match e {
-						minizinc::Expression::Identifier(i) => {
-							definition.push(
-								Constructor::Atom {
-									pattern: ctx.collect_pattern(&i.into()),
-								}
-								.into(),
-							);
-						}
-						minizinc::Expression::SetLiteral(sl) => {
-							todo.extend(sl.members());
-						}
-						minizinc::Expression::Call(c) => {
-							if let minizinc::Expression::Identifier(i) = c.function() {
-								let parameters = c
-									.arguments()
-									.map(|arg| {
-										let domain = ctx.collect_expression(&arg);
-										ConstructorParameter {
-											declared_type: ctx.alloc_type(
-												&arg,
-												Type::Bounded {
-													inst: None,
-													opt: None,
-													domain,
-												},
-											),
-											pattern: None,
-										}
-									})
-									.collect();
-								if i.name(self.text.as_ref()) == "_" {
-									let pattern = ctx.alloc_pattern(&i, Pattern::Anonymous);
-									definition.push(EnumConstructor::Anonymous {
-										pattern,
+		{
+			// This is an assignment to an enum
+			let mut definition = Vec::new();
+			let mut todo = vec![a.definition()];
+			while let Some(e) = todo.pop() {
+				match e {
+					minizinc::Expression::Identifier(i) => {
+						definition.push(
+							Constructor::Atom {
+								pattern: ctx.collect_pattern(&i.into()),
+							}
+							.into(),
+						);
+					}
+					minizinc::Expression::SetLiteral(sl) => {
+						todo.extend(sl.members());
+					}
+					minizinc::Expression::Call(c) => {
+						if let minizinc::Expression::Identifier(i) = c.function() {
+							let parameters = c
+								.arguments()
+								.map(|arg| {
+									let domain = ctx.collect_expression(&arg);
+									ConstructorParameter {
+										declared_type: ctx.alloc_type(
+											&arg,
+											Type::Bounded {
+												inst: None,
+												opt: None,
+												domain,
+											},
+										),
+										pattern: None,
+									}
+								})
+								.collect();
+							if i.name(self.text.as_ref()) == "_" {
+								let pattern = ctx.alloc_pattern(&i, Pattern::Anonymous);
+								definition.push(EnumConstructor::Anonymous {
+									pattern,
+									parameters,
+								})
+							} else {
+								let name = Identifier::new(self.db, i.name(self.text.as_ref()));
+								definition.push(
+									Constructor::Function {
+										constructor: ctx.alloc_pattern(&i, name),
+										destructor: ctx.alloc_pattern(&i, name.inversed(self.db)),
 										parameters,
-									})
-								} else {
-									let name = Identifier::new(self.db, i.name(self.text.as_ref()));
-									definition.push(
-										Constructor::Function {
-											constructor: ctx.alloc_pattern(&i, name),
-											destructor: ctx
-												.alloc_pattern(&i, name.inversed(self.db)),
-											parameters,
-										}
-										.into(),
-									);
-								}
+									}
+									.into(),
+								);
 							}
 						}
-						minizinc::Expression::InfixOperator(o) => {
-							todo.push(o.left());
-							todo.push(o.right());
-						}
-						_ => {
-							let src = self.file.source_file(self.db);
-							let span = e.span();
-							Errors::add(
-								self.db,
-								SyntaxError {
-									src,
-									span,
-									msg: "Expression not valid in enumeration assignment".to_owned(),
-								},
-							);
-						}
+					}
+					minizinc::Expression::InfixOperator(o) => {
+						todo.push(o.left());
+						todo.push(o.right());
+					}
+					_ => {
+						let src = self.file.source_file(self.db);
+						let span = e.span();
+						Errors::add(
+							self.db,
+							SyntaxError {
+								src,
+								span,
+								msg: "Expression not valid in enumeration assignment".to_owned(),
+							},
+						);
 					}
 				}
-				definition.reverse();
-				let (item, sources) = ctx.finish(EnumAssignment {
-					assignee,
-					definition: definition.into_boxed_slice(),
-				});
-				self.items.push(
-					EnumAssignmentItem::new(self.db, item, sources, origin).into(),
-				);
-				return;
 			}
+			definition.reverse();
+			let (item, sources) = ctx.finish(EnumAssignment {
+				assignee,
+				definition: definition.into_boxed_slice(),
+			});
+			self.items
+				.push(EnumAssignmentItem::new(self.db, item, sources, origin).into());
+			return;
+		}
 
 		let definition = ctx.collect_expression(&a.definition());
 		let (item, sources) = ctx.finish(Assignment {
@@ -231,13 +223,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			expression,
 		});
 		self.items.push(
-			ConstraintItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, c.span()),
-			)
-			.into(),
+			ConstraintItem::new(self.db, data, source_map, Origin::new(self.file, c.span())).into(),
 		);
 	}
 
@@ -257,13 +243,8 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			definition,
 		});
 		self.items.push(
-			DeclarationItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, d.span()),
-			)
-			.into(),
+			DeclarationItem::new(self.db, data, source_map, Origin::new(self.file, d.span()))
+				.into(),
 		);
 	}
 
@@ -332,13 +313,8 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			},
 		});
 		self.items.push(
-			EnumerationItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, e.span()),
-			)
-			.into(),
+			EnumerationItem::new(self.db, data, source_map, Origin::new(self.file, e.span()))
+				.into(),
 		);
 	}
 
@@ -378,13 +354,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			parameters,
 		});
 		self.items.push(
-			FunctionItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, f.span()),
-			)
-			.into(),
+			FunctionItem::new(self.db, data, source_map, Origin::new(self.file, f.span())).into(),
 		);
 	}
 
@@ -397,13 +367,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			expression,
 		});
 		self.items.push(
-			OutputItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, o.span()),
-			)
-			.into(),
+			OutputItem::new(self.db, data, source_map, Origin::new(self.file, o.span())).into(),
 		);
 	}
 
@@ -454,13 +418,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			return_type,
 		});
 		self.items.push(
-			FunctionItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, f.span()),
-			)
-			.into(),
+			FunctionItem::new(self.db, data, source_map, Origin::new(self.file, f.span())).into(),
 		);
 	}
 
@@ -490,13 +448,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 		let (data, source_map) = ctx.finish(Solve { annotations, goal });
 
 		self.items.push(
-			SolveItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, s.span()),
-			)
-			.into(),
+			SolveItem::new(self.db, data, source_map, Origin::new(self.file, s.span())).into(),
 		);
 	}
 
@@ -514,13 +466,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			annotations,
 		});
 		self.items.push(
-			TypeAliasItem::new(
-				self.db,
-				data,
-				source_map,
-				Origin::new(self.file, t.span()),
-			)
-			.into(),
+			TypeAliasItem::new(self.db, data, source_map, Origin::new(self.file, t.span())).into(),
 		);
 	}
 }

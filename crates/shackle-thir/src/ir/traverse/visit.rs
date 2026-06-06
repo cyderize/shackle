@@ -280,10 +280,9 @@ pub fn visit_function<'a, 'db, T: Marker, V: Visitor<'a, 'db, T> + ?Sized>(
 	for param in function.parameters() {
 		visitor.visit_item(model, (*param).into());
 	}
-	if visit_body
-		&& let Some(body) = function.body() {
-			visitor.visit_expression(model, body);
-		}
+	if visit_body && let Some(body) = function.body() {
+		visitor.visit_expression(model, body);
+	}
 }
 
 /// Visit the children of an output item

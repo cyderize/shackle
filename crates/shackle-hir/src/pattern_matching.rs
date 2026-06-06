@@ -3,10 +3,12 @@
 //! See <http://moscova.inria.fr/~maranget/papers/warn/warn.pdf> for algorithm details
 
 use derive_more::From;
-use shackle_utils::hash::{Map, Set};
 use shackle_diagnostics::{NonExhaustivePatternMatching, UnreachablePattern};
 use shackle_ty::{EnumRef, OptType, Ty, TyData, registry::TypeRegistry};
-use shackle_utils::InternedString;
+use shackle_utils::{
+	InternedString,
+	hash::{Map, Set},
+};
 
 use crate::{
 	BooleanLiteral, Db, Expression, FloatLiteral, Identifier, IntegerLiteral, Item, ItemData,
@@ -376,9 +378,10 @@ impl<'db> ExhaustivenessChecker<'db> {
 						}
 					}
 					SemanticPattern::Wildcard(ty) => {
-						let new_row = std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
-							.chain(iter.cloned())
-							.collect::<Vec<_>>();
+						let new_row =
+							std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
+								.chain(iter.cloned())
+								.collect::<Vec<_>>();
 						Some(new_row)
 					}
 				}
@@ -400,9 +403,11 @@ impl<'db> ExhaustivenessChecker<'db> {
 				assert_eq!(c, constructor);
 				ps.iter().cloned().chain(iter.cloned()).collect::<Vec<_>>()
 			}
-			SemanticPattern::Wildcard(ty) => std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
-				.chain(iter.cloned())
-				.collect::<Vec<_>>(),
+			SemanticPattern::Wildcard(ty) => {
+				std::iter::repeat_n(SemanticPattern::Wildcard(*ty), arg_count)
+					.chain(iter.cloned())
+					.collect::<Vec<_>>()
+			}
 		}
 	}
 
@@ -527,9 +532,10 @@ impl<'db> ExhaustivenessChecker<'db> {
 		let types = TypeRegistry::lookup(self.db);
 		let pat_ty = &self.types[pattern];
 		if let PatternTy::Destructuring(ty) = pat_ty
-			&& *ty == types.error {
-				return SemanticPattern::Wildcard(*ty);
-			}
+			&& *ty == types.error
+		{
+			return SemanticPattern::Wildcard(*ty);
+		}
 		match (&self.data[pattern], pat_ty) {
 			(Pattern::Absent, PatternTy::Destructuring(ty)) => {
 				SemanticPattern::Constructor(*ty, PatternConstructor::Absent, Box::new([]))

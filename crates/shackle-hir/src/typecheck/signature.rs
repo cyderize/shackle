@@ -3,12 +3,12 @@
 //! E.g.
 //! - Function parameter/return type
 //! - Variable declaration LHS types
-use shackle_utils::hash::Map;
 use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch};
 use shackle_ty::{
 	EnumRef, FunctionEntry, FunctionType, OverloadedFunction, PolymorphicFunctionType, Ty, TyData,
 	TyVar, TyVarRef, registry::TypeRegistry,
 };
+use shackle_utils::hash::Map;
 
 use crate::{
 	Constructor, ConstructorParameter, Db, EnumConstructor, EnumConstructorEntry, Expression,

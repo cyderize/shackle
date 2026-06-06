@@ -328,7 +328,7 @@ fn collect_global_scope<'db>(db: &'db dyn Db) -> ScopeData<'db> {
 }
 
 /// Variable scope
-#[derive(Clone, Debug, Default, PartialEq, Eq, salsa::Update)]
+#[derive(Clone, Default, PartialEq, Eq, salsa::Update)]
 pub struct ScopeData<'db> {
 	functions: Map<Identifier<'db>, Vec<(PatternRef<'db>, u32)>>,
 	function_names: Vec<Identifier<'db>>,
@@ -506,6 +506,16 @@ impl<'db> ScopeData<'db> {
 					.collect(),
 			)
 		})
+	}
+}
+
+impl<'db> std::fmt::Debug for ScopeData<'db> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("ScopeData")
+			.field("functions", &self.functions)
+			.field("variables", &self.variables)
+			.field("atoms", &self.atoms)
+			.finish()
 	}
 }
 

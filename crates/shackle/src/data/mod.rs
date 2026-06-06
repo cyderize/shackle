@@ -8,8 +8,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use crate::{
-	value::{Array, EnumRangeInclusive, EnumValue, Index, Polarity, Record, Set, Value},
 	Error, OptType, Result, Type,
+	value::{Array, EnumRangeInclusive, EnumValue, Index, Polarity, Record, Set, Value},
 };
 
 /// Value parsed in a data file.

@@ -1,6 +1,5 @@
 use std::{collections::hash_map::Entry, fmt::Write};
 
-use shackle_utils::hash::Map;
 use shackle_diagnostics::{
 	AmbiguousCall, BranchMismatch, Error, IllegalType, InvalidArrayLiteral, InvalidFieldAccess,
 	NoMatchingFunction, SyntaxError, TypeInferenceFailure, TypeMismatch, UndefinedIdentifier,
@@ -9,7 +8,7 @@ use shackle_ty::{
 	FunctionEntry, FunctionResolutionError, FunctionType, InstantiationError, OptType, Ty, TyData,
 	VarType, registry::TypeRegistry,
 };
-use shackle_utils::maybe_grow_stack;
+use shackle_utils::{hash::Map, maybe_grow_stack};
 
 use super::{PatternTy, TypeContext};
 use crate::{

@@ -40,6 +40,8 @@ pub struct TypeCompletionResult<'db> {
 	pub ty: Ty<'db>,
 	/// Whether this type contains a bound
 	pub has_bounded: bool,
+	/// Whether this type contains a var bound
+	pub has_var_bounded: bool,
 	/// Whether this type contains an unbounded type
 	pub has_unbounded: bool,
 }
@@ -1454,7 +1456,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 
 	fn collect_let(&mut self, l: &Let<'db>) -> Ty<'db> {
 		let db = self.db;
-		let mut is_var = false;
+		let mut is_var_partial = false;
 		for item in l.items.iter() {
 			match item {
 				LetItem::Constraint(c) => {
@@ -1463,13 +1465,13 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					}
 					let ty = self.typecheck_expression(c.expression, self.types.var_bool);
 					if ty == self.types.var_bool {
-						is_var = true;
+						is_var_partial = true;
 					}
 				}
 				LetItem::Declaration(d) => {
-					let ty = self.collect_declaration(d);
-					if !ty.contains_error(db)
-						&& (ty.contains_par(db) || ty.contains_function(db))
+					let result = self.collect_declaration(d);
+					if !result.ty.contains_error(db)
+						&& (result.ty.contains_par(db) || result.ty.contains_function(db))
 						&& d.definition.is_none()
 					{
 						let (src, span) =
@@ -1485,31 +1487,43 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 							},
 						);
 					}
-					if !ty.known_par(db) {
-						is_var = true;
+					if result.has_var_bounded && d.definition.is_some() {
+						// Constrained by domain and RHS
+						is_var_partial = true;
 					}
 				}
 			}
 		}
-		let ty = self.collect_expression(l.in_expression);
-		if ty == self.types.par_bool && is_var {
-			// Becomes var because any var partiality bubbles up to this point
-			self.types.var_bool
-		} else {
-			ty
+		let mut ty = self.collect_expression(l.in_expression);
+		if is_var_partial {
+			ty = ty.make_var(db).unwrap_or_else(|| {
+				let (src, span) =
+					ExpressionRef::new(db, self.item, l.in_expression).source_span(db);
+				self.ctx.add_diagnostic(
+					db,
+					self.item,
+					IllegalType {
+						src,
+						span,
+						ty: format!("var {}", ty.pretty_print(db)),
+					},
+				);
+				self.types.error
+			});
 		}
+		ty
 	}
 
 	/// Type check a declaration
-	pub fn collect_declaration(&mut self, d: &Declaration<'db>) -> Ty<'db> {
+	pub fn collect_declaration(&mut self, d: &Declaration<'db>) -> TypeCompletionResult<'db> {
 		for p in Pattern::identifiers(d.pattern, self.data) {
 			self.ctx.add_declaration(self.db, p, PatternTy::Computing);
 		}
-		let ty = if let Some(e) = d.definition {
+		let result = if let Some(e) = d.definition {
 			let actual = self.collect_expression(e);
-			let expected = self
-				.complete_type(d.declared_type, Some(actual), TypeCompletionMode::Default)
-				.ty;
+			let lhs =
+				self.complete_type(d.declared_type, Some(actual), TypeCompletionMode::Default);
+			let expected = lhs.ty;
 			if !actual.is_subtype_of(self.db, expected) {
 				let (src, span) = (ExpressionRef::new(self.db, self.item, e)).source_span(self.db);
 				self.ctx.add_diagnostic(
@@ -1526,27 +1540,26 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 					},
 				);
 			}
-			expected
+			lhs
 		} else {
 			self.complete_type(d.declared_type, None, TypeCompletionMode::Default)
-				.ty
 		};
-		let _ = self.collect_pattern(None, false, d.pattern, ty, false);
+		let _ = self.collect_pattern(None, false, d.pattern, result.ty, false);
 		for ann in d.annotations.iter() {
 			// Handle identifiers/calls which lead to ::annotated_expression functions
 
 			let _ = self.typecheck_expression(*ann, self.types.ann);
 		}
-		ty
+		result
 	}
 
 	/// Type check a declaration in output mode
 	pub fn collect_output_declaration(&mut self, d: &Declaration<'db>) -> Ty<'db> {
 		let prev = self.in_output_item;
 		self.in_output_item = true;
-		let ty = self.collect_declaration(d);
+		let result = self.collect_declaration(d);
 		self.in_output_item = prev;
-		ty
+		result.ty
 	}
 
 	/// Typecheck an annotation for a declaration (since these may be calls to annotations using `::annotated_expression`)
@@ -2183,11 +2196,20 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 		mode: TypeCompletionMode,
 	) -> TypeCompletionResult<'db> {
 		let mut has_bounded = false;
+		let mut has_var_bounded = false;
 		let mut has_unbounded = false;
-		let ty = self.complete_type_inner(t, ty, mode, &mut has_bounded, &mut has_unbounded);
+		let ty = self.complete_type_inner(
+			t,
+			ty,
+			mode,
+			&mut has_bounded,
+			&mut has_var_bounded,
+			&mut has_unbounded,
+		);
 		TypeCompletionResult {
 			ty,
 			has_bounded,
+			has_var_bounded,
 			has_unbounded,
 		}
 	}
@@ -2198,12 +2220,14 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 		ty: Option<Ty<'db>>,
 		mode: TypeCompletionMode,
 		has_bounded: &mut bool,
+		has_var_bounded: &mut bool,
 		has_unbounded: &mut bool,
 	) -> Ty<'db> {
 		let db = self.db;
-
+		let mut is_bounded = false;
 		let mut set_bounded = |typer: &mut Self, domain: ExpressionId<'db>| {
 			*has_bounded = true;
+			is_bounded = true;
 			match mode {
 				TypeCompletionMode::AnnotationParameter => {
 					let (src, span) = (ExpressionRef::new(db, typer.item, domain)).source_span(db);
@@ -2254,7 +2278,7 @@ supported in operation types."
 			}
 		};
 
-		match &self.data[t] {
+		let result = match &self.data[t] {
 			Type::Primitive {
 				inst,
 				opt,
@@ -2447,10 +2471,22 @@ supported in operation types."
 					Some(TyData::Array { dim, element, .. }) => (Some(*dim), Some(*element)),
 					_ => (None, None),
 				};
-				let dim =
-					self.complete_type_inner(*dimensions, d_ty, mode, has_bounded, has_unbounded);
-				let element =
-					self.complete_type_inner(*element, e_ty, mode, has_bounded, has_unbounded);
+				let dim = self.complete_type_inner(
+					*dimensions,
+					d_ty,
+					mode,
+					has_bounded,
+					has_var_bounded,
+					has_unbounded,
+				);
+				let element = self.complete_type_inner(
+					*element,
+					e_ty,
+					mode,
+					has_bounded,
+					has_var_bounded,
+					has_unbounded,
+				);
 				let ty = Ty::array(db, dim, element).unwrap_or_else(|| {
 					let (src, span) = TypeRef::new(db, self.item, t).source_span(db);
 					self.ctx.add_diagnostic(
@@ -2475,7 +2511,15 @@ supported in operation types."
 					Some(TyData::Set(_, _, element)) => Some(*element),
 					_ => None,
 				};
-				let el = self.complete_type_inner(*element, e_ty, mode, has_bounded, has_unbounded);
+				let el = self.complete_type_inner(
+					*element,
+					e_ty,
+					mode,
+					&mut is_bounded,
+					has_var_bounded,
+					has_unbounded,
+				);
+				*has_bounded |= is_bounded;
 				let ty = Ty::par_set(db, el).unwrap_or_else(|| {
 					let (src, span) = TypeRef::new(db, self.item, t).source_span(db);
 					self.ctx.add_diagnostic(
@@ -2517,14 +2561,28 @@ supported in operation types."
 						.iter()
 						.zip(fs.iter().map(|f| Some(*f)).chain(std::iter::repeat(None)))
 						.map(|(f, f_ty)| {
-							self.complete_type_inner(*f, f_ty, mode, has_bounded, has_unbounded)
+							self.complete_type_inner(
+								*f,
+								f_ty,
+								mode,
+								has_bounded,
+								has_var_bounded,
+								has_unbounded,
+							)
 						}),
 				)
 				.with_opt(db, *opt),
 				_ => Ty::tuple(
 					db,
 					fields.iter().map(|f| {
-						self.complete_type_inner(*f, None, mode, has_bounded, has_unbounded)
+						self.complete_type_inner(
+							*f,
+							None,
+							mode,
+							has_bounded,
+							has_var_bounded,
+							has_unbounded,
+						)
 					}),
 				)
 				.with_opt(db, *opt),
@@ -2569,6 +2627,7 @@ supported in operation types."
 							}),
 							mode,
 							has_bounded,
+							has_var_bounded,
 							has_unbounded,
 						);
 
@@ -2614,6 +2673,7 @@ supported in operation types."
 								Some(*r),
 								TypeCompletionMode::Operation,
 								has_bounded,
+								has_var_bounded,
 								has_unbounded,
 							),
 							params: parameter_types
@@ -2625,6 +2685,7 @@ supported in operation types."
 										p_ty,
 										TypeCompletionMode::Operation,
 										has_bounded,
+										has_var_bounded,
 										has_unbounded,
 									)
 								})
@@ -2640,6 +2701,7 @@ supported in operation types."
 								None,
 								TypeCompletionMode::Operation,
 								has_bounded,
+								has_var_bounded,
 								has_unbounded,
 							),
 							params: parameter_types
@@ -2650,6 +2712,7 @@ supported in operation types."
 										None,
 										TypeCompletionMode::Operation,
 										has_bounded,
+										has_var_bounded,
 										has_unbounded,
 									)
 								})
@@ -2721,7 +2784,13 @@ supported in operation types."
 				})
 			}
 			Type::Missing => self.types.error,
+		};
+
+		if matches!(result.inst(db), Some(VarType::Var)) && is_bounded {
+			*has_var_bounded = true;
 		}
+
+		result
 	}
 
 	fn find_variable(

@@ -220,6 +220,7 @@ impl<'db> SignatureTypeContext<'db> {
 						ty_var
 					})
 					.collect::<Box<[_]>>();
+				let mut var_partial = false;
 				let params = it
 					.parameters
 					.iter()
@@ -266,9 +267,13 @@ impl<'db> SignatureTypeContext<'db> {
 						let ty = if had_error {
 							TypeRegistry::lookup(db).error
 						} else {
-							typer
-								.complete_type(p.declared_type, None, TypeCompletionMode::Default)
-								.ty
+							let result = typer.complete_type(
+								p.declared_type,
+								None,
+								TypeCompletionMode::Default,
+							);
+							var_partial |= result.has_var_bounded;
+							result.ty
 						};
 						if let Some(pat) = p.pattern {
 							let _ = typer.collect_pattern(None, false, pat, ty, true);
@@ -324,9 +329,26 @@ impl<'db> SignatureTypeContext<'db> {
 				let return_type = if had_error {
 					TypeRegistry::lookup(db).error
 				} else {
-					Typer::new(db, self, item, data)
-						.complete_type(it.return_type, None, TypeCompletionMode::Default)
-						.ty
+					let result = Typer::new(db, self, item, data).complete_type(
+						it.return_type,
+						None,
+						TypeCompletionMode::Default,
+					);
+					var_partial |= result.has_var_bounded;
+					if var_partial && result.ty.known_par(db) {
+						let (src, span) = TypeRef::new(db, item, it.return_type).source_span(db);
+						self.add_diagnostic(
+							db,
+							item,
+							TypeMismatch {
+								src,
+								span,
+								msg: "Var bounded arguments require the return type to be var"
+									.to_owned(),
+							},
+						);
+					}
+					result.ty
 				};
 
 				let d = self.data.patterns.get_mut(&it.pattern).unwrap();
@@ -372,7 +394,7 @@ impl<'db> SignatureTypeContext<'db> {
 				} else if output_only.is_some() {
 					typer.collect_output_declaration(it)
 				} else {
-					typer.collect_declaration(it)
+					typer.collect_declaration(it).ty
 				};
 
 				if it.definition.is_none()

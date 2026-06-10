@@ -1073,15 +1073,22 @@ impl<'db, T: Marker> ExpressionBuilder<'db, T> for Let<'db, T> {
 		origin: Origin<'db>,
 	) -> Expression<'db, T> {
 		let types = TypeRegistry::lookup(db);
-		if self.in_expression.ty() == types.par_bool
-			&& self.items.iter().any(|item| match item {
-				LetItem::Constraint(idx) => model[*idx].expression().ty() == types.var_bool,
-				LetItem::Declaration(idx) => !model[*idx].ty().known_par(db),
-			}) {
-			// Becomes var because any var partiality bubbles up to this point
-			return Expression::new_unchecked(types.var_bool, self, origin);
+		let mut ty = self.in_expression.ty();
+		if self.items.iter().any(|item| match item {
+			LetItem::Constraint(idx) => model[*idx].expression().ty() == types.var_bool,
+			LetItem::Declaration(idx) => {
+				model[*idx].definition().is_some()
+					&& model[*idx].domain().walk().any(|d| {
+						d.ty().inst(db) == Some(VarType::Var)
+							&& matches!(**d, DomainData::Bounded(_))
+					})
+			}
+		}) {
+			ty = ty
+				.make_var(db)
+				.unwrap_or_else(|| panic!("Could not make {} var", ty.pretty_print(db)));
 		}
-		Expression::new_unchecked(self.in_expression.ty(), self, origin)
+		Expression::new_unchecked(ty, self, origin)
 	}
 }
 

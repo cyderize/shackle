@@ -47,3 +47,48 @@ impl Warnings {
 		}
 	}
 }
+
+/// Helper for emitting diagnostics while avoiding accumulating values
+///
+/// This is needed for cylclic queries (and their dependencies)
+#[derive(Debug, Default, Clone, PartialEq, Eq, salsa::Update)]
+pub struct Diagnostics {
+	errors: Vec<Error>,
+	warnings: Vec<Warning>,
+}
+
+impl Diagnostics {
+	/// Add an error
+	pub fn add_error(&mut self, error: impl Into<Error>) {
+		let e = error.into();
+		log::error!("{:#?}", e);
+		self.errors.push(e);
+	}
+
+	/// Add multiple errors at once
+	pub fn extend_errors(&mut self, errors: impl IntoIterator<Item = impl Into<Error>>) {
+		for error in errors {
+			self.add_error(error);
+		}
+	}
+
+	/// Add a warning
+	pub fn add_warning(&mut self, warning: impl Into<Warning>) {
+		let w = warning.into();
+		log::warn!("{}", w);
+		self.warnings.push(w);
+	}
+
+	/// Add multiple warnings at once
+	pub fn extend_warnings(&mut self, warnings: impl IntoIterator<Item = impl Into<Warning>>) {
+		for warning in warnings {
+			self.add_warning(warning);
+		}
+	}
+
+	/// Accumulate the diagnostics into the database
+	pub fn accumulate(&self, db: &dyn Db) {
+		Errors::extend(db, self.errors.iter().cloned());
+		Warnings::extend(db, self.warnings.iter().cloned());
+	}
+}

@@ -4,7 +4,7 @@ use shackle_diagnostics::InvalidArrayLiteral;
 use shackle_syntax::{ast::AstNode, eprime};
 use shackle_utils::maybe_grow_stack;
 
-use crate::{Db, diagnostics::Errors, input::ModelFile, source::SourceMap, *};
+use crate::{Db, diagnostics::Diagnostics, input::ModelFile, source::SourceMap, *};
 
 /// Collects AST expressions for owned by an item and lowers them into HIR recursively.
 #[derive(Debug)]
@@ -12,17 +12,24 @@ pub struct ExpressionCollector<'db, 'a> {
 	db: &'db dyn Db,
 	data: ItemData<'db>,
 	source_map: SourceMap<'db>,
+	diagnostics: &'a mut Diagnostics,
 	file: ModelFile,
 	text: &'a str,
 }
 
 impl<'db, 'a> ExpressionCollector<'db, 'a> {
 	/// Create a new expression collector
-	pub fn new(db: &'db dyn Db, file: ModelFile, text: &'a str) -> Self {
+	pub fn new(
+		db: &'db dyn Db,
+		file: ModelFile,
+		text: &'a str,
+		diagnostics: &'a mut Diagnostics,
+	) -> Self {
 		ExpressionCollector {
 			db,
 			data: ItemData::new(),
 			source_map: SourceMap::default(),
+			diagnostics,
 			file,
 			text,
 		}
@@ -352,15 +359,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 					return self.add_array_over_dims_diagnostic(ml);
 				}
 				if d != i && i != 0 {
-					Errors::add(
-						self.db,
-						InvalidArrayLiteral {
-							src,
-							span,
-							msg: "Matrix literal has mismatched dimensions and index sets"
-								.to_owned(),
-						},
-					);
+					self.diagnostics.add_error(InvalidArrayLiteral {
+						src,
+						span,
+						msg: "Matrix literal has mismatched dimensions and index sets".to_owned(),
+					});
 					return self.alloc_expression(ml, Expression::Missing);
 				}
 				// If no index set exists use index set sized at dimensions
@@ -533,15 +536,12 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 	) -> ExpressionId<'db> {
 		let src = self.file.source_file(self.db);
 		let span = n.span();
-		Errors::add(
-			self.db,
-			InvalidArrayLiteral {
-				src,
-				span,
-				msg: "Support for matrix literals with >6 dimensions not currently supported"
-					.to_owned(),
-			},
-		);
+		self.diagnostics.add_error(InvalidArrayLiteral {
+			src,
+			span,
+			msg: "Support for matrix literals with >6 dimensions not currently supported"
+				.to_owned(),
+		});
 		self.alloc_expression(n, Expression::Missing)
 	}
 

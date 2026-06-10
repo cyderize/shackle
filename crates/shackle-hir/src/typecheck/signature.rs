@@ -3,7 +3,7 @@
 //! E.g.
 //! - Function parameter/return type
 //! - Variable declaration LHS types
-use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch};
+use shackle_diagnostics::{Error, SyntaxError, TypeInferenceFailure, TypeMismatch, Warning};
 use shackle_ty::{
 	EnumRef, FunctionEntry, FunctionType, OverloadedFunction, PolymorphicFunctionType, Ty, TyData,
 	TyVar, TyVarRef, registry::TypeRegistry,
@@ -15,37 +15,9 @@ use crate::{
 	ExpressionId, Goal, Item, ItemData, Pattern, PatternId, PatternTy, Type, TypeCompletionMode,
 	TypeContext, Typer,
 	constants::IdentifierRegistry,
-	diagnostics::Errors,
+	diagnostics::Diagnostics,
 	ids::{ExpressionRef, NodeRef, PatternRef, TypeRef},
 };
-
-impl<'db> Item<'db> {
-	/// Get the signature types for this item
-	pub fn signature(&self, db: &'db dyn Db) -> &'db SignatureTypes<'db> {
-		item_signature(db, *self).as_ref().unwrap()
-	}
-}
-
-#[salsa::tracked(returns(ref), cycle_initial=unknown_item_signature)]
-fn item_signature<'db>(db: &'db dyn Db, item: Item<'db>) -> Option<SignatureTypes<'db>> {
-	let mut ctx = SignatureTypeContext::new(item);
-	ctx.type_item(db, item);
-	Some(ctx.finish())
-}
-
-/// When the `item_signature` query is a cycle, use an empty item signature.
-///
-/// Function signatures can require cyclic queries, for example if a function refers
-/// to another overload of itself in its parameter/return types. The overloading
-/// resolution will try to look up the signature of all overloads, including itself,
-/// but since it can't call itself, we can just use an empty signature.
-fn unknown_item_signature<'db>(
-	_db: &'db dyn Db,
-	_id: salsa::Id,
-	_item: Item<'db>,
-) -> Option<SignatureTypes<'db>> {
-	None
-}
 
 /// Collected types for an item signature
 ///
@@ -62,10 +34,75 @@ pub struct SignatureTypes<'db> {
 	pub pattern_resolution: Map<PatternId<'db>, PatternRef<'db>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, salsa::Update)]
+struct SignatureTypesResult<'db> {
+	/// The signature of this item
+	signature: SignatureTypes<'db>,
+
+	/// Errors produced during signature typechecking.
+	///
+	/// We can't directly accumulate these since the `item_body_types` query can be cyclic.
+	/// Instead we have to collect them and accumulate them at the end.
+	errors: Diagnostics,
+}
+
+impl<'db> Item<'db> {
+	/// Get the signature types for this item
+	pub fn signature(&self, db: &'db dyn Db) -> &'db SignatureTypes<'db> {
+		&item_signature(db, *self).as_ref().unwrap().signature
+	}
+
+	/// Get signature types for this item (callable from a cylic query)
+	pub(super) fn possibly_cyclic_signature(
+		&self,
+		db: &'db dyn Db,
+	) -> Option<&'db SignatureTypes<'db>> {
+		item_signature(db, *self)
+			.as_ref()
+			.map(|result| &result.signature)
+	}
+}
+
+/// Get signature types without accumulating errors into the database
+#[salsa::tracked(returns(ref), cycle_initial=unknown_item_signature)]
+pub(super) fn item_signature<'db>(
+	db: &'db dyn Db,
+	item: Item<'db>,
+) -> Option<SignatureTypesResult<'db>> {
+	let mut ctx = SignatureTypeContext::new(item);
+	ctx.type_item(db, item);
+	Some(ctx.finish())
+}
+
+/// When the `item_signature` query is a cycle, use an empty item signature.
+///
+/// Function signatures can require cyclic queries, for example if a function refers
+/// to another overload of itself in its parameter/return types. The overloading
+/// resolution will try to look up the signature of all overloads, including itself,
+/// but since it can't call itself, we can just use an empty signature.
+fn unknown_item_signature<'db>(
+	_db: &'db dyn Db,
+	_id: salsa::Id,
+	_item: Item<'db>,
+) -> Option<SignatureTypesResult<'db>> {
+	None
+}
+
+/// Accumulate signature typechecking diagnostics for this item
+#[salsa::tracked]
+pub(super) fn accumulate_item_signature_diagnostics<'db>(db: &'db dyn Db, item: Item<'db>) {
+	item_signature(db, item)
+		.as_ref()
+		.unwrap()
+		.errors
+		.accumulate(db);
+}
+
 /// Context for typing an item signature
 struct SignatureTypeContext<'db> {
 	item: Item<'db>,
 	data: SignatureTypes<'db>,
+	diagnostics: Diagnostics,
 }
 
 impl<'db> SignatureTypeContext<'db> {
@@ -74,6 +111,7 @@ impl<'db> SignatureTypeContext<'db> {
 		Self {
 			item,
 			data: SignatureTypes::default(),
+			diagnostics: Diagnostics::default(),
 		}
 	}
 
@@ -634,8 +672,11 @@ impl<'db> SignatureTypeContext<'db> {
 	}
 
 	/// Get results of typing
-	fn finish(self) -> SignatureTypes<'db> {
-		self.data
+	fn finish(self) -> SignatureTypesResult<'db> {
+		SignatureTypesResult {
+			signature: self.data,
+			errors: self.diagnostics,
+		}
 	}
 }
 
@@ -694,10 +735,16 @@ impl<'db> TypeContext<'db> for SignatureTypeContext<'db> {
 		);
 	}
 
-	fn add_diagnostic(&mut self, db: &'db dyn Db, item: Item<'db>, e: impl Into<Error>) {
+	fn add_diagnostic(&mut self, _db: &'db dyn Db, item: Item<'db>, e: impl Into<Error>) {
 		let error = e.into();
 		assert_eq!(item, self.item, "Got error '{}' for wrong item", error);
-		Errors::add(db, error);
+		self.diagnostics.add_error(error);
+	}
+
+	fn add_warning(&mut self, _db: &'db dyn Db, item: Item<'db>, e: impl Into<Warning>) {
+		let warning = e.into();
+		assert_eq!(item, self.item, "Got warning '{}' for wrong item", warning);
+		self.diagnostics.add_warning(warning);
 	}
 
 	fn type_pattern(&mut self, db: &'db dyn Db, pattern: PatternRef<'db>) -> PatternTy<'db> {
@@ -707,9 +754,9 @@ impl<'db> TypeContext<'db> for SignatureTypeContext<'db> {
 			return self.data.patterns[&pat].clone();
 		}
 		// Use item_signature so we can recover from cycles
-		let Some(signature) = item_signature(db, item) else {
+		let Some(result) = item.possibly_cyclic_signature(db) else {
 			return PatternTy::Computing;
 		};
-		signature.patterns[&pat].clone()
+		result.patterns[&pat].clone()
 	}
 }

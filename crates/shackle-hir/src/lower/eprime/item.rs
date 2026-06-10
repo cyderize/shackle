@@ -7,6 +7,7 @@ use shackle_utils::hash::Map;
 use crate::{
 	Db,
 	constants::IdentifierRegistry,
+	diagnostics::Diagnostics,
 	input::{ModelFile, ModelFileContents},
 	lower::eprime::ExpressionCollector,
 	source::Origin,
@@ -19,6 +20,7 @@ pub struct ItemCollector<'db, 'tree, 'a> {
 	db: &'db dyn Db,
 	identifiers: &'db IdentifierRegistry<'db>,
 	items: Vec<Item<'db>>,
+	diagnostics: Diagnostics,
 	file: ModelFile,
 	branching_annotations: Option<eprime::MatrixLiteral<'tree>>, // Used to store branching annotations
 	goal: eprime::Goal<'tree>,                                   // Used to store goal of solve
@@ -34,6 +36,7 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 			db,
 			identifiers,
 			items: Vec::new(),
+			diagnostics: Diagnostics::default(),
 			file,
 			branching_annotations: None,
 			goal: eprime::Goal::Satisfy,
@@ -62,14 +65,19 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 	}
 
 	/// Finish lowering
-	pub fn finish(self) -> Model<'db> {
-		Model::new(self.db, self.file, self.items)
+	pub fn finish(self) -> (Model<'db>, Diagnostics) {
+		(Model::new(self.db, self.file, self.items), self.diagnostics)
 	}
 
 	/// Checks if a solve item exists, if not, adds satisfy solve
 	/// TODO: Broken SourceMap
 	pub fn add_solve(&mut self) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 
 		let annotations: Box<[ExpressionId<'db>]> = match &self.branching_annotations {
 			Some(b) => {
@@ -121,7 +129,12 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 		c: &eprime::ConstDefinition<'tree>,
 		idx: Option<&Vec<eprime::Domain<'tree>>>,
 	) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let assignee = ctx.collect_expression(&c.name());
 		let mut definition = ctx.collect_expression(&c.definition());
 		if let Some(indexes) = idx {
@@ -188,7 +201,12 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 		var_type: VarType,
 	) {
 		for name in names {
-			let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+			let mut ctx = ExpressionCollector::new(
+				self.db,
+				self.file,
+				self.text.as_ref(),
+				&mut self.diagnostics,
+			);
 			let declared_type = domain
 				.as_ref()
 				.map(|d| ctx.collect_domain(d, var_type))
@@ -238,7 +256,12 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 	}
 
 	fn collect_constraint_expression(&mut self, expr: &eprime::Expression<'tree>) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let expression = ctx.collect_expression(expr);
 		let (data, sm) = ctx.finish(Constraint {
 			annotations: Box::new([]),
@@ -250,7 +273,12 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 	}
 
 	fn collect_output(&mut self, i: &eprime::Output<'tree>) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let expression = ctx.collect_expression(&i.expression());
 		let (data, source_map) = ctx.finish(Output {
 			section: None,

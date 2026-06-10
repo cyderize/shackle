@@ -7,15 +7,13 @@ use crate::{
 	db::CompilerDatabase,
 	diagnostics::Errors,
 	input::{InlineModelFile, InputFiles, ModelFile},
-	lower::{lower_model, lower_models},
+	typecheck::{accumulate_typecheck_diagnostics, typecheck},
 };
 
 #[salsa::tracked]
 fn compute_types<'db>(db: &'db dyn Db) {
-	let models = lower_models(db);
-	for item in models.iter().flat_map(|m| m.items(db)) {
-		let _ = item.types(db);
-	}
+	typecheck(db);
+	accumulate_typecheck_diagnostics(db);
 }
 
 struct TypeTester {
@@ -71,7 +69,7 @@ impl TypeTester {
 
 	fn type_expression(&mut self, preamble: &str, expr: &str) -> String {
 		self.set_model(preamble, &format!("any: _TEST_EXPR = {};", expr));
-		let lowered = lower_model(&self.db, self.file);
+		let lowered = self.file.hir(&self.db);
 		let item = lowered.items(&self.db).first().unwrap();
 		let types = item.types(&self.db);
 		let definition = match item {
@@ -185,7 +183,7 @@ fn test_type_expressions() {
 		"lambda var int: (var bool: x) => x",
 		expect!("op(var int: (var bool))"),
 	);
-	tester.check_expression("let { var int: x; } in true", expect!("var bool"));
+	tester.check_expression("let { var int: x; } in true", expect!("bool"));
 	tester.check_expression(
 		"let { constraint let { var bool: p } in p } in true",
 		expect!("var bool"),

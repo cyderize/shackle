@@ -12,12 +12,15 @@ use shackle_syntax::ast::ConstraintModel;
 
 use crate::{
 	Db, Model,
+	diagnostics::Diagnostics,
 	input::{ModelFile, resolve_includes},
 };
 
-/// Lower a model to HIR
-#[salsa::tracked]
-pub fn lower_model<'db>(db: &'db dyn Db, model_file: ModelFile) -> Model<'db> {
+#[salsa::tracked(returns(ref))]
+fn lower_model_with_diagnostics<'db>(
+	db: &'db dyn Db,
+	model_file: ModelFile,
+) -> (Model<'db>, Diagnostics) {
 	log::info!("Lowering model to HIR: {}", model_file);
 	let model_ast = model_file.ast(db);
 	match model_ast.ast(db) {
@@ -40,10 +43,19 @@ pub fn lower_model<'db>(db: &'db dyn Db, model_file: ModelFile) -> Model<'db> {
 	}
 }
 
+/// Accumulate lowering diagnostics for all resolved models.
+#[salsa::tracked]
+pub fn accumulate_lower_errors(db: &dyn Db) {
+	for model in resolve_includes(db) {
+		let (_, diagnostics) = lower_model_with_diagnostics(db, *model);
+		diagnostics.accumulate(db);
+	}
+}
+
 impl ModelFile {
 	/// Lower this model to HIR
 	pub fn hir<'db>(&self, db: &'db dyn Db) -> Model<'db> {
-		lower_model(db, *self)
+		lower_model_with_diagnostics(db, *self).0
 	}
 }
 
@@ -51,5 +63,5 @@ impl ModelFile {
 #[salsa::tracked(returns(ref))]
 pub fn lower_models<'db>(db: &'db dyn Db) -> Vec<Model<'db>> {
 	let models = resolve_includes(db);
-	models.iter().map(|m| lower_model(db, *m)).collect()
+	models.iter().map(|m| m.hir(db)).collect()
 }

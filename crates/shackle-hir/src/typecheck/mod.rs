@@ -26,7 +26,7 @@
 
 use std::ops::{Deref, Index};
 
-use shackle_diagnostics::Error;
+use shackle_diagnostics::{Error, Warning};
 use shackle_ty::{FunctionEntry, Ty, TyData, TyVar};
 use shackle_utils::arena::ArenaMap;
 
@@ -51,11 +51,42 @@ pub fn typecheck(db: &dyn Db) {
 	log::info!("Finished type-checking program");
 }
 
+/// Accumulate typechecking diagnostics for all items.
+#[salsa::tracked]
+pub fn accumulate_typecheck_diagnostics(db: &dyn Db) {
+	for model in resolve_includes(db) {
+		accumulate_typecheck_model_diagnostics(db, model.hir(db));
+	}
+}
+
 #[salsa::tracked]
 fn typecheck_model<'db>(db: &'db dyn Db, model: Model<'db>) {
 	log::info!("Type-checking model {}", model.file(db));
 	for i in model.items(db) {
-		let _ = i.types(db);
+		// Avoid accumulator dependencies while running cyclic body/signature queries.
+		// Diagnostics are accumulated by later non-cyclic passes.
+		match i {
+			Item::Assignment(_) | Item::Constraint(_) | Item::Output(_) => {
+				let _ = i.body_types(db);
+			}
+			_ => {
+				let _ = i.body_types(db);
+				let _ = i.signature(db);
+			}
+		}
+	}
+}
+
+#[salsa::tracked]
+fn accumulate_typecheck_model_diagnostics<'db>(db: &'db dyn Db, model: Model<'db>) {
+	for item in model.items(db) {
+		accumulate_item_body_diagnostics(db, *item);
+		match item {
+			Item::Assignment(_) | Item::Constraint(_) | Item::Output(_) => {}
+			_ => {
+				accumulate_item_signature_diagnostics(db, *item);
+			}
+		}
 	}
 }
 
@@ -402,6 +433,9 @@ pub trait TypeContext<'db> {
 	);
 	/// Add an error
 	fn add_diagnostic(&mut self, db: &'db dyn Db, item: Item<'db>, e: impl Into<Error>);
+
+	/// Add a warning
+	fn add_warning(&mut self, db: &'db dyn Db, item: Item<'db>, e: impl Into<Warning>);
 
 	/// Type a pattern (or lookup the type if already known)
 	fn type_pattern(&mut self, db: &'db dyn Db, pattern: PatternRef<'db>) -> PatternTy<'db>;

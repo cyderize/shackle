@@ -5,7 +5,7 @@ use shackle_syntax::{ast::AstNode, minizinc};
 use shackle_utils::{hash::Map, maybe_grow_stack};
 
 use crate::{
-	Db, constants::IdentifierRegistry, diagnostics::Errors, input::ModelFile, ir::*,
+	Db, constants::IdentifierRegistry, diagnostics::Diagnostics, input::ModelFile, ir::*,
 	source::SourceMap,
 };
 
@@ -15,19 +15,26 @@ pub struct ExpressionCollector<'db, 'a> {
 	identifiers: &'db IdentifierRegistry<'db>,
 	data: ItemData<'db>,
 	source_map: SourceMap<'db>,
+	pub(super) diagnostics: &'a mut Diagnostics,
 	file: ModelFile,
 	text: &'a str,
 }
 
 impl<'db, 'a> ExpressionCollector<'db, 'a> {
 	/// Create a new expression collector
-	pub fn new(db: &'db dyn Db, file: ModelFile, text: &'a str) -> Self {
+	pub fn new(
+		db: &'db dyn Db,
+		file: ModelFile,
+		text: &'a str,
+		diagnostics: &'a mut Diagnostics,
+	) -> Self {
 		let identifiers = IdentifierRegistry::lookup(db);
 		ExpressionCollector {
 			db,
 			identifiers,
 			data: ItemData::new(),
 			source_map: SourceMap::default(),
+			diagnostics,
 			file,
 			text,
 		}
@@ -48,14 +55,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 				IntegerLiteral(i.value(self.text).unwrap_or_else(|e| {
 					let src = self.file.source_file(self.db);
 					let span = i.span();
-					Errors::add(
-						self.db,
-						InvalidNumericLiteral {
-							src,
-							span,
-							msg: e.to_string(),
-						},
-					);
+					self.diagnostics.add_error(InvalidNumericLiteral {
+						src,
+						span,
+						msg: e.to_string(),
+					});
 					0
 				}))
 				.into()
@@ -64,14 +68,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 				FloatLiteral::new(f.value(self.text).unwrap_or_else(|e| {
 					let src = self.file.source_file(self.db);
 					let span = f.span();
-					Errors::add(
-						self.db,
-						InvalidNumericLiteral {
-							src,
-							span,
-							msg: e.to_string(),
-						},
-					);
+					self.diagnostics.add_error(InvalidNumericLiteral {
+						src,
+						span,
+						msg: e.to_string(),
+					});
 					0.0
 				}))
 				.into()
@@ -86,14 +87,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 				// No longer support anonymous variables, instead use opt
 				let src = self.file.source_file(self.db);
 				let span = a.span();
-				Errors::add(
-					self.db,
-					SyntaxError {
-						src,
-						span,
-						msg: "Anonymous variables in expressions are not supported".to_owned(),
-					},
-				);
+				self.diagnostics.add_error(SyntaxError {
+					src,
+					span,
+					msg: "Anonymous variables in expressions are not supported".to_owned(),
+				});
 				Expression::Missing
 			}
 			minizinc::Expression::Identifier(i) => {
@@ -255,14 +253,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 						value: IntegerLiteral(i.value(self.text).unwrap_or_else(|e| {
 							let src = self.file.source_file(self.db);
 							let span = i.span();
-							Errors::add(
-								self.db,
-								InvalidNumericLiteral {
-									src,
-									span,
-									msg: e.to_string(),
-								},
-							);
+							self.diagnostics.add_error(InvalidNumericLiteral {
+								src,
+								span,
+								msg: e.to_string(),
+							});
 							0
 						})),
 					};
@@ -274,14 +269,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 						value: FloatLiteral::new(f.value(self.text).unwrap_or_else(|e| {
 							let src = self.file.source_file(self.db);
 							let span = f.span();
-							Errors::add(
-								self.db,
-								InvalidNumericLiteral {
-									src,
-									span,
-									msg: e.to_string(),
-								},
-							);
+							self.diagnostics.add_error(InvalidNumericLiteral {
+								src,
+								span,
+								msg: e.to_string(),
+							});
 							0.0
 						})),
 					};
@@ -478,7 +470,7 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 				if !start_indexed && !fully_indexed {
 					let src = self.file.source_file(self.db);
 					let span = al.span();
-					Errors::add(self.db, InvalidArrayLiteral {
+					self.diagnostics.add_error(InvalidArrayLiteral {
 						src,
 						span,
 						msg: "Indexed array literal must be fully indexed, or only have an index for the first element".to_owned(),
@@ -524,42 +516,32 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 				if !col_indices.is_empty() && col_count != col_indices.len() {
 					let src = self.file.source_file(self.db);
 					let span = al.span();
-					Errors::add(
-						self.db,
-						InvalidArrayLiteral {
-							src,
-							span,
-							msg: "2D array literal has different row length to index row"
-								.to_owned(),
-						},
-					);
+					self.diagnostics.add_error(InvalidArrayLiteral {
+						src,
+						span,
+						msg: "2D array literal has different row length to index row".to_owned(),
+					});
 					return self.alloc_expression(al, Expression::Missing);
 				}
 			} else if members.len() != col_count {
 				let src = self.file.source_file(self.db);
 				let span = al.span();
-				Errors::add(
-					self.db,
-					InvalidArrayLiteral {
-						src,
-						span,
-						msg: "Non-uniform 2D array literal row length".to_owned(),
-					},
-				);
+				self.diagnostics.add_error(InvalidArrayLiteral {
+					src,
+					span,
+					msg: "Non-uniform 2D array literal row length".to_owned(),
+				});
 				return self.alloc_expression(al, Expression::Missing);
 			}
 
 			if index.is_none() != row_indices.is_empty() {
 				let src = self.file.source_file(self.db);
 				let span = al.span();
-				Errors::add(
-					self.db,
-					InvalidArrayLiteral {
-						src,
-						span,
-						msg: "Mixing indexed and non-indexed rows not allowed".to_owned(),
-					},
-				);
+				self.diagnostics.add_error(InvalidArrayLiteral {
+					src,
+					span,
+					msg: "Mixing indexed and non-indexed rows not allowed".to_owned(),
+				});
 				return self.alloc_expression(al, Expression::Missing);
 			}
 
@@ -845,14 +827,11 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 		let value = IntegerLiteral(t.field().value(self.text).unwrap_or_else(|e| {
 			let src = self.file.source_file(self.db);
 			let span = t.field().span();
-			Errors::add(
-				self.db,
-				InvalidNumericLiteral {
-					src,
-					span,
-					msg: e.to_string(),
-				},
-			);
+			self.diagnostics.add_error(InvalidNumericLiteral {
+				src,
+				span,
+				msg: e.to_string(),
+			});
 			1
 		}));
 		let field = self.alloc_pattern(

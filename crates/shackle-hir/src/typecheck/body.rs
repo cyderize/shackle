@@ -1,4 +1,4 @@
-use shackle_diagnostics::Error;
+use shackle_diagnostics::{Error, Warning};
 use shackle_ty::{Ty, registry::TypeRegistry};
 use shackle_utils::arena::ArenaMap;
 /// Types of 'bodies': everything that isn't part of a signature.
@@ -11,7 +11,7 @@ use shackle_utils::hash::Map;
 
 use crate::{
 	Db, Expression, ExpressionId, Item, Pattern, PatternId, PatternTy, TypeContext, Typer,
-	constants::IdentifierRegistry, diagnostics::Errors, ids::PatternRef,
+	constants::IdentifierRegistry, diagnostics::Diagnostics, ids::PatternRef,
 };
 
 /// Collected types for an item body
@@ -27,18 +27,35 @@ pub struct BodyTypes<'db> {
 	pub pattern_resolution: Map<PatternId<'db>, PatternRef<'db>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, salsa::Update)]
+struct BodyTypesResult<'db> {
+	/// The body types for this item
+	body_types: BodyTypes<'db>,
+	/// Errors produced during body typechecking.
+	///
+	/// We can't directly accumulate these since the type checker uses possibly cyclic queries
+	errors: Diagnostics,
+}
+
 impl<'db> Item<'db> {
 	/// Get the body types for this item
 	pub fn body_types(&self, db: &'db dyn Db) -> &'db BodyTypes<'db> {
-		item_body_types(db, *self)
+		&item_body_types(db, *self).body_types
 	}
 }
 
+/// Get body types without accumulating errors
 #[salsa::tracked(returns(ref))]
-fn item_body_types<'db>(db: &'db dyn Db, item: Item<'db>) -> BodyTypes<'db> {
+fn item_body_types<'db>(db: &'db dyn Db, item: Item<'db>) -> BodyTypesResult<'db> {
 	let mut ctx = BodyTypeContext::new(item);
 	ctx.type_item(db);
 	ctx.finish()
+}
+
+/// Accumulate body typechecking diagnostics for this item
+#[salsa::tracked]
+pub(super) fn accumulate_item_body_diagnostics<'db>(db: &'db dyn Db, item: Item<'db>) {
+	item_body_types(db, item).errors.accumulate(db);
 }
 
 /// Context for typing an item body
@@ -46,27 +63,32 @@ fn item_body_types<'db>(db: &'db dyn Db, item: Item<'db>) -> BodyTypes<'db> {
 pub struct BodyTypeContext<'db> {
 	item: Item<'db>,
 	data: BodyTypes<'db>,
+	diagnostics: Diagnostics,
 }
 
 impl<'db> BodyTypeContext<'db> {
 	/// Create a new signature type context
 	pub fn new(item: impl Into<Item<'db>>) -> Self {
+		let item = item.into();
 		Self {
-			item: item.into(),
+			item,
 			data: BodyTypes::default(),
+			diagnostics: Diagnostics::default(),
 		}
 	}
 
 	/// Create a new signature type context with the given capacity for patterns/expressions
 	pub fn with_capacity(item: impl Into<Item<'db>>, patterns: u32, expressions: u32) -> Self {
+		let item = item.into();
 		Self {
-			item: item.into(),
+			item,
 			data: BodyTypes {
 				patterns: ArenaMap::with_capacity(patterns + 1),
 				expressions: ArenaMap::with_capacity(expressions + 1),
 				identifier_resolution: Map::default(),
 				pattern_resolution: Map::default(),
 			},
+			diagnostics: Diagnostics::default(),
 		}
 	}
 
@@ -181,12 +203,15 @@ impl<'db> BodyTypeContext<'db> {
 	}
 
 	/// Get results of typing
-	pub fn finish(mut self) -> BodyTypes<'db> {
+	fn finish(mut self) -> BodyTypesResult<'db> {
 		self.data.patterns.shrink_to_fit();
 		self.data.expressions.shrink_to_fit();
 		self.data.identifier_resolution.shrink_to_fit();
 		self.data.pattern_resolution.shrink_to_fit();
-		self.data
+		BodyTypesResult {
+			body_types: self.data,
+			errors: self.diagnostics,
+		}
 	}
 }
 
@@ -248,10 +273,16 @@ impl<'db> TypeContext<'db> for BodyTypeContext<'db> {
 		);
 	}
 
-	fn add_diagnostic(&mut self, db: &'db dyn Db, item: Item<'db>, e: impl Into<Error>) {
+	fn add_diagnostic(&mut self, _db: &'db dyn Db, item: Item<'db>, e: impl Into<Error>) {
 		let error = e.into();
 		assert_eq!(item, self.item, "Got error '{}' for wrong item", error);
-		Errors::add(db, error);
+		self.diagnostics.add_error(error);
+	}
+
+	fn add_warning(&mut self, _db: &'db dyn Db, item: Item<'db>, e: impl Into<Warning>) {
+		let warning = e.into();
+		assert_eq!(item, self.item, "Got warning '{}' for wrong item", warning);
+		self.diagnostics.add_warning(warning);
 	}
 
 	fn type_pattern(&mut self, db: &'db dyn Db, pattern: PatternRef<'db>) -> PatternTy<'db> {
@@ -261,7 +292,9 @@ impl<'db> TypeContext<'db> for BodyTypeContext<'db> {
 		{
 			return d.clone();
 		}
-		let signature = item.signature(db);
+		let Some(signature) = item.possibly_cyclic_signature(db) else {
+			return PatternTy::Computing;
+		};
 		signature.patterns[&pattern.pattern(db)].clone()
 	}
 }

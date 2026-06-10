@@ -22,16 +22,57 @@ use crate::{
 	Item, ItemData, LetItem, Model, OutputItem, Pattern, PatternId, PatternTy, SolveItem, Type,
 	TypeAliasItem, TypeId,
 	db::with_attached_database,
-	diagnostics::{Errors, Warnings},
+	diagnostics::Diagnostics,
 	ids::{EntityId, NodeRef, PatternRef},
 	lower::lower_models,
 };
+
+fn process_enum_constructor<'db>(
+	db: &'db dyn Db,
+	scope: &mut ScopeData<'db>,
+	diagnostics: &mut Diagnostics,
+	item: Item<'db>,
+	data: &ItemData<'db>,
+	ec: &EnumConstructor<'db>,
+) {
+	if let EnumConstructor::Named(c) = ec {
+		match c {
+			Constructor::Atom { pattern } => {
+				// Enum atom, so this is a variable
+				let identifier = data[*pattern].identifier().unwrap();
+				scope.add_variable(
+					db,
+					identifier,
+					0,
+					PatternRef::new(db, item, *pattern),
+					true,
+					diagnostics,
+				);
+			}
+			Constructor::Function {
+				constructor,
+				destructor,
+				..
+			} => {
+				// Enum constructor (overloads handled later in type checker)
+				let ctor = data[*constructor].identifier().unwrap();
+				scope.add_function(db, ctor, 0, PatternRef::new(db, item, *constructor));
+				let dtor = data[*destructor].identifier().unwrap();
+				scope.add_function(db, dtor, 0, PatternRef::new(db, item, *destructor));
+			}
+		}
+	}
+}
 
 /// Names in global scope
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalScope;
 
 impl GlobalScope {
+	fn collect<'db>(db: &'db dyn Db) -> &'db ScopeData<'db> {
+		&collect_global_scope_with_diagnostics(db).0
+	}
+
 	/// Get whether there is an atom with the given name in global scope
 	pub fn is_atom<'db>(db: &'db dyn Db, identifier: Identifier<'db>) -> bool {
 		lookup_global_atom_internal(db, InternedString::from(identifier))
@@ -57,14 +98,14 @@ impl GlobalScope {
 	pub fn variables<'db>(
 		db: &'db dyn Db,
 	) -> impl Iterator<Item = (Identifier<'db>, PatternRef<'db>)> {
-		collect_global_scope(db).variables(0)
+		GlobalScope::collect(db).variables(0)
 	}
 
 	/// Get the functions global scope
 	pub fn functions<'db>(
 		db: &'db dyn Db,
 	) -> impl Iterator<Item = (Identifier<'db>, Vec<PatternRef<'db>>)> {
-		collect_global_scope(db).functions(0)
+		GlobalScope::collect(db).functions(0)
 	}
 }
 
@@ -84,7 +125,7 @@ impl std::fmt::Debug for GlobalScope {
 
 #[salsa::tracked]
 fn lookup_global_atom_internal<'db>(db: &'db dyn Db, identifier: InternedString<'db>) -> bool {
-	collect_global_scope(db).is_atom(identifier.into(), 0)
+	GlobalScope::collect(db).is_atom(identifier.into(), 0)
 }
 
 #[salsa::tracked]
@@ -92,7 +133,7 @@ fn lookup_global_variable_internal<'db>(
 	db: &'db dyn Db,
 	identifier: InternedString<'db>,
 ) -> Option<PatternRef<'db>> {
-	collect_global_scope(db).find_variable(identifier.into(), 0)
+	GlobalScope::collect(db).find_variable(identifier.into(), 0)
 }
 
 #[salsa::tracked(returns(ref))]
@@ -100,7 +141,7 @@ fn lookup_global_function_internal<'db>(
 	db: &'db dyn Db,
 	identifier: InternedString<'db>,
 ) -> Vec<PatternRef<'db>> {
-	collect_global_scope(db).find_function(identifier.into(), 0)
+	GlobalScope::collect(db).find_function(identifier.into(), 0)
 }
 
 /// Force collection of all scopes (including global scope)
@@ -108,10 +149,22 @@ fn lookup_global_function_internal<'db>(
 /// To access the results, use `GlobalScope` or `item.scope(db)` for each item.
 #[salsa::tracked]
 pub fn collect_scopes(db: &dyn Db) {
-	let _ = collect_global_scope(db);
+	let _ = GlobalScope::collect(db);
 	let models = lower_models(db);
 	for m in models.iter() {
 		m.collect_scopes(db);
+	}
+}
+
+/// Accumulate scope diagnostics for the whole program.
+#[salsa::tracked]
+pub fn accumulate_scope_diagnostics(db: &dyn Db) {
+	let (_, diagnostics) = collect_global_scope_with_diagnostics(db);
+	diagnostics.accumulate(db);
+	for model in lower_models(db).iter() {
+		for item in model.items(db) {
+			collect_item_scope_diagnostics(db, *item).accumulate(db);
+		}
 	}
 }
 
@@ -144,38 +197,8 @@ fn collect_scopes_for_model<'db>(db: &'db dyn Db, model: Model<'db>) {
 fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeData<'db> {
 	log::info!("Computing names in scope for model {}", model.file(db));
 	let mut scope = ScopeData::default();
+	let mut diagnostics = Diagnostics::default();
 	let mut had_solve_item = false;
-	let process_enum_constructor = |scope: &mut ScopeData<'db>,
-	                                item: Item<'db>,
-	                                data: &ItemData<'db>,
-	                                ec: &EnumConstructor<'db>| {
-		if let EnumConstructor::Named(c) = ec {
-			match c {
-				Constructor::Atom { pattern } => {
-					// Enum atom, so this is a variable
-					let identifier = data[*pattern].identifier().unwrap();
-					scope.add_variable(
-						db,
-						identifier,
-						0,
-						PatternRef::new(db, item, *pattern),
-						true,
-					);
-				}
-				Constructor::Function {
-					constructor,
-					destructor,
-					..
-				} => {
-					// Enum constructor (overloads handled later in type checker)
-					let ctor = data[*constructor].identifier().unwrap();
-					scope.add_function(db, ctor, 0, PatternRef::new(db, item, *constructor));
-					let dtor = data[*destructor].identifier().unwrap();
-					scope.add_function(db, dtor, 0, PatternRef::new(db, item, *destructor));
-				}
-			}
-		}
-	};
 
 	for item in model.items(db).iter() {
 		match item {
@@ -192,6 +215,7 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 							0,
 							PatternRef::new(db, *item, *pattern),
 							true,
+							&mut diagnostics,
 						);
 					}
 					Constructor::Function {
@@ -222,7 +246,7 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 			}
 			Item::Declaration(declaration_item) => {
 				let d = declaration_item.declaration(db);
-				scope.add_irrefutable_pattern(db, d.pattern, 0, d.data(), *item);
+				scope.add_irrefutable_pattern(db, d.pattern, 0, d.data(), *item, &mut diagnostics);
 			}
 			Item::Enumeration(enumeration_item) => {
 				let e = enumeration_item.enumeration(db);
@@ -234,20 +258,28 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 							0,
 							PatternRef::new(db, *item, e.pattern),
 							false,
+							&mut diagnostics,
 						);
 					}
 					_ => unreachable!("Enumeration must have identifier pattern"),
 				}
 				if let Some(d) = &e.definition {
 					for ec in d.iter() {
-						process_enum_constructor(&mut scope, *item, e.data(), ec);
+						process_enum_constructor(
+							db,
+							&mut scope,
+							&mut diagnostics,
+							*item,
+							e.data(),
+							ec,
+						);
 					}
 				}
 			}
 			Item::EnumAssignment(enum_assignment_item) => {
 				let e = enum_assignment_item.enum_assignment(db);
 				for ec in e.definition.iter() {
-					process_enum_constructor(&mut scope, *item, e.data(), ec)
+					process_enum_constructor(db, &mut scope, &mut diagnostics, *item, e.data(), ec)
 				}
 			}
 			Item::Function(function_item) => {
@@ -272,6 +304,7 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 										0,
 										PatternRef::new(db, *item, pattern),
 										false,
+										&mut diagnostics,
 									);
 								}
 								_ => unreachable!("Function must have identifier pattern"),
@@ -291,6 +324,7 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 							0,
 							PatternRef::new(db, *item, t.name),
 							false,
+							&mut diagnostics,
 						);
 					}
 					_ => unreachable!("Type-alias must have identifier pattern"),
@@ -312,11 +346,13 @@ fn collect_model_global_scope<'db>(db: &'db dyn Db, model: Model<'db>) -> ScopeD
 ///
 /// - Checks for multiply defined identifiers
 #[salsa::tracked(returns(ref))]
-fn collect_global_scope<'db>(db: &'db dyn Db) -> ScopeData<'db> {
+fn collect_global_scope_with_diagnostics<'db>(db: &'db dyn Db) -> (ScopeData<'db>, Diagnostics) {
 	log::info!("Computing full global scope for program");
+	let mut diagnostics = Diagnostics::default();
 	let scope = ScopeData::from_iter(
 		db,
 		lower_models(db).iter().map(|model| model.global_scope(db)),
+		&mut diagnostics,
 	);
 	log::info!(
 		"{} variables ({} atoms), {} functions in global namespace",
@@ -324,7 +360,7 @@ fn collect_global_scope<'db>(db: &'db dyn Db) -> ScopeData<'db> {
 		scope.atoms.len(),
 		scope.functions.len()
 	);
-	scope
+	(scope, diagnostics)
 }
 
 /// Variable scope
@@ -339,7 +375,11 @@ pub struct ScopeData<'db> {
 }
 
 impl<'db> ScopeData<'db> {
-	fn from_iter<T: IntoIterator<Item = &'db Self>>(db: &'db dyn Db, iter: T) -> Self {
+	fn from_iter<T: IntoIterator<Item = &'db Self>>(
+		db: &'db dyn Db,
+		iter: T,
+		diagnostics: &mut Diagnostics,
+	) -> Self {
 		let mut result = Self::default();
 		for scope in iter {
 			for i in scope.function_names.iter() {
@@ -356,7 +396,7 @@ impl<'db> ScopeData<'db> {
 			}
 			for i in scope.variable_names.iter() {
 				let (p, g) = scope.variables[i];
-				result.add_variable(db, *i, g, p, false);
+				result.add_variable(db, *i, g, p, false, diagnostics);
 			}
 			result.atoms.extend(scope.atoms.iter().copied());
 		}
@@ -391,18 +431,16 @@ impl<'db> ScopeData<'db> {
 		generation: u32,
 		pattern: PatternRef<'db>,
 		is_atom: bool,
+		diagnostics: &mut Diagnostics,
 	) {
 		match self.variables.entry(identifier) {
 			Entry::Occupied(_) => {
 				let (src, span) = NodeRef::from(pattern.into_entity(db)).source_span(db);
-				Errors::add(
-					db,
-					IdentifierAlreadyDefined {
-						identifier: identifier.pretty_print(db),
-						src,
-						span,
-					},
-				)
+				diagnostics.add_error(IdentifierAlreadyDefined {
+					identifier: identifier.pretty_print(db),
+					src,
+					span,
+				})
 			}
 			Entry::Vacant(e) => {
 				let _ = e.insert((pattern, generation));
@@ -422,28 +460,37 @@ impl<'db> ScopeData<'db> {
 		generation: u32,
 		data: &ItemData<'db>,
 		item: Item<'db>,
+		diagnostics: &mut Diagnostics,
 	) {
 		match &data[p] {
 			Pattern::Identifier(i) => {
-				self.add_variable(db, *i, generation, PatternRef::new(db, item, p), false);
+				self.add_variable(
+					db,
+					*i,
+					generation,
+					PatternRef::new(db, item, p),
+					false,
+					diagnostics,
+				);
 			}
 			Pattern::Record { fields } => {
 				for (_, pat) in fields.iter() {
-					self.add_irrefutable_pattern(db, *pat, generation, data, item);
+					self.add_irrefutable_pattern(db, *pat, generation, data, item, diagnostics);
 				}
 			}
 			Pattern::Tuple { fields } => {
 				for pat in fields.iter() {
-					self.add_irrefutable_pattern(db, *pat, generation, data, item);
+					self.add_irrefutable_pattern(db, *pat, generation, data, item, diagnostics);
 				}
 			}
 			_ => {
 				// Refutable pattern, can't be used
 				let (src, span) = item.sources(db)[p].source_span(db);
-				Errors::add(db, InvalidPattern {
+				diagnostics.add_error(InvalidPattern {
 					span,
 					src,
-					msg: "This pattern is not valid in this context as it may not match all cases.".to_owned()
+					msg: "This pattern is not valid in this context as it may not match all cases."
+						.to_owned(),
 				});
 			}
 		}
@@ -553,6 +600,7 @@ struct ScopeCollector<'db> {
 	expression_scope: ArenaMap<Expression<'db>, (ArenaIndex<Scope<'db>>, u32)>,
 	/// The scope which introduces this pattern
 	pattern_scope: ArenaMap<Pattern<'db>, ArenaIndex<Scope<'db>>>,
+	diagnostics: Diagnostics,
 }
 
 impl<'db> ScopeCollector<'db> {
@@ -574,6 +622,7 @@ impl<'db> ScopeCollector<'db> {
 			generations: vec![0],
 			expression_scope: ArenaMap::new(),
 			pattern_scope: ArenaMap::new(),
+			diagnostics: Diagnostics::default(),
 		}
 	}
 
@@ -603,42 +652,6 @@ impl<'db> ScopeCollector<'db> {
 		mut had_error: bool,
 	) {
 		let generation = self.generation();
-		let mut refutable_pattern = || {
-			// When destructuring, patterns must be irrefutable
-			if is_destructuring {
-				if !had_error {
-					let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
-					Errors::add(self.db, InvalidPattern {
-						span,
-						src,
-						msg: "This pattern is not valid in this context as it may not match all cases.".to_owned()
-					});
-				}
-				had_error = true;
-			}
-		};
-
-		let shadowed = |p: PatternRef| {
-			let (src_orig, span_orig) =
-				p.item(self.db).sources(self.db)[p.pattern(self.db)].source_span(self.db);
-			let (src_new, span_new) = self.item.sources(self.db)[index].source_span(self.db);
-
-			assert_eq!(
-				src_orig, src_new,
-				"Shadowing should only be reported within the same file"
-			);
-
-			// Same file, so warn about shadowing
-			Warnings::add(
-				self.db,
-				IdentifierShadowing {
-					name: self.data[index].identifier().unwrap().pretty_print(self.db),
-					src: src_new,
-					span: span_new,
-					original: span_orig,
-				},
-			);
-		};
 
 		match &self.data[index] {
 			Pattern::Identifier(i) => {
@@ -656,7 +669,26 @@ impl<'db> ScopeCollector<'db> {
 								break;
 							}
 							if let Some(p) = scope.find_variable(*i, generation) {
-								shadowed(p);
+								let (src_orig, span_orig) = p.item(self.db).sources(self.db)
+									[p.pattern(self.db)]
+								.source_span(self.db);
+								let (src_new, span_new) =
+									self.item.sources(self.db)[index].source_span(self.db);
+
+								assert_eq!(
+									src_orig, src_new,
+									"Shadowing should only be reported within the same file"
+								);
+
+								self.diagnostics.add_warning(IdentifierShadowing {
+									name: self.data[index]
+										.identifier()
+										.unwrap()
+										.pretty_print(self.db),
+									src: src_new,
+									span: span_new,
+									original: span_orig,
+								});
 							}
 							current = *parent;
 						}
@@ -667,7 +699,26 @@ impl<'db> ScopeCollector<'db> {
 								break;
 							}
 							if let Some(p) = scope.find_variable(*i, 0) {
-								shadowed(p);
+								let (src_orig, span_orig) = p.item(self.db).sources(self.db)
+									[p.pattern(self.db)]
+								.source_span(self.db);
+								let (src_new, span_new) =
+									self.item.sources(self.db)[index].source_span(self.db);
+
+								assert_eq!(
+									src_orig, src_new,
+									"Shadowing should only be reported within the same file"
+								);
+
+								self.diagnostics.add_warning(IdentifierShadowing {
+									name: self.data[index]
+										.identifier()
+										.unwrap()
+										.pretty_print(self.db),
+									src: src_new,
+									span: span_new,
+									original: span_orig,
+								});
 							}
 							current = *global_scope;
 						}
@@ -686,6 +737,7 @@ impl<'db> ScopeCollector<'db> {
 								generation,
 								PatternRef::new(self.db, self.item, index),
 								false,
+								&mut self.diagnostics,
 							);
 							self.pattern_scope.insert(index, self.current);
 							break;
@@ -694,7 +746,18 @@ impl<'db> ScopeCollector<'db> {
 				}
 			}
 			Pattern::Call { arguments, .. } => {
-				refutable_pattern();
+				if is_destructuring {
+					if !had_error {
+						let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
+						self.diagnostics.add_error(InvalidPattern {
+							span,
+							src,
+							msg: "This pattern is not valid in this context as it may not match all cases."
+								.to_owned(),
+						});
+					}
+					had_error = true;
+				}
 				for argument in arguments.iter() {
 					self.collect_pattern_inner(*argument, is_destructuring, had_error);
 				}
@@ -709,7 +772,19 @@ impl<'db> ScopeCollector<'db> {
 					self.collect_pattern_inner(*pattern, is_destructuring, had_error);
 				}
 			}
-			_ => refutable_pattern(),
+			_ => {
+				if is_destructuring {
+					if !had_error {
+						let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
+						self.diagnostics.add_error(InvalidPattern {
+							span,
+							src,
+							msg: "This pattern is not valid in this context as it may not match all cases."
+								.to_owned(),
+						});
+					}
+				}
+			}
 		}
 	}
 
@@ -944,13 +1019,16 @@ impl<'db> ScopeCollector<'db> {
 	}
 
 	/// Get results
-	fn finish(self) -> ScopeResult<'db> {
-		ScopeResult {
-			model: self.item.model(self.db),
-			scopes: self.scopes,
-			expression_scopes: self.expression_scope,
-			pattern_scopes: self.pattern_scope,
-		}
+	fn finish(self) -> (ScopeResult<'db>, Diagnostics) {
+		(
+			ScopeResult {
+				model: self.item.model(self.db),
+				scopes: self.scopes,
+				expression_scopes: self.expression_scope,
+				pattern_scopes: self.pattern_scope,
+			},
+			self.diagnostics,
+		)
 	}
 
 	fn push(&mut self) {
@@ -1006,7 +1084,7 @@ impl<'db> ScopeResult<'db> {
 					current = *global_scope;
 				}
 				Scope::Global => {
-					let scope = collect_global_scope(db);
+					let scope = GlobalScope::collect(db);
 					for (k, v) in scope.functions.iter() {
 						let _ = combined.entry(*k).or_insert_with(|| {
 							v.iter()
@@ -1046,7 +1124,7 @@ impl<'db> ScopeResult<'db> {
 					current = *global_scope;
 				}
 				Scope::Global => {
-					let scope = collect_global_scope(db);
+					let scope = GlobalScope::collect(db);
 					for (k, (v, g)) in scope.variables.iter() {
 						if generation >= *g {
 							let _ = combined.entry(*k).or_insert(*v);
@@ -1307,6 +1385,18 @@ impl<'db> Item<'db> {
 
 #[salsa::tracked(returns(ref))]
 fn collect_item_scope<'db>(db: &'db dyn Db, item: Item<'db>) -> ScopeResult<'db> {
+	collect_item_scope_with_diagnostics(db, item).0
+}
+
+#[salsa::tracked(returns(ref))]
+fn collect_item_scope_diagnostics<'db>(db: &'db dyn Db, item: Item<'db>) -> Diagnostics {
+	collect_item_scope_with_diagnostics(db, item).1
+}
+
+fn collect_item_scope_with_diagnostics<'db>(
+	db: &'db dyn Db,
+	item: Item<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	match item {
 		Item::Annotation(item) => collect_annotation_scope(db, item),
 		Item::Assignment(item) => collect_assignment_scope(db, item),
@@ -1321,7 +1411,10 @@ fn collect_item_scope<'db>(db: &'db dyn Db, item: Item<'db>) -> ScopeResult<'db>
 	}
 }
 
-fn collect_annotation_scope<'db>(db: &'db dyn Db, item: AnnotationItem<'db>) -> ScopeResult<'db> {
+fn collect_annotation_scope<'db>(
+	db: &'db dyn Db,
+	item: AnnotationItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let annotation = item.annotation(db);
 	let mut collector = ScopeCollector::new(db, item.into(), annotation.data());
 	for p in annotation.parameters() {
@@ -1330,7 +1423,10 @@ fn collect_annotation_scope<'db>(db: &'db dyn Db, item: AnnotationItem<'db>) -> 
 	collector.finish()
 }
 
-fn collect_assignment_scope<'db>(db: &'db dyn Db, item: AssignmentItem<'db>) -> ScopeResult<'db> {
+fn collect_assignment_scope<'db>(
+	db: &'db dyn Db,
+	item: AssignmentItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let assignment = item.assignment(db);
 	let mut collector = ScopeCollector::new(db, item.into(), assignment.data());
 	collector.collect_expression(assignment.assignee);
@@ -1338,7 +1434,10 @@ fn collect_assignment_scope<'db>(db: &'db dyn Db, item: AssignmentItem<'db>) -> 
 	collector.finish()
 }
 
-fn collect_constraint_scope<'db>(db: &'db dyn Db, item: ConstraintItem<'db>) -> ScopeResult<'db> {
+fn collect_constraint_scope<'db>(
+	db: &'db dyn Db,
+	item: ConstraintItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let constraint = item.constraint(db);
 	let mut collector = ScopeCollector::new(db, item.into(), constraint.data());
 	for ann in constraint.annotations.iter() {
@@ -1348,7 +1447,10 @@ fn collect_constraint_scope<'db>(db: &'db dyn Db, item: ConstraintItem<'db>) -> 
 	collector.finish()
 }
 
-fn collect_declaration_scope<'db>(db: &'db dyn Db, item: DeclarationItem<'db>) -> ScopeResult<'db> {
+fn collect_declaration_scope<'db>(
+	db: &'db dyn Db,
+	item: DeclarationItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let declaration = item.declaration(db);
 	let mut collector = ScopeCollector::new(db, item.into(), declaration.data());
 	collector.collect_type(declaration.declared_type);
@@ -1361,7 +1463,10 @@ fn collect_declaration_scope<'db>(db: &'db dyn Db, item: DeclarationItem<'db>) -
 	collector.finish()
 }
 
-fn collect_enumeration_scope<'db>(db: &'db dyn Db, item: EnumerationItem<'db>) -> ScopeResult<'db> {
+fn collect_enumeration_scope<'db>(
+	db: &'db dyn Db,
+	item: EnumerationItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let enumeration = item.enumeration(db);
 	let mut collector = ScopeCollector::new(db, item.into(), enumeration.data());
 	for ann in enumeration.annotations.iter() {
@@ -1380,7 +1485,7 @@ fn collect_enumeration_scope<'db>(db: &'db dyn Db, item: EnumerationItem<'db>) -
 fn collect_enum_assignment_scope<'db>(
 	db: &'db dyn Db,
 	item: EnumAssignmentItem<'db>,
-) -> ScopeResult<'db> {
+) -> (ScopeResult<'db>, Diagnostics) {
 	let assignment = item.enum_assignment(db);
 	let mut collector = ScopeCollector::new(db, item.into(), assignment.data());
 	collector.collect_expression(assignment.assignee);
@@ -1392,7 +1497,10 @@ fn collect_enum_assignment_scope<'db>(
 	collector.finish()
 }
 
-fn collect_function_scope<'db>(db: &'db dyn Db, item: FunctionItem<'db>) -> ScopeResult<'db> {
+fn collect_function_scope<'db>(
+	db: &'db dyn Db,
+	item: FunctionItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let function = item.function(db);
 	let mut collector = ScopeCollector::new(db, item.into(), function.data());
 	for ann in function.annotations.iter() {
@@ -1428,14 +1536,20 @@ fn collect_function_scope<'db>(db: &'db dyn Db, item: FunctionItem<'db>) -> Scop
 	collector.finish()
 }
 
-fn collect_output_scope<'db>(db: &'db dyn Db, item: OutputItem<'db>) -> ScopeResult<'db> {
+fn collect_output_scope<'db>(
+	db: &'db dyn Db,
+	item: OutputItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let output = item.output(db);
 	let mut collector = ScopeCollector::new(db, item.into(), output.data());
 	collector.collect_expression(output.expression);
 	collector.finish()
 }
 
-fn collect_solve_scope<'db>(db: &'db dyn Db, item: SolveItem<'db>) -> ScopeResult<'db> {
+fn collect_solve_scope<'db>(
+	db: &'db dyn Db,
+	item: SolveItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let solve = item.solve(db);
 	let mut collector = ScopeCollector::new(db, item.into(), solve.data());
 	for ann in solve.annotations.iter() {
@@ -1450,7 +1564,10 @@ fn collect_solve_scope<'db>(db: &'db dyn Db, item: SolveItem<'db>) -> ScopeResul
 	collector.finish()
 }
 
-fn collect_type_alias_scope<'db>(db: &'db dyn Db, item: TypeAliasItem<'db>) -> ScopeResult<'db> {
+fn collect_type_alias_scope<'db>(
+	db: &'db dyn Db,
+	item: TypeAliasItem<'db>,
+) -> (ScopeResult<'db>, Diagnostics) {
 	let type_alias = item.type_alias(db);
 	let mut collector = ScopeCollector::new(db, item.into(), type_alias.data());
 	for ann in type_alias.annotations.iter() {

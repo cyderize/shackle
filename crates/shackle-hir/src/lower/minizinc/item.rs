@@ -10,7 +10,7 @@ use super::{ExpressionCollector, TypeInstIdentifiers};
 use crate::{
 	Db, Identifier,
 	constants::IdentifierRegistry,
-	diagnostics::Errors,
+	diagnostics::Diagnostics,
 	input::{ModelFile, ModelFileContents, enumeration_names},
 	ir::{Model, Pattern, Type, item::*},
 	source::Origin,
@@ -21,6 +21,7 @@ pub struct ItemCollector<'db, 'a> {
 	db: &'db dyn Db,
 	identifiers: &'db IdentifierRegistry<'db>,
 	items: Vec<Item<'db>>,
+	diagnostics: Diagnostics,
 	file: ModelFile,
 	text: ModelFileContents<'a, 'db>,
 }
@@ -33,6 +34,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			db,
 			identifiers,
 			items: Vec::new(),
+			diagnostics: Diagnostics::default(),
 			file,
 			text: file.contents(db),
 		}
@@ -57,12 +59,17 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	/// Finish lowering
-	pub fn finish(self) -> Model<'db> {
-		Model::new(self.db, self.file, self.items)
+	pub fn finish(self) -> (Model<'db>, Diagnostics) {
+		(Model::new(self.db, self.file, self.items), self.diagnostics)
 	}
 
 	fn collect_annotation(&mut self, a: &minizinc::Annotation) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let name = Identifier::new(self.db, a.id().name(self.text.as_ref()));
 		let pattern = ctx.alloc_pattern(&a.id(), name);
 		let constructor = if let Some(ps) = a.parameters() {
@@ -85,6 +92,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 		} else {
 			Constructor::Atom { pattern }
 		};
+		let (data, source_map) = ctx.finish(Annotation { constructor });
 		if let Some(body) = a.body() {
 			let instead = if a.parameters().is_some() {
 				"function item"
@@ -93,26 +101,27 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			};
 			let src = self.file.source_file(self.db);
 			let span = body.span();
-			Errors::add(
-				self.db,
-				SyntaxError {
-					src,
-					span,
-					msg: format!(
-						"Annotation items cannot have right-hand side definitions. Use a {} instead",
-						instead
-					),
-				},
-			);
+			self.diagnostics.add_error(SyntaxError {
+				src,
+				span,
+				msg: format!(
+					"Annotation items cannot have right-hand side definitions. Use a {} instead",
+					instead
+				),
+			});
 		}
-		let (data, source_map) = ctx.finish(Annotation { constructor });
 		self.items.push(
 			AnnotationItem::new(self.db, data, source_map, Origin::new(self.file, a.span())).into(),
 		);
 	}
 
 	fn collect_assignment(&mut self, a: &minizinc::Assignment) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let assignee = ctx.collect_expression(&a.assignee());
 		let origin = Origin::new(self.file, a.span());
 
@@ -181,14 +190,11 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 					_ => {
 						let src = self.file.source_file(self.db);
 						let span = e.span();
-						Errors::add(
-							self.db,
-							SyntaxError {
-								src,
-								span,
-								msg: "Expression not valid in enumeration assignment".to_owned(),
-							},
-						);
+						ctx.diagnostics.add_error(SyntaxError {
+							src,
+							span,
+							msg: "Expression not valid in enumeration assignment".to_owned(),
+						});
 					}
 				}
 			}
@@ -212,7 +218,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_constraint(&mut self, c: &minizinc::Constraint) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let annotations = c
 			.annotations()
 			.map(|ann| ctx.collect_expression(&ann))
@@ -228,7 +239,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_declaration(&mut self, d: &minizinc::Declaration) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let pattern = ctx.collect_pattern(&d.pattern());
 		let declared_type = ctx.collect_type(&d.declared_type());
 		let annotations = d
@@ -249,7 +265,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_enumeration(&mut self, e: &minizinc::Enumeration) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let pattern = ctx.collect_pattern(&e.id().into());
 		// Flatten cases
 		let mut has_rhs = false;
@@ -319,7 +340,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_function(&mut self, f: &minizinc::Function) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let annotations = f
 			.annotations()
 			.map(|ann| ctx.collect_expression(&ann))
@@ -359,7 +385,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_output(&mut self, o: &minizinc::Output) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let section = o.section().map(|s| ctx.collect_expression(&s.into()));
 		let expression = ctx.collect_expression(&o.expression());
 		let (data, source_map) = ctx.finish(Output {
@@ -372,7 +403,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_predicate(&mut self, f: &minizinc::Predicate) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 
 		let annotations = f
 			.annotations()
@@ -423,7 +459,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_solve(&mut self, s: &minizinc::Solve) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let annotations = s
 			.annotations()
 			.map(|ann| ctx.collect_expression(&ann))
@@ -453,7 +494,12 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_type_alias(&mut self, t: &minizinc::TypeAlias) {
-		let mut ctx = ExpressionCollector::new(self.db, self.file, self.text.as_ref());
+		let mut ctx = ExpressionCollector::new(
+			self.db,
+			self.file,
+			self.text.as_ref(),
+			&mut self.diagnostics,
+		);
 		let annotations = t
 			.annotations()
 			.map(|ann| ctx.collect_expression(&ann))

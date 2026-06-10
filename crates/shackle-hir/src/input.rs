@@ -325,16 +325,30 @@ pub use model_ast_struct::ModelAst;
 fn model_ast<'db>(db: &'db dyn Db, input_file: ModelFile) -> ModelAst<'db> {
 	log::info!("Parsing {}", input_file);
 	let cst = Cst::new(&input_file.contents(db), input_file.language(db));
-	if cst.has_errors() {
-		let src = input_file.source_file(db);
-		Errors::extend(db, cst.errors(&src));
-	}
 	let ast = match input_file.language(db) {
 		InputLang::MiniZinc => MznModel::new(cst).into(),
 		InputLang::EPrime => EPrimeModel::new(cst).into(),
 		x => unreachable!("Input language {:?} not supported", x),
 	};
 	ModelAst::new(db, input_file, ast)
+}
+
+#[salsa::tracked(returns(ref))]
+fn model_syntax_errors(db: &dyn Db, input_file: ModelFile) -> Vec<ShackleError> {
+	let cst = Cst::new(&input_file.contents(db), input_file.language(db));
+	if !cst.has_errors() {
+		return Vec::new();
+	}
+	let src = input_file.source_file(db);
+	cst.errors(&src).map(ShackleError::from).collect()
+}
+
+/// Accumulate syntax errors for all resolved models.
+#[salsa::tracked]
+pub fn accumulate_syntax_errors(db: &dyn Db) {
+	for model in resolve_includes(db) {
+		Errors::extend(db, model_syntax_errors(db, *model).iter().cloned());
+	}
 }
 
 #[salsa::tracked]

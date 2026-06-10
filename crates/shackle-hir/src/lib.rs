@@ -43,8 +43,8 @@ pub use typecheck::*;
 
 use crate::{
 	diagnostics::{Errors, Warnings},
-	input::resolve_includes,
-	lower::lower_models,
+	input::{accumulate_syntax_errors, resolve_includes},
+	lower::{accumulate_lower_errors, lower_models},
 	pattern_matching::check_case_exhaustiveness,
 	toposort::topological_sort,
 	validate::validate_hir,
@@ -106,9 +106,13 @@ pub fn all_warnings(db: &dyn Db) -> Vec<&Warning> {
 #[salsa::tracked]
 fn run_hir_phase_internal(db: &dyn Db) {
 	let _ = resolve_includes(db);
+	accumulate_syntax_errors(db);
 	let _ = lower_models(db);
+	accumulate_lower_errors(db);
 	collect_scopes(db);
+	accumulate_scope_diagnostics(db);
 	typecheck(db);
+	accumulate_typecheck_diagnostics(db);
 	let _ = topological_sort(db);
 	check_case_exhaustiveness(db);
 	validate_hir(db);

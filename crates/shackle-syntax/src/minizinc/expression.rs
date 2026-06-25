@@ -173,7 +173,9 @@ impl<'tree> IfThenElse<'tree> {
 
 #[derive(Clone, Debug)]
 pub struct Branches<'tree> {
+	/// Conditions for each if/elseif branch.
 	conditions: Children<'tree, Expression<'tree>>,
+	/// Result expressions paired with each condition.
 	results: Children<'tree, Expression<'tree>>,
 }
 
@@ -333,8 +335,11 @@ impl<'tree> StringInterpolation<'tree> {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
+/// Internal representation of string interpolation contents.
 enum InterpolationPart<'tree> {
+	/// Literal string content.
 	String(CstNode<'tree>),
+	/// Embedded MiniZinc expression.
 	Expression(Expression<'tree>),
 }
 

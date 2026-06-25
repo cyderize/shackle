@@ -55,7 +55,9 @@ pub trait AstNode<'tree>: Debug {
 
 /// Iterator over child nodes with a particular field name
 pub struct Children<'tree, T> {
+	/// Untyped iterator over the matching CST children.
 	inner: ChildrenWithFieldName<'tree>,
+	/// Marker for the AST child type yielded by this iterator.
 	phantom: PhantomData<T>,
 }
 

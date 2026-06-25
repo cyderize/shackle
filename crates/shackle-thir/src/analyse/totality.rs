@@ -193,17 +193,17 @@ impl<'a, 'db> Visitor<'a, 'db> for TotalityVisitor<'a, 'db> {
 	}
 
 	fn visit_callable(&mut self, model: &'a Model<'db>, callable: &'a Callable<'db>) {
-		if let Callable::Function(f) = callable {
-			if !self.in_bool_ctx {
-				// This function is partial if the called function is partial
-				let _ = self.dependencies.insert(
-					*f,
-					Dependency {
-						in_var_ite: self.in_var_ite,
-						in_bool_ctx: self.in_bool_ctx,
-					},
-				);
-			}
+		if let Callable::Function(f) = callable
+			&& !self.in_bool_ctx
+		{
+			// This function is partial if the called function is partial
+			let _ = self.dependencies.insert(
+				*f,
+				Dependency {
+					in_var_ite: self.in_var_ite,
+					in_bool_ctx: self.in_bool_ctx,
+				},
+			);
 		}
 		visit_callable(self, model, callable);
 	}

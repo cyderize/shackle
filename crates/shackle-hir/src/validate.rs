@@ -208,7 +208,7 @@ pub fn validate_hir<'db>(db: &'db dyn Db) {
 	for p in multiple_asgs.into_iter() {
 		let asgs = &assignments[&p];
 		let variable = p.identifier(db).unwrap().pretty_print(db);
-		let mut asgs = asgs.into_iter();
+		let mut asgs = asgs.iter();
 		let (src, span) = asgs.next().unwrap().source_span(db);
 		let others = asgs
 			.map(|i| {

@@ -24,7 +24,6 @@ shackle-hir = {path = "../shackle-hir"}
 shackle-syntax = {path = "../shackle-syntax"}
 shackle-ty = {path = "../shackle-ty"}
 shackle-utils = {path = "../shackle-utils"}
-streaming-iterator = {workspace = true}
 
 [dev-dependencies]
 expect-test = {workspace = true}

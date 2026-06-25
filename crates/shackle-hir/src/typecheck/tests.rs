@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[salsa::tracked]
-fn compute_types<'db>(db: &'db dyn Db) {
+fn compute_types(db: &dyn Db) {
 	typecheck(db);
 	accumulate_typecheck_diagnostics(db);
 }

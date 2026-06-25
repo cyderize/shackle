@@ -534,7 +534,7 @@ impl<'db> ScopeData<'db> {
 		generation: u32,
 	) -> impl Iterator<Item = (Identifier<'db>, PatternRef<'db>)> {
 		self.variable_names.iter().filter_map(move |i| {
-			let (p, g) = self.variables[&i];
+			let (p, g) = self.variables[i];
 			if generation >= g { Some((*i, p)) } else { None }
 		})
 	}
@@ -773,16 +773,14 @@ impl<'db> ScopeCollector<'db> {
 				}
 			}
 			_ => {
-				if is_destructuring {
-					if !had_error {
-						let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
-						self.diagnostics.add_error(InvalidPattern {
-							span,
-							src,
-							msg: "This pattern is not valid in this context as it may not match all cases."
-								.to_owned(),
-						});
-					}
+				if is_destructuring && !had_error {
+					let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
+					self.diagnostics.add_error(InvalidPattern {
+						span,
+						src,
+						msg: "This pattern is not valid in this context as it may not match all cases."
+							.to_owned(),
+					});
 				}
 			}
 		}

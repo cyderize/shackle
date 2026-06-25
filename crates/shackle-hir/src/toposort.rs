@@ -416,7 +416,7 @@ mod tests {
 			.to(vec![model.into()]);
 		let items = topological_sort(&db);
 		let mut actual = String::new();
-		for item in items.iter().copied() {
+		for item in items {
 			let origin = item.origin(&db);
 			let (source, span) = origin.source_span(&db);
 			actual.push_str(&source.contents()[span.offset()..span.offset() + span.len()]);

@@ -23,6 +23,7 @@ pub use primitive::*;
 /// A model is a single `.eprime` file.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct EPrimeModel {
+	/// Concrete syntax tree backing the model.
 	cst: Cst,
 }
 

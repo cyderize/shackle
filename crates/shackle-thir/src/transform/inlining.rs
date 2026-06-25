@@ -104,7 +104,7 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 						{
 							log::debug!(
 								"Inlining {} at {} using call by value semantics",
-								PrettyPrinter::new(db, &model).pretty_print_signature((*f).into()),
+								PrettyPrinter::new(db, model).pretty_print_signature((*f).into()),
 								expression.origin().pretty_print(db)
 							);
 
@@ -174,7 +174,7 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 						{
 							log::debug!(
 								"Inlining {} at {} using call by name semantics",
-								PrettyPrinter::new(db, &model).pretty_print_signature((*f).into()),
+								PrettyPrinter::new(db, model).pretty_print_signature((*f).into()),
 								expression.origin().pretty_print(db)
 							);
 

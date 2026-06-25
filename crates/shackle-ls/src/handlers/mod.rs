@@ -100,7 +100,7 @@ pub(crate) mod tests {
 		R: lsp_types::request::Request,
 	{
 		let mut db = MockDatabase {
-			db: CompilerDatabase::with_file_handler(Arc::new(MockFileHandler(model.to_string()))),
+			db: CompilerDatabase::with_file_handler(Arc::new(MockFileHandler(model.to_owned()))),
 			options: LanguageServerOptions {
 				workspace_uri: lsp_types::Uri::from_str("file:///").ok(),
 			},

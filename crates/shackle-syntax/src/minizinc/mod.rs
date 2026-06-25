@@ -27,6 +27,7 @@ use super::{ast::Children, cst::Cst};
 /// A model is a single `.mzn` file.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct MznModel {
+	/// Concrete syntax tree backing the model.
 	cst: Cst,
 }
 
@@ -60,6 +61,7 @@ impl Debug for MznModel {
 /// A single `.dzn` file
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct DznFile {
+	/// Concrete syntax tree backing the file.
 	cst: Cst,
 }
 

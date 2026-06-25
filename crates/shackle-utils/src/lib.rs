@@ -33,7 +33,11 @@ pub fn maybe_grow_stack<R>(f: impl FnOnce() -> R) -> R {
 	stacker::maybe_grow(64 * 1024, 1024 * 1024, f)
 }
 
-#[allow(missing_docs, reason = "Salsa generates code with missing docs")]
+#[allow(
+	missing_docs,
+	clippy::missing_docs_in_private_items,
+	reason = "Salsa generates code with missing docs"
+)]
 mod interned_string {
 	use std::fmt::Display;
 

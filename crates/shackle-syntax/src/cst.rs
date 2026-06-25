@@ -301,12 +301,16 @@ impl<'a> std::fmt::Debug for CstNode<'a> {
 /// Iterator over child nodes with a particular field name
 #[derive(Clone)]
 pub struct ChildrenWithFieldName<'tree> {
+	/// Tree-sitter field ID to match while iterating.
 	field: NonZeroU16,
+	/// Cursor positioned at the current child node.
 	cursor: TreeCursor<'tree>,
+	/// Whether the iterator has reached the end of the sibling list.
 	done: bool,
 }
 
 impl<'tree> ChildrenWithFieldName<'tree> {
+	/// Reset the cursor to the first child of the parent node.
 	pub(crate) fn reset(&mut self) {
 		if self.cursor.goto_parent() {
 			let _ = self.cursor.goto_first_child();

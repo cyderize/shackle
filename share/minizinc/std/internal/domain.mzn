@@ -106,3 +106,5 @@ test mzn_check_index_set(string: name, int: d, int: dims, set of $$E: actual, se
 
 test has_bounds(var opt $$E: x) = has_bounds(mzn_destruct_opt(x).2);
 test has_bounds(var opt float: x) = has_bounds(mzn_destruct_opt(x).2);
+
+function array [int] of var bool: mzn_unwrap_bool_tuple(array [int] of tuple(var bool): x) = x.1;

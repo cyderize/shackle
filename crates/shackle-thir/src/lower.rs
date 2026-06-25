@@ -1832,11 +1832,11 @@ impl<'db, 'a, 'b, 'c> ExpressionCollector<'db, 'a, 'b, 'c> {
 						shackle_hir::ids::EntityId::from(*pattern),
 					),
 				));
+				let mut asgs = self.collect_destructuring(idx, false, *pattern);
 				generators.push(Generator::Assignment {
 					assignment: idx,
 					where_clause: where_clause.map(|w| self.collect_expression(w)),
 				});
-				let mut asgs = self.collect_destructuring(idx, false, *pattern);
 				if !asgs.is_empty() {
 					if shackle_hir::Pattern::is_refutable(*pattern, self.data) {
 						let w = pattern_to_where(

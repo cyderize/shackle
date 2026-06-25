@@ -680,14 +680,20 @@ pub fn fold_annotation<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> +
 /// Fold an annotation ID
 pub fn fold_annotation_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> + ?Sized>(
 	folder: &mut F,
-	_db: &'db dyn Db,
-	_model: &'a Model<'db, T>,
+	db: &'db dyn Db,
+	model: &'a Model<'db, T>,
 	a: AnnotationId<'db, T>,
 ) -> AnnotationId<'db, U> {
 	folder
 		.replacement_map()
 		.get_annotation(a)
-		.expect("Annotation has not been added to destination model")
+		.unwrap_or_else(|| {
+			panic!(
+				"Annotation {} at {} has not been added to destination model",
+				PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
+				model[a].origin().pretty_print(db)
+			)
+		})
 }
 
 /// Add the folded version of this constraint item into the destination model.
@@ -727,14 +733,19 @@ pub fn fold_constraint<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> +
 /// Fold a constraint ID
 pub fn fold_constraint_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> + ?Sized>(
 	folder: &mut F,
-	_db: &'db dyn Db,
-	_model: &'a Model<'db, T>,
+	db: &'db dyn Db,
+	model: &'a Model<'db, T>,
 	a: ConstraintId<'db, T>,
 ) -> ConstraintId<'db, U> {
 	folder
 		.replacement_map()
 		.get_constraint(a)
-		.expect("Constraint has not been added to destination model")
+		.unwrap_or_else(|| {
+			panic!(
+				"Constraint at {} has not been added to destination model",
+				model[a].origin().pretty_print(db)
+			)
+		})
 }
 
 /// Add the folded version of this declaration item into the destination model.

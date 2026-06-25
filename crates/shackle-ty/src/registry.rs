@@ -55,10 +55,12 @@ type_registry!(
 	set_of_int: Ty::par_set(db, par_int).unwrap(),
 	array_of_string: Ty::array(db, par_int, string).unwrap(),
 	array_of_bottom: Ty::array(db, bottom, bottom).unwrap(),
+	array_of_opt_bottom: Ty::array(db, par_int, opt_bottom).unwrap(),
 	array_of_int: Ty::array(db, par_int, par_int).unwrap(),
 	array_of_tuple_int_set_of_int: Ty::array(db, par_int, Ty::tuple(db, [par_int, set_of_int])).unwrap(),
 	mzn_enum: Ty::tuple(db, [par_int, Ty::array(db, par_int, Ty::tuple(db, [string, array_of_tuple_int_set_of_int, par_int])).unwrap()]),
 	mzn_enum_definition: Ty::array(db, par_int, Ty::tuple(db, [string, Ty::array(db, par_int, Ty::tuple(db, [par_int, set_of_int])).unwrap()])).unwrap(),
+	mzn_enum_param: Ty::tuple(db, [par_int, Ty::array(db, par_int, Ty::tuple(db, [par_int, par_int])).unwrap()])
 );
 
 impl<'db> TypeRegistry<'db> {

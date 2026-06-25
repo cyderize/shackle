@@ -79,7 +79,6 @@ impl Program {
 				"--output-mode",
 				"json",
 				"--json-stream",
-				"--ignore-stdlib",
 				"--output-objective",
 				"--output-output-item",
 				"--intermediate-solutions",

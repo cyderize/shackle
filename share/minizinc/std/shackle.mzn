@@ -12,6 +12,7 @@ include "internal/enum.mzn";
 include "internal/ite.mzn";
 include "internal/opt.mzn";
 include "internal/partiality.mzn";
+include "internal/reflect.mzn";
 include "internal/slice.mzn";
 include "internal/string.mzn";
 

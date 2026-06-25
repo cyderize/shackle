@@ -1,44 +1,276 @@
 //! Top-down resolution of types.
-//! - Assigns a real type to literals <>, [] and {}
-//! - Make optional coercions explicit using let expressions to give them concrete types
+//! - Assigns a real type to literals <>, [] and {} using a [Coercion] expression
+//! - Makes coercions to opt explicit using a [Coercion] expression
+//! - Makes value coercions explicit using bool2int, bool2int or int2float.
 
 use shackle_diagnostics::Result;
-use shackle_hir::OptType;
-use shackle_ty::{FunctionType, PolymorphicFunctionType, Ty, TyData, registry::TypeRegistry};
+use shackle_hir::{IntegerLiteral, constants::IdentifierRegistry};
+use shackle_ty::{
+	FunctionType, OptType, PolymorphicFunctionType, Ty, TyData, registry::TypeRegistry,
+};
 use shackle_utils::{maybe_grow_stack, refmap::RefMap};
 
 use crate::{
-	Callable, Db, Declaration, DeclarationId, Domain, EnumConstructorKind, Expression,
-	ExpressionData, FunctionId, Item, Let, LetItem, Marker, Model,
+	ArrayComprehension, Callable, Db, Declaration, DeclarationId, Domain, EnumConstructorKind,
+	Expression, ExpressionData, FunctionId, Generator, Item, Let, LetItem, LookupCall, Marker,
+	Model, RecordAccess, RecordLiteral, TupleAccess, TupleLiteral,
 	traverse::{Folder, ReplacementMap, add_declaration, add_function, fold_expression},
 };
 
-/// Create a let wrapping an expression into a declaration.
-///
-/// Helper to to make opt coercions explicit.
+/// Coerce an expression to the given type if required
 pub fn add_coercion<'db, T: Marker>(
 	db: &'db dyn Db,
 	model: &mut Model<'db, T>,
 	ty: Ty<'db>,
 	expression: Expression<'db, T>,
 ) -> Expression<'db, T> {
-	if !expression.ty().contains_bottom(db) && !is_opt_subtype_of(db, expression.ty(), ty) {
-		return expression;
-	}
-	let origin = expression.origin();
-	let mut declaration = Declaration::new(false, Domain::unbounded(db, origin, ty));
-	declaration.set_definition(expression);
-	declaration.validate(db);
-	let idx = model.add_declaration(Item::new(declaration, origin));
-	Expression::new(
+	Coercer {
 		db,
 		model,
-		origin,
-		Let {
-			items: vec![LetItem::Declaration(idx)],
-			in_expression: Box::new(Expression::new(db, model, origin, idx)),
-		},
-	)
+		ids: IdentifierRegistry::lookup(db),
+		tys: TypeRegistry::lookup(db),
+	}
+	.coerce(ty, expression)
+}
+
+struct Coercer<'a, 'db, T: Marker> {
+	db: &'db dyn Db,
+	model: &'a mut Model<'db, T>,
+	ids: &'db IdentifierRegistry<'db>,
+	tys: &'db TypeRegistry<'db>,
+}
+
+impl<'a, 'db, T: Marker> Coercer<'a, 'db, T> {
+	fn coerce(&mut self, ty: Ty<'db>, expression: Expression<'db, T>) -> Expression<'db, T> {
+		let db = self.db;
+		if expression.ty() == ty || expression.ty().make_par(db) == ty.make_par(db) {
+			return expression;
+		}
+
+		let ids = self.ids;
+		let tys = self.tys;
+		let origin = expression.origin();
+
+		if ty.opt(db) == Some(OptType::Opt) && expression.ty().opt(db) != Some(OptType::Opt) {
+			log::debug!("Adding val2opt at {}", origin.pretty_print(db));
+			let coerced = self.coerce(ty.make_occurs(db), expression);
+			return Expression::new(
+				db,
+				self.model,
+				origin,
+				LookupCall {
+					function: ids.functions.val2opt.into(),
+					arguments: vec![coerced],
+				},
+			);
+		}
+
+		if expression.ty() == tys.array_of_bottom
+			|| expression.ty() == tys.array_of_opt_bottom
+			|| expression.ty() == tys.set_of_bottom
+			|| expression.ty() == tys.opt_bottom
+		{
+			let mut decl = Declaration::new(false, Domain::unbounded(db, origin, ty));
+			decl.set_definition(expression);
+			let idx = self.model.add_declaration(Item::new(decl, origin));
+			return Expression::new(
+				db,
+				self.model,
+				origin,
+				Let {
+					items: vec![LetItem::Declaration(idx)],
+					in_expression: Box::new(Expression::new(db, self.model, origin, idx)),
+				},
+			);
+		}
+
+		let (expr_ty, target_ty) = if ty.is_set(db) {
+			(
+				expression.ty().elem_ty(db).unwrap(),
+				ty.elem_ty(db).unwrap(),
+			)
+		} else {
+			(expression.ty(), ty)
+		};
+
+		let coerced = match target_ty.lookup(db) {
+			TyData::Integer(_, _) => {
+				assert!(
+					expr_ty.is_bool(db),
+					"Invalid coercion from {} to {}",
+					expr_ty,
+					target_ty
+				);
+				log::debug!(
+					"Adding bool2int at {}",
+					expression.origin().pretty_print(db)
+				);
+				Expression::new(
+					db,
+					self.model,
+					origin,
+					LookupCall {
+						function: ids.functions.bool2int.into(),
+						arguments: vec![expression],
+					},
+				)
+			}
+			TyData::Float(_, _) => {
+				if expr_ty.is_bool(db) {
+					log::debug!(
+						"Adding bool2float at {}",
+						expression.origin().pretty_print(db)
+					);
+					Expression::new(
+						db,
+						self.model,
+						origin,
+						LookupCall {
+							function: ids.functions.bool2float.into(),
+							arguments: vec![expression],
+						},
+					)
+				} else {
+					assert!(
+						expr_ty.is_int(db),
+						"Invalid coercion from {} to {}",
+						expr_ty,
+						target_ty
+					);
+					log::debug!(
+						"Adding int2float at {}",
+						expression.origin().pretty_print(db)
+					);
+					Expression::new(
+						db,
+						self.model,
+						origin,
+						LookupCall {
+							function: ids.functions.int2float.into(),
+							arguments: vec![expression],
+						},
+					)
+				}
+			}
+			TyData::Array { element, .. } => {
+				let expr_decl = Declaration::from_expression(db, false, expression);
+				let idx = self.model.add_declaration(Item::new(expr_decl, origin));
+				let expr_ident = Expression::new(db, self.model, origin, idx);
+				let gen_decl = Declaration::new(
+					false,
+					Domain::unbounded(db, origin, expr_ty.elem_ty(db).unwrap()),
+				);
+				let gen_idx = self.model.add_declaration(Item::new(gen_decl, origin));
+				let gen_ident = Expression::new(db, self.model, origin, gen_idx);
+				let template = self.coerce(*element, gen_ident);
+				let comp = Expression::new(
+					db,
+					self.model,
+					origin,
+					ArrayComprehension {
+						indices: None,
+						template: Box::new(template),
+						generators: vec![Generator::Iterator {
+							declarations: vec![gen_idx],
+							collection: expr_ident.clone(),
+							where_clause: None,
+						}],
+					},
+				);
+				let array = Expression::new(
+					db,
+					self.model,
+					origin,
+					LookupCall {
+						function: ids.functions.array_xd.into(),
+						arguments: vec![expr_ident, comp],
+					},
+				);
+				Expression::new(
+					db,
+					self.model,
+					origin,
+					Let {
+						items: vec![LetItem::Declaration(idx)],
+						in_expression: Box::new(array),
+					},
+				)
+			}
+			TyData::Tuple(_, fs) => {
+				let expr_decl = Declaration::from_expression(db, false, expression);
+				let idx = self.model.add_declaration(Item::new(expr_decl, origin));
+				let expr_ident = Expression::new(db, self.model, origin, idx);
+				let fields = fs
+					.iter()
+					.enumerate()
+					.map(|(i, t)| {
+						let field = Expression::new(
+							db,
+							self.model,
+							origin,
+							TupleAccess {
+								tuple: Box::new(expr_ident.clone()),
+								field: IntegerLiteral((i + 1) as i64),
+							},
+						);
+						self.coerce(*t, field)
+					})
+					.collect::<Vec<_>>();
+				let tuple = Expression::new(db, self.model, origin, TupleLiteral(fields));
+				Expression::new(
+					db,
+					self.model,
+					origin,
+					Let {
+						items: vec![LetItem::Declaration(idx)],
+						in_expression: Box::new(tuple),
+					},
+				)
+			}
+			TyData::Record(_, fs) => {
+				let expr_decl = Declaration::from_expression(db, false, expression);
+				let idx = self.model.add_declaration(Item::new(expr_decl, origin));
+				let expr_ident = Expression::new(db, self.model, origin, idx);
+				let fields = fs
+					.iter()
+					.map(|(i, t)| {
+						let ident = (*i).into();
+						let field = Expression::new(
+							db,
+							self.model,
+							origin,
+							RecordAccess {
+								record: Box::new(expr_ident.clone()),
+								field: ident,
+							},
+						);
+						(ident, self.coerce(*t, field))
+					})
+					.collect::<Vec<_>>();
+				let record = Expression::new(db, self.model, origin, RecordLiteral(fields));
+				Expression::new(
+					db,
+					self.model,
+					origin,
+					Let {
+						items: vec![LetItem::Declaration(idx)],
+						in_expression: Box::new(record),
+					},
+				)
+			}
+			_ => expression,
+		};
+
+		assert!(
+			coerced.ty().ty_var(db).is_some() || coerced.ty().is_subtype_of(db, ty),
+			"Coercion from {} to {} resulted in type {}",
+			expr_ty,
+			ty,
+			coerced.ty()
+		);
+
+		coerced
+	}
 }
 
 fn replace_bottom<'db>(db: &'db dyn Db, ty: Ty<'db>) -> Ty<'db> {
@@ -73,32 +305,6 @@ fn replace_bottom<'db>(db: &'db dyn Db, ty: Ty<'db>) -> Ty<'db> {
 	}
 }
 
-fn is_opt_subtype_of<'db>(db: &'db dyn Db, a: Ty<'db>, b: Ty<'db>) -> bool {
-	if a.opt(db) == Some(OptType::NonOpt) && b.opt(db) == Some(OptType::Opt) {
-		return true;
-	}
-	match (a.lookup(db), b.lookup(db)) {
-		(TyData::Array { element: e1, .. }, TyData::Array { element: e2, .. })
-		| (TyData::Set(_, _, e1), TyData::Set(_, _, e2)) => is_opt_subtype_of(db, *e1, *e2),
-		(TyData::Tuple(_, f1), TyData::Tuple(_, f2)) => f1
-			.iter()
-			.zip(f2.iter())
-			.any(|(t1, t2)| is_opt_subtype_of(db, *t1, *t2)),
-		(TyData::Record(_, f1), TyData::Record(_, f2)) => f1
-			.iter()
-			.zip(f2.iter())
-			.any(|((_, t1), (_, t2))| is_opt_subtype_of(db, *t1, *t2)),
-		(TyData::Function(_, f1), TyData::Function(_, f2)) => {
-			f1.params
-				.iter()
-				.zip(f2.params.iter())
-				.any(|(t1, t2)| is_opt_subtype_of(db, *t2, *t1))
-				|| is_opt_subtype_of(db, f1.return_type, f2.return_type)
-		}
-		_ => false,
-	}
-}
-
 #[derive(Default)]
 struct TopDownTyper<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	types: RefMap<'a, Expression<'db, Src>, Ty<'db>>,
@@ -124,7 +330,7 @@ impl<'a, 'db, Src: Marker, Dst: Marker> Folder<'a, 'db, Dst, Src>
 		d: DeclarationId<'db, Src>,
 	) {
 		if let Some(def) = model[d].definition() {
-			self.insert(def, model[d].ty());
+			self.insert(db, def, model[d].ty());
 		}
 		let _ = add_declaration(self, db, model, d);
 	}
@@ -136,7 +342,7 @@ impl<'a, 'db, Src: Marker, Dst: Marker> Folder<'a, 'db, Dst, Src>
 		f: FunctionId<'db, Src>,
 	) {
 		if let Some(body) = model[f].body() {
-			self.insert(body, model[f].return_type());
+			self.insert(db, body, model[f].return_type());
 		}
 		let _ = add_function(self, db, model, f);
 	}
@@ -158,9 +364,9 @@ impl<'a, 'db, Src: Marker, Dst: Marker> Folder<'a, 'db, Dst, Src>
 				.map(|ann| self.fold_expression(db, model, ann)),
 		);
 		if let Some(def) = d.definition() {
-			self.insert(def, d.ty());
+			self.insert(db, def, d.ty());
 			let _ = self.propagate_ty(db, model, def);
-			let def = fold_expression(self, db, model, def);
+			let def = self.fold_expression(db, model, def);
 			declaration.set_definition(def);
 			declaration.validate(db);
 		}
@@ -185,12 +391,25 @@ impl<'a, 'db, Src: Marker, Dst: Marker> Folder<'a, 'db, Dst, Src>
 }
 
 impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
-	fn insert(&mut self, e: &'a Expression<'db, Src>, ty: Ty<'db>) {
+	fn insert(&mut self, db: &'db dyn Db, e: &'a Expression<'db, Src>, ty: Ty<'db>) {
+		assert!(
+			e.ty().is_subtype_of(db, ty),
+			"{} is not a subtype of {} at {}",
+			e.ty().pretty_print(db),
+			ty.pretty_print(db),
+			e.origin().pretty_print(db)
+		);
 		let _ = self.types.insert(e, ty);
 	}
 
-	fn extend(&mut self, iter: impl Iterator<Item = (&'a Expression<'db, Src>, Ty<'db>)>) {
-		self.types.extend(iter);
+	fn extend(
+		&mut self,
+		db: &'db dyn Db,
+		iter: impl Iterator<Item = (&'a Expression<'db, Src>, Ty<'db>)>,
+	) {
+		for (e, ty) in iter {
+			self.insert(db, e, ty);
+		}
 	}
 
 	fn get(&self, e: &'a Expression<'db, Src>) -> Option<Ty<'db>> {
@@ -209,26 +428,30 @@ impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
 				if al.is_empty() {
 					return false;
 				}
-				self.extend(al.iter().map(|e| (e, ty.elem_ty(db).unwrap())))
+				self.extend(db, al.iter().map(|e| (e, ty.elem_ty(db).unwrap())))
 			}
 			ExpressionData::ArrayComprehension(c) => {
-				self.insert(&*c.template, ty.elem_ty(db).unwrap())
+				self.insert(db, &*c.template, ty.elem_ty(db).unwrap())
 			}
 			ExpressionData::SetLiteral(sl) => {
 				if sl.is_empty() {
 					return false;
 				}
-				self.extend(sl.iter().map(|e| {
-					(
-						e,
-						ty.elem_ty(db)
-							.unwrap()
-							.with_inst(db, ty.inst(db).unwrap())
-							.unwrap(),
-					)
-				}))
+				self.extend(
+					db,
+					sl.iter().map(|e| {
+						(
+							e,
+							ty.elem_ty(db)
+								.unwrap()
+								.with_inst(db, ty.inst(db).unwrap())
+								.unwrap(),
+						)
+					}),
+				)
 			}
 			ExpressionData::SetComprehension(c) => self.insert(
+				db,
 				&*c.template,
 				ty.elem_ty(db)
 					.unwrap()
@@ -236,15 +459,18 @@ impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
 					.unwrap(),
 			),
 			ExpressionData::IfThenElse(ite) => self.extend(
+				db,
 				ite.branches
 					.iter()
 					.map(|b| &b.result)
 					.chain([&*ite.else_result])
 					.map(|e| (e, ty)),
 			),
-			ExpressionData::Case(c) => self.extend(c.branches.iter().map(|b| (&b.result, ty))),
-			ExpressionData::TupleLiteral(tl) => self.extend(tl.iter().zip(ty.fields(db).unwrap())),
-			ExpressionData::Let(l) => self.insert(&l.in_expression, ty),
+			ExpressionData::Case(c) => self.extend(db, c.branches.iter().map(|b| (&b.result, ty))),
+			ExpressionData::TupleLiteral(tl) => {
+				self.extend(db, tl.iter().zip(ty.fields(db).unwrap()))
+			}
+			ExpressionData::Let(l) => self.insert(db, &l.in_expression, ty),
 			ExpressionData::Call(c) => {
 				let params = match &c.function {
 					Callable::Annotation(a) => model[*a]
@@ -309,7 +535,7 @@ impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
 						}
 					}
 				};
-				self.extend(c.arguments.iter().zip(params));
+				self.extend(db, c.arguments.iter().zip(params));
 				return false;
 			}
 			_ => return false,
@@ -384,6 +610,7 @@ mod tests {
 		check_no_stdlib(
 			top_down_type,
 			r#"
+					function opt $T: val2opt($T: x);
                     any: x = ([1, <>],);
                     function int: foo(opt int);
                     any: y = foo(3);
@@ -392,40 +619,17 @@ mod tests {
 					} in (<>, 1).1;
 					"#,
 			expect!([r#"
-    tuple(array [int] of opt int): x = ([let {
-      opt int: _DECL_1 = 1;
-    } in _DECL_1, let {
+    function opt $T: val2opt($T: x);
+    tuple(array [int] of opt int): x = ([val2opt(1), let {
       opt int: _DECL_2 = <>;
     } in _DECL_2],);
     function int: foo(opt int: _DECL_4);
-    int: y = foo(let {
-      opt int: _DECL_5 = 3;
-    } in _DECL_5);
+    int: y = foo(val2opt(3));
     opt int: z = let {
       int: b = 1;
     } in let {
-      opt int: _DECL_9 = ((let {
-      opt ..: _DECL_8 = <>;
-    } in _DECL_8, 1)).1;
-    } in _DECL_9;
-    solve satisfy;
-"#]),
-		)
-	}
-
-	#[test]
-	fn test_top_down_type_not_needed() {
-		check_no_stdlib(
-			top_down_type,
-			r#"
-                    opt int: x = <>;
-                    array [int] of bool: y = [];
-                    set of int: z = {};
-					"#,
-			expect!([r#"
-    opt int: x = <>;
-    array [int] of bool: y = [];
-    set of int: z = {};
+      opt int: _DECL_7 = ((<>, 1)).1;
+    } in _DECL_7;
     solve satisfy;
 "#]),
 		)
@@ -436,20 +640,22 @@ mod tests {
 		check_no_stdlib(
 			top_down_type,
 			r#"
+					function opt $T: val2opt($T: x);
+					function array [int] of opt int: arrayXd(array [int] of int, array [int] of opt int);
                     any: x = [1];
                     any: y = if true then x else [<>] endif;
                     array [int] of opt int: z = [1];
 					"#,
 			expect!([r#"
+    function opt $T: val2opt($T: x);
+    function array [int] of opt int: arrayXd(array [int] of int: _DECL_2, array [int] of opt int: _DECL_3);
     array [int] of int: x = [1];
     array [int] of opt int: y = if true then let {
-      array [int] of opt int: _DECL_2 = x;
-    } in _DECL_2 else [let {
-      opt int: _DECL_3 = <>;
-    } in _DECL_3] endif;
-    array [int] of opt int: z = [let {
-      opt int: _DECL_5 = 1;
-    } in _DECL_5];
+      array [int] of int: _DECL_5 = x;
+    } in arrayXd(_DECL_5, [val2opt(_DECL_6) | _DECL_6 in _DECL_5]) else [let {
+      opt int: _DECL_7 = <>;
+    } in _DECL_7] endif;
+    array [int] of opt int: z = [val2opt(1)];
     solve satisfy;
 "#]),
 		)
@@ -460,14 +666,22 @@ mod tests {
 		check_no_stdlib(
 			top_down_type,
 			r#"
+				function int: bool2int(bool: b);
+				function float: bool2float(bool: b);
+				function float: int2float(int: i);
 				float: f = let {
 					int: i = true;
 				} in i;
+				float: g = true;
 				"#,
 			expect!([r#"
+    function int: bool2int(bool: b);
+    function float: bool2float(bool: b);
+    function float: int2float(int: i);
     float: f = let {
-      int: i = true;
-    } in i;
+      int: i = bool2int(true);
+    } in int2float(i);
+    float: g = bool2float(true);
     solve satisfy;
 "#]),
 		)

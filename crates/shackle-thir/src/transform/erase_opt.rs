@@ -6,18 +6,14 @@
 //!
 //! Does not handle records, so records must be erased into tuples first
 
-use rustc_hash::FxHashMap;
 use shackle_diagnostics::Result;
-use shackle_hir::{
-	BooleanLiteral, IntegerLiteral, OptType, VarType, constants::IdentifierRegistry,
-};
-use shackle_ty::{Ty, TyData, registry::TypeRegistry};
+use shackle_hir::{BooleanLiteral, OptType, VarType, constants::IdentifierRegistry};
+use shackle_ty::{Ty, registry::TypeRegistry};
 use shackle_utils::maybe_grow_stack;
 
 use crate::{
-	ArrayComprehension, Call, Callable, Constraint, Db, Declaration, Domain, DomainData,
-	DummyValue, Expression, ExpressionData, FunctionId, Generator, Item, Let, LetItem, LookupCall,
-	LookupIdentifier, Marker, Model, TupleAccess, TupleLiteral,
+	Constraint, Db, Declaration, Domain, DomainData, DummyValue, Expression, ExpressionData,
+	FunctionId, Item, Let, LetItem, LookupCall, LookupIdentifier, Marker, Model, TupleLiteral,
 	source::Origin,
 	traverse::{
 		Folder, ReplacementMap, add_function, fold_domain, fold_expression, fold_function_body,
@@ -29,7 +25,6 @@ struct OptEraser<'db, Dst: Marker, Src: Marker = ()> {
 	replacement_map: ReplacementMap<'db, Dst, Src>,
 	ids: &'db IdentifierRegistry<'db>,
 	tys: &'db TypeRegistry<'db>,
-	needs_opt_erase: FxHashMap<(Ty<'db>, Ty<'db>), bool>,
 }
 
 impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db, Dst, Src> {
@@ -44,8 +39,9 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 	fn add_function(&mut self, db: &'db dyn Db, model: &Model<'db, Src>, f: FunctionId<'db, Src>) {
 		if model[f].name() == self.ids.functions.mzn_construct_opt
 			|| model[f].name() == self.ids.functions.mzn_destruct_opt
+			|| model[f].name() == self.ids.functions.val2opt
 		{
-			// Remove mzn_construct_opt/mzn_destruct_opt
+			// Remove mzn_construct_opt/mzn_destruct_opt/val2opt
 			return;
 		}
 		let _ = add_function(self, db, model, f);
@@ -59,8 +55,9 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 	) {
 		if model[f].name() == self.ids.functions.mzn_construct_opt
 			|| model[f].name() == self.ids.functions.mzn_destruct_opt
+			|| model[f].name() == self.ids.functions.val2opt
 		{
-			// Remove mzn_construct_opt/mzn_destruct_opt
+			// Remove mzn_construct_opt/mzn_destruct_opt/val2opt
 			return;
 		}
 		fold_function_body(self, db, model, f)
@@ -83,9 +80,25 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 				.map(|ann| self.fold_expression(db, model, ann)),
 		);
 		if let Some(def) = d.definition() {
-			let folded = self.fold_expression(db, model, def);
-			let erased = self.erase_opt(db, d.ty(), def.ty(), folded);
-			declaration.set_definition(erased);
+			if matches!(&**def, ExpressionData::Absent) {
+				// Transform `<>` into `(false, ...)`
+				let origin = def.origin();
+				let bool_false = Expression::new(db, &self.model, origin, BooleanLiteral(false));
+				let bottom = Expression::new(
+					db,
+					&self.model,
+					origin,
+					DummyValue(declaration.ty().fields(db).unwrap()[1]),
+				);
+				declaration.set_definition(Expression::new(
+					db,
+					&self.model,
+					origin,
+					TupleLiteral(vec![bool_false, bottom]),
+				));
+			} else {
+				declaration.set_definition(self.fold_expression(db, model, def));
+			}
 			declaration.validate(db);
 		} else if let DomainData::Bounded(e) = &**d.domain()
 			&& d.ty().inst(db) == Some(VarType::Var)
@@ -143,45 +156,40 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 		})
 	}
 
-	fn fold_call(
-		&mut self,
-		db: &'db dyn Db,
-		model: &Model<'db, Src>,
-		call: &Call<'db, Src>,
-	) -> Call<'db, Dst> {
-		let fe = call.function_type(db, model);
-
-		Call {
-			function: self.fold_callable(db, model, &call.function),
-			arguments: call
-				.arguments
-				.iter()
-				.zip(fe.params.iter())
-				.map(|(arg, param_ty)| {
-					let folded = self.fold_expression(db, model, arg);
-					self.erase_opt(db, *param_ty, arg.ty(), folded)
-				})
-				.collect(),
-		}
-	}
-
 	fn fold_expression(
 		&mut self,
 		db: &'db dyn Db,
 		model: &Model<'db, Src>,
 		expression: &Expression<'db, Src>,
 	) -> Expression<'db, Dst> {
+		let origin = expression.origin();
 		let mut folded = maybe_grow_stack(|| {
-			if let ExpressionData::Call(c) = &**expression {
-				// Remove calls to mzn_construct_opt/mzn_destruct_opt
-				if let Callable::Function(f) = &c.function
-					&& (model[*f].name() == self.ids.functions.mzn_construct_opt
-						|| model[*f].name() == self.ids.functions.mzn_destruct_opt)
-				{
-					return self.fold_expression(db, model, &c.arguments[0]);
+			match &**expression {
+				ExpressionData::Absent => {
+					unreachable!("<> should have been replaced in a let declaration coercion")
 				}
+				ExpressionData::Call(c) if c.matches_builtin(model, self.ids.functions.val2opt) => {
+					// Known to occur, transform `x` into `(true, x)`
+					log::info!("Erasing val2opt at {}", origin.pretty_print(db));
+					assert_eq!(c.arguments.len(), 1, "val2opt should have one argument");
+					let bool_true = Expression::new(db, &self.model, origin, BooleanLiteral(true));
+					let value = self.fold_expression(db, model, &c.arguments[0]);
+					Expression::new(
+						db,
+						&self.model,
+						origin,
+						TupleLiteral(vec![bool_true, value]),
+					)
+				}
+				ExpressionData::Call(c)
+					if c.matches_builtin(model, self.ids.functions.mzn_construct_opt)
+						|| c.matches_builtin(model, self.ids.functions.mzn_destruct_opt) =>
+				{
+					// Remove calls to mzn_construct_opt/mzn_destruct_opt
+					self.fold_expression(db, model, &c.arguments[0])
+				}
+				_ => fold_expression(self, db, model, expression),
 			}
-			fold_expression(self, db, model, expression)
 		});
 		if expression.ty() == self.tys.par_opt_bool || expression.ty() == self.tys.var_opt_bool {
 			// Needed so we can implement partial semantics during totalisation
@@ -192,171 +200,18 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 				LookupIdentifier(self.ids.annotations.mzn_opt_bool),
 			));
 		}
+		assert!(
+			folded.ty().opt(db) != Some(OptType::Opt),
+			"Did not erase opt for {:?} got {:?}) at {}",
+			expression,
+			folded,
+			expression.origin().pretty_print(db)
+		);
 		folded
 	}
 }
 
 impl<'db, Src: Marker, Dst: Marker> OptEraser<'db, Dst, Src> {
-	fn needs_opt_erase(&mut self, db: &'db dyn Db, top_down: Ty<'db>, bottom_up: Ty<'db>) -> bool {
-		if let Some(b) = self.needs_opt_erase.get(&(top_down, bottom_up)) {
-			return *b;
-		}
-		let result = top_down.opt(db) == Some(OptType::Opt)
-			&& bottom_up.opt(db) == Some(OptType::NonOpt)
-			|| match (top_down.lookup(db), bottom_up.lookup(db)) {
-				(TyData::Array { element: t_ty, .. }, TyData::Array { element: b_ty, .. }) => {
-					self.needs_opt_erase(db, *t_ty, *b_ty)
-				}
-				(TyData::Set(_, _, t_ty), TyData::Set(_, _, b_ty)) => {
-					self.needs_opt_erase(db, *t_ty, *b_ty)
-				}
-				(TyData::Tuple(_, fs1), TyData::Tuple(_, fs2)) => fs1
-					.iter()
-					.zip(fs2.iter())
-					.any(|(t_ty, b_ty)| self.needs_opt_erase(db, *t_ty, *b_ty)),
-				_ => false,
-			};
-		let _ = self.needs_opt_erase.insert((top_down, bottom_up), result);
-		result
-	}
-
-	fn erase_opt(
-		&mut self,
-		db: &'db dyn Db,
-		top_down_ty: Ty<'db>,
-		bottom_up_ty: Ty<'db>,
-		mut e: Expression<'db, Dst>,
-	) -> Expression<'db, Dst> {
-		let origin = e.origin();
-		if top_down_ty.opt(db) == Some(OptType::Opt)
-			&& bottom_up_ty.opt(db) == Some(OptType::NonOpt)
-		{
-			// Known to occur, transform `x` into `(true, x)`
-			let bool_true = Expression::new(db, &self.model, origin, BooleanLiteral(true));
-			return Expression::new(db, &self.model, origin, TupleLiteral(vec![bool_true, e]));
-		}
-		if let ExpressionData::Absent = &*e {
-			// Transform `<>` into `(false, ...)`
-			let bool_false = Expression::new(db, &self.model, origin, BooleanLiteral(false));
-			let bottom = Expression::new(
-				db,
-				&self.model,
-				origin,
-				DummyValue(top_down_ty.with_opt(db, OptType::NonOpt)),
-			);
-			let mut tl = Expression::new(
-				db,
-				&self.model,
-				origin,
-				TupleLiteral(vec![bool_false, bottom]),
-			);
-			tl.annotations_mut().extend(e.annotations_mut().drain(..));
-			return tl;
-		}
-
-		if self.needs_opt_erase(db, top_down_ty, bottom_up_ty) {
-			// Needs to be reconstructed to erase optionality
-			let (decl, ident) = if matches!(&*e, ExpressionData::Identifier(_)) {
-				(None, e)
-			} else {
-				let mut declaration =
-					Declaration::new(false, Domain::unbounded(db, origin, e.ty()));
-				declaration.set_definition(e);
-				let idx = self.model.add_declaration(Item::new(declaration, origin));
-				(Some(idx), Expression::new(db, &self.model, origin, idx))
-			};
-
-			let erased = match bottom_up_ty.lookup(db) {
-				TyData::Array { .. } => {
-					// Create comprehension then erase optionality on template
-					let idx = self.model.add_declaration(Item::new(
-						Declaration::new(
-							false,
-							Domain::unbounded(db, origin, ident.ty().elem_ty(db).unwrap()),
-						),
-						origin,
-					));
-					let template = self.erase_opt(
-						db,
-						top_down_ty.elem_ty(db).unwrap(),
-						bottom_up_ty.elem_ty(db).unwrap(),
-						Expression::new(db, &self.model, origin, idx),
-					);
-					Expression::new(
-						db,
-						&self.model,
-						origin,
-						LookupCall {
-							function: self.ids.functions.array_xd.into(),
-							arguments: vec![
-								ident.clone(),
-								Expression::new(
-									db,
-									&self.model,
-									origin,
-									ArrayComprehension {
-										generators: vec![Generator::Iterator {
-											declarations: vec![idx],
-											collection: ident,
-											where_clause: None,
-										}],
-										indices: None,
-										template: Box::new(template),
-									},
-								),
-							],
-						},
-					)
-				}
-				TyData::Tuple(_, b_fs) => {
-					// Create tuple literal then erase optionality on fields
-					let fields = top_down_ty
-						.fields(db)
-						.unwrap()
-						.into_iter()
-						.zip(b_fs.iter())
-						.enumerate()
-						.map(|(i, (t, b))| {
-							self.erase_opt(
-								db,
-								t,
-								*b,
-								Expression::new(
-									db,
-									&self.model,
-									origin,
-									TupleAccess {
-										tuple: Box::new(ident.clone()),
-										field: IntegerLiteral(i as i64 + 1),
-									},
-								),
-							)
-						})
-						.collect();
-					Expression::new(db, &self.model, origin, TupleLiteral(fields))
-				}
-				_ => unreachable!(),
-			};
-
-			if let Some(decl) = decl {
-				return Expression::new(
-					db,
-					&self.model,
-					origin,
-					Let {
-						items: vec![LetItem::Declaration(decl)],
-						in_expression: Box::new(erased),
-					},
-				);
-			} else {
-				return erased;
-			}
-		}
-
-		// No need to do anything
-		e
-	}
-
 	fn create_opt_var(
 		&mut self,
 		db: &'db dyn Db,
@@ -437,7 +292,6 @@ pub fn erase_opt<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<'db>> 
 		replacement_map: ReplacementMap::default(),
 		ids: IdentifierRegistry::lookup(db),
 		tys: TypeRegistry::lookup(db),
-		needs_opt_erase: FxHashMap::default(),
 	};
 	c.add_model(db, &model);
 	Ok(c.model)
@@ -455,6 +309,9 @@ mod tests {
 		check_no_stdlib(
 			transformer(vec![top_down_type, erase_opt]),
 			r#"
+				annotation mzn_opt_bool;
+				function var opt $T: val2opt(var $T: x);
+				function opt $T: val2opt($T: x);
 				function set of int: mzn_opt_domain(set of int: x);
 				predicate mzn_opt_channel(var opt int: x, set of int: s);
                 opt int: x = 2;
@@ -468,36 +325,33 @@ mod tests {
 				any: f = foo(1);
             "#,
 			expect!([r#"
+    annotation mzn_opt_bool;
     function set of int: mzn_opt_domain(set of int: x);
     function var bool: mzn_opt_channel(tuple(var bool, var int): x, set of int: s);
     tuple(bool, int): x = (true, 2);
-    tuple(bool, bool): y = (false, false);
+    tuple(bool, bool): y = let {
+      tuple(bool, bool): _DECL_5 = (false, false);
+    } in _DECL_5 :: (mzn_opt_bool) :: (mzn_opt_bool);
     tuple(var bool, var int): a = let {
-      set of int: _DECL_6 = {1, 2, 3};
+      set of int: _DECL_7 = {1, 2, 3};
     } in let {
-      var bool: _DECL_7;
-      var mzn_opt_domain(_DECL_6): _DECL_8;
-      tuple(var bool, var int): _DECL_9 = (_DECL_7, _DECL_8);
-      constraint mzn_opt_channel(_DECL_9, _DECL_6);
-    } in _DECL_9;
-    tuple(bool, int): b = if true then let {
-      tuple(bool, int): _DECL_11 = (true, 1);
-    } in _DECL_11 else let {
+      var bool: _DECL_8;
+      var mzn_opt_domain(_DECL_7): _DECL_9;
+      tuple(var bool, var int): _DECL_10 = (_DECL_8, _DECL_9);
+      constraint mzn_opt_channel(_DECL_10, _DECL_7);
+    } in _DECL_10;
+    tuple(bool, int): b = if true then (true, 1) else let {
       tuple(bool, int): _DECL_12 = (false, 0);
     } in _DECL_12 endif;
-    array [int] of tuple(bool, int): c = [let {
-      tuple(bool, int): _DECL_14 = (true, 1);
-    } in _DECL_14, let {
-      tuple(bool, int): _DECL_15 = (false, 0);
-    } in _DECL_15];
+    array [int] of tuple(bool, int): c = [(true, 1), let {
+      tuple(bool, int): _DECL_14 = (false, 0);
+    } in _DECL_14];
     tuple(int, tuple(bool, int)): d;
-    tuple(tuple(bool, int), tuple(bool, int)): e = ((true, (d).1), (d).2);
-    function tuple(bool, int): foo(tuple(bool, int): x) = let {
-      tuple(bool, int): _DECL_22 = (true, 1);
-    } in _DECL_22;
-    tuple(bool, int): f = foo(let {
-      tuple(bool, int): _DECL_20 = (true, 1);
-    } in _DECL_20);
+    tuple(tuple(bool, int), tuple(bool, int)): e = let {
+      tuple(int, tuple(bool, int)): _DECL_17 = d;
+    } in ((true, (_DECL_17).1), (_DECL_17).2);
+    function tuple(bool, int): foo(tuple(bool, int): x) = (true, 1);
+    tuple(bool, int): f = foo((true, 1));
     solve satisfy;
 "#]),
 		);
@@ -508,7 +362,9 @@ mod tests {
 		check_no_stdlib(
 			transformer(vec![top_down_type, erase_opt]),
 			r#"
-			function array [int] of tuple(bool, var int): arrayXd(array [int] of var int: a, array [int] of tuple(bool, var int): b);
+			function var opt $T: val2opt(var $T: x);
+			function opt $T: val2opt($T: x);
+			function array [int] of var opt int: arrayXd(array [int] of var int, array [int] of var opt int);
 			function int: foo(array [int] of var opt int: x);
 			function set of int: bar(int: a, int: b);
 			function var int: qux(array [int] of var int: x) = let {
@@ -516,15 +372,15 @@ mod tests {
 			} in r;
 			"#,
 			expect!([r#"
-    function array [int] of tuple(bool, var int): arrayXd(array [int] of var int: a, array [int] of tuple(bool, var int): b);
+    function array [int] of tuple(var bool, var int): arrayXd(array [int] of var int: _DECL_1, array [int] of tuple(var bool, var int): _DECL_2);
     function int: foo(array [int] of tuple(var bool, var int): x);
     function set of int: bar(int: a, int: b);
     function var int: qux(array [int] of var int: x) = let {
       var bar(foo(let {
-      array [int] of tuple(var bool, var int): _DECL_8 = arrayXd(x, [(true, _DECL_7) | _DECL_7 in x]);
-    } in _DECL_8), foo(let {
-      array [int] of tuple(var bool, var int): _DECL_10 = arrayXd(x, [(true, _DECL_9) | _DECL_9 in x]);
-    } in _DECL_10)): r;
+      array [int] of var int: _DECL_7 = x;
+    } in arrayXd(_DECL_7, [(true, _DECL_8) | _DECL_8 in _DECL_7])), foo(let {
+      array [int] of var int: _DECL_9 = x;
+    } in arrayXd(_DECL_9, [(true, _DECL_10) | _DECL_10 in _DECL_9]))): r;
     } in r;
     solve satisfy;
 "#]),

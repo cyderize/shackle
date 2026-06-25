@@ -17,6 +17,7 @@ use crate::{
 	traverse::{Folder, ReplacementMap, Visitor, fold_call, fold_expression},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SurroundingCall {
 	Forall,
 	Exists,
@@ -138,7 +139,15 @@ impl<'db, Dst: Marker> ComprehensionRewriter<'db, Dst> {
 			.iter()
 			.map(|g| self.fold_generator(db, model, g))
 			.collect::<Vec<_>>();
-		let folded_template = self.fold_expression(db, model, &c.template);
+		let folded_template = if surrounding != SurroundingCall::Other
+			&& let ExpressionData::Call(c) = &**c.template
+			&& c.matches_builtin(model, self.ids.functions.val2opt)
+		{
+			// Remove opt coercion since these cases can be rewritten to be non-optional
+			self.fold_expression(db, model, &c.arguments[0])
+		} else {
+			self.fold_expression(db, model, &c.template)
+		};
 		let template =
 			self.desugar_comprehension(db, &mut generators, folded_template, surrounding);
 		let indices = c
@@ -523,11 +532,9 @@ mod tests {
 			expect!([r#"
     function var bool: foo(var int: x);
     array [int] of var int: x;
-    array [int] of var opt int: y = [if _DECL_1 then let {
-      var opt int: _DECL_2 = x_i;
-    } in _DECL_2 else let {
-      var opt int: _DECL_3 = <>;
-    } in _DECL_3 endif | x_i in x, _DECL_1 = foo(x_i)];
+    array [int] of var opt int: y = [if _DECL_1 then val2opt(x_i) else let {
+      var opt int: _DECL_2 = <>;
+    } in _DECL_2 endif | x_i in x, _DECL_1 :: (mzn_var_where_clause) = foo(x_i)];
 "#]),
 		)
 	}
@@ -542,11 +549,9 @@ mod tests {
 			"#,
 			expect!([r#"
     var set of int: x;
-    array [int] of var opt int: y = [if _DECL_1 then let {
-      opt int: _DECL_2 = x_i;
-    } in _DECL_2 else let {
-      opt int: _DECL_3 = <>;
-    } in _DECL_3 endif | x_i in ub(x), _DECL_1 = ((x_i) in (x))];
+    array [int] of var opt int: y = [if _DECL_1 then val2opt(x_i) else let {
+      opt int: _DECL_2 = <>;
+    } in _DECL_2 endif | x_i in ub(x), _DECL_1 :: (mzn_var_where_clause) = ((x_i) in (x))];
 "#]),
 		)
 	}
@@ -565,11 +570,9 @@ mod tests {
     var set of int: x;
     function var bool: foo(var int: x);
     function bool: bar(int: x);
-    array [int] of var opt int: y = [if forall([_DECL_3, _DECL_2, _DECL_1]) then let {
-      opt int: _DECL_4 = x_i;
-    } in _DECL_4 else let {
-      opt int: _DECL_5 = <>;
-    } in _DECL_5 endif | x_i in ub(x) where bar(x_i), _DECL_1 = ((x_i) in (x)), _DECL_2 = foo(x_i), x_j in ub(x) where bar(x_j), _DECL_3 = ((x_j) in (x))];
+    array [int] of var opt int: y = [if forall([_DECL_3, _DECL_2, _DECL_1]) then val2opt(x_i) else let {
+      opt int: _DECL_4 = <>;
+    } in _DECL_4 endif | x_i in ub(x) where bar(x_i), _DECL_1 :: (mzn_var_where_clause) = ((x_i) in (x)), _DECL_2 :: (mzn_var_where_clause) = foo(x_i), x_j in ub(x) where bar(x_j), _DECL_3 :: (mzn_var_where_clause) = ((x_j) in (x))];
 "#]),
 		)
 	}
@@ -586,7 +589,7 @@ mod tests {
 			expect!([r#"
     function var bool: foo(var int: x);
     var set of int: S;
-    constraint forall([((_DECL_1) -> (foo(i))) | i in ub(S), _DECL_1 = ((i) in (S))]);
+    constraint forall([((_DECL_1) -> (foo(i))) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
 "#]),
 		)
 	}
@@ -603,7 +606,7 @@ mod tests {
 			expect!([r#"
     function var bool: foo(var int: x);
     var set of int: S;
-    constraint exists([((_DECL_1) /\ (foo(i))) | i in ub(S), _DECL_1 = ((i) in (S))]);
+    constraint exists([((_DECL_1) /\ (foo(i))) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
 "#]),
 		)
 	}
@@ -618,7 +621,7 @@ mod tests {
 			"#,
 			expect!([r#"
     var set of int: S;
-    var int: x = sum([((_DECL_1) * (i)) | i in ub(S), _DECL_1 = ((i) in (S))]);
+    var int: x = sum([((_DECL_1) * (i)) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
 "#]),
 		)
 	}
@@ -635,7 +638,7 @@ mod tests {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var int: x = sum([if _DECL_1 then foo(i) else 0 endif | i in ub(S), _DECL_1 = ((i) in (S))]);
+    var int: x = sum([if _DECL_1 then foo(i) else 0 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
 "#]),
 		)
 	}
@@ -669,11 +672,9 @@ mod tests {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var set of int: x = mzn_array2set([if _DECL_1 then let {
-      var opt int: _DECL_2 = foo(i);
-    } in _DECL_2 else let {
-      var opt int: _DECL_3 = <>;
-    } in _DECL_3 endif | i in ub(S), _DECL_1 = ((i) in (S))]);
+    var set of int: x = mzn_array2set([if _DECL_1 then val2opt(foo(i)) else let {
+      var opt int: _DECL_2 = <>;
+    } in _DECL_2 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
 "#]),
 		)
 	}

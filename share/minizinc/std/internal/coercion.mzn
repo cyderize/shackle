@@ -24,6 +24,3 @@ function set of $T: 'default'(opt set of $T: x, set of $T: y) :: mzn_inline_call
 	mzn_default_opt(x, y);
 function opt set of $T: 'default'(opt set of $T: x, opt set of $T: y) :: mzn_inline_call_by_name =
 	mzn_default_opt(x, y);
-
-function opt $T: val2opt($T: x) = mzn_construct_opt((true, x));
-function var opt $T: val2opt(var $T: x) = mzn_construct_opt((true, x));

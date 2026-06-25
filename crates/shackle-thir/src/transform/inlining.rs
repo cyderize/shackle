@@ -8,8 +8,9 @@ use shackle_hir::constants::IdentifierRegistry;
 use shackle_utils::maybe_grow_stack;
 
 use crate::{
-	Callable, Db, Declaration, DeclarationId, Expression, ExpressionData, FunctionId, Item, Let,
-	LetItem, Marker, Model, ResolvedIdentifier,
+	Callable, Db, Declaration, DeclarationId, Domain, Expression, ExpressionData, FunctionId, Item,
+	Let, LetItem, Marker, Model, ResolvedIdentifier,
+	pretty_print::PrettyPrinter,
 	traverse::{
 		Folder, ReplacementMap, add_function, fold_declaration, fold_expression, fold_function_body,
 	},
@@ -102,8 +103,9 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 							|| is_macro_call(body)
 						{
 							log::debug!(
-								"Inlining {} using call by value semantics",
-								model[*f].name().pretty_print(db)
+								"Inlining {} at {} using call by value semantics",
+								PrettyPrinter::new(db, &model).pretty_print_signature((*f).into()),
+								expression.origin().pretty_print(db)
 							);
 
 							let old_depth = self.depth;
@@ -122,11 +124,18 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 								.filter_map(|(arg, param)| {
 									let origin = arg.origin();
 									let folded = self.fold_expression(db, model, arg);
-									if matches!(&*folded, ExpressionData::Identifier(_)) {
+									let param_ty = model[*param].ty();
+									if matches!(&*folded, ExpressionData::Identifier(_))
+										&& folded.ty() == param_ty
+									{
 										restore.push(self.map.insert(*param, folded));
 										None
 									} else {
-										let decl = Declaration::from_expression(db, false, folded);
+										let mut decl = Declaration::new(
+											false,
+											Domain::unbounded(db, origin, param_ty),
+										);
+										decl.set_definition(folded);
 										let idx =
 											self.model.add_declaration(Item::new(decl, origin));
 										let ident = Expression::new(db, &self.model, origin, idx);
@@ -164,8 +173,9 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for Inliner<'db, D
 							.has(model, self.ids.annotations.mzn_inline_call_by_name)
 						{
 							log::debug!(
-								"Inlining {} using call by name semantics",
-								model[*f].name().pretty_print(db)
+								"Inlining {} at {} using call by name semantics",
+								PrettyPrinter::new(db, &model).pretty_print_signature((*f).into()),
+								expression.origin().pretty_print(db)
 							);
 
 							let old_depth = self.depth;

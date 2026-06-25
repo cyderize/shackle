@@ -905,8 +905,7 @@ test mzn_can_extend_array_opt(
 	]);
 
 % Helper to extend arrays to include <> at index zero
-function array [$E] of any $T: mzn_extend_array_opt(array [$E] of any $T: x) :: mzn_unreachable;
-function array [$$E] of any $T: mzn_extend_array_opt(array [$$E] of any $T: x) =
+function array [$$E] of var opt $T: mzn_extend_array_opt(array [$$E] of var opt $T: x) =
 	array1d(
 		to_enum_internal(enum_of(index_set(x)), 0)..max(index_set(x)),
 		[
@@ -914,7 +913,15 @@ function array [$$E] of any $T: mzn_extend_array_opt(array [$$E] of any $T: x) =
 				i in 0..enum2int(max(index_set(x))),
 		],
 	);
-function array [$$E, $$F] of any $T: mzn_extend_array_opt(array [$$E, $$F] of any $T: x) =
+function array [$$E] of opt $T: mzn_extend_array_opt(array [$$E] of opt $T: x) =
+	array1d(
+		to_enum_internal(enum_of(index_set(x)), 0)..max(index_set(x)),
+		[
+			if i = 0 then <> else mzn_element_internal(x, i) endif |
+				i in 0..enum2int(max(index_set(x))),
+		],
+	);
+function array [$$E, $$F] of var opt $T: mzn_extend_array_opt(array [$$E, $$F] of var opt $T: x) =
 	let {
 		any: idx_set = index_sets(x);
 	} in array2d(
@@ -926,7 +933,21 @@ function array [$$E, $$F] of any $T: mzn_extend_array_opt(array [$$E, $$F] of an
 				j in 0..enum2int(max(idx_set.2)),
 		],
 	);
-function array [$$E, $$F, $$G] of any $T: mzn_extend_array_opt(array [$$E, $$F, $$G] of any $T: x) =
+function array [$$E, $$F] of opt $T: mzn_extend_array_opt(array [$$E, $$F] of opt $T: x) =
+	let {
+		any: idx_set = index_sets(x);
+	} in array2d(
+		to_enum_internal(enum_of(idx_set.1), 0)..max(idx_set.1),
+		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
+		[
+			if i = 0 \/ j = 0 then <> else mzn_element_internal(x, (i, j)) endif |
+				i in 0..enum2int(max(idx_set.1)),
+				j in 0..enum2int(max(idx_set.2)),
+		],
+	);
+function array [$$E, $$F, $$G] of var opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G] of var opt $T: x,
+) =
 	let {
 		any: idx_set = index_sets(x);
 	} in array3d(
@@ -940,8 +961,22 @@ function array [$$E, $$F, $$G] of any $T: mzn_extend_array_opt(array [$$E, $$F, 
 				k in 0..enum2int(max(idx_set.3)),
 		],
 	);
-function array [$$E, $$F, $$G, $$H] of any $T: mzn_extend_array_opt(
-	array [$$E, $$F, $$G, $$H] of any $T: x,
+function array [$$E, $$F, $$G] of opt $T: mzn_extend_array_opt(array [$$E, $$F, $$G] of opt $T: x) =
+	let {
+		any: idx_set = index_sets(x);
+	} in array3d(
+		to_enum_internal(enum_of(idx_set.1), 0)..max(idx_set.1),
+		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
+		to_enum_internal(enum_of(idx_set.3), 0)..max(idx_set.3),
+		[
+			if i = 0 \/ j = 0 \/ k = 0 then <> else mzn_element_internal(x, (i, j, k)) endif |
+				i in 0..enum2int(max(idx_set.1)),
+				j in 0..enum2int(max(idx_set.2)),
+				k in 0..enum2int(max(idx_set.3)),
+		],
+	);
+function array [$$E, $$F, $$G, $$H] of var opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H] of var opt $T: x,
 ) =
 	let {
 		any: idx_set = index_sets(x);
@@ -962,8 +997,30 @@ function array [$$E, $$F, $$G, $$H] of any $T: mzn_extend_array_opt(
 				l in 0..enum2int(max(idx_set.4)),
 		],
 	);
-function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_extend_array_opt(
-	array [$$E, $$F, $$G, $$H, $$I] of any $T: x,
+function array [$$E, $$F, $$G, $$H] of opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H] of opt $T: x,
+) =
+	let {
+		any: idx_set = index_sets(x);
+	} in array4d(
+		to_enum_internal(enum_of(idx_set.1), 0)..max(idx_set.1),
+		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
+		to_enum_internal(enum_of(idx_set.3), 0)..max(idx_set.3),
+		to_enum_internal(enum_of(idx_set.4), 0)..max(idx_set.4),
+		[
+			if i = 0 \/ j = 0 \/ k = 0 \/ l = 0 then
+				<>
+			else
+				mzn_element_internal(x, (i, j, k, l))
+			endif |
+				i in 0..enum2int(max(idx_set.1)),
+				j in 0..enum2int(max(idx_set.2)),
+				k in 0..enum2int(max(idx_set.3)),
+				l in 0..enum2int(max(idx_set.4)),
+		],
+	);
+function array [$$E, $$F, $$G, $$H, $$I] of var opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of var opt $T: x,
 ) =
 	let {
 		any: idx_set = index_sets(x);
@@ -986,8 +1043,58 @@ function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_extend_array_opt(
 				m in 0..enum2int(max(idx_set.5)),
 		],
 	);
-function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_extend_array_opt(
-	array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: x,
+function array [$$E, $$F, $$G, $$H, $$I] of opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H, $$I] of opt $T: x,
+) =
+	let {
+		any: idx_set = index_sets(x);
+	} in array5d(
+		to_enum_internal(enum_of(idx_set.1), 0)..max(idx_set.1),
+		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
+		to_enum_internal(enum_of(idx_set.3), 0)..max(idx_set.3),
+		to_enum_internal(enum_of(idx_set.4), 0)..max(idx_set.4),
+		to_enum_internal(enum_of(idx_set.5), 0)..max(idx_set.5),
+		[
+			if i = 0 \/ j = 0 \/ k = 0 \/ l = 0 \/ m = 0 then
+				<>
+			else
+				mzn_element_internal(x, (i, j, k, l, m))
+			endif |
+				i in 0..enum2int(max(idx_set.1)),
+				j in 0..enum2int(max(idx_set.2)),
+				k in 0..enum2int(max(idx_set.3)),
+				l in 0..enum2int(max(idx_set.4)),
+				m in 0..enum2int(max(idx_set.5)),
+		],
+	);
+function array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of var opt $T: x,
+) =
+	let {
+		any: idx_set = index_sets(x);
+	} in array6d(
+		to_enum_internal(enum_of(idx_set.1), 0)..max(idx_set.1),
+		to_enum_internal(enum_of(idx_set.2), 0)..max(idx_set.2),
+		to_enum_internal(enum_of(idx_set.3), 0)..max(idx_set.3),
+		to_enum_internal(enum_of(idx_set.4), 0)..max(idx_set.4),
+		to_enum_internal(enum_of(idx_set.5), 0)..max(idx_set.5),
+		to_enum_internal(enum_of(idx_set.6), 0)..max(idx_set.6),
+		[
+			if i = 0 \/ j = 0 \/ k = 0 \/ l = 0 \/ m = 0 \/ n = 0 then
+				<>
+			else
+				mzn_element_internal(x, (i, j, k, l, m, n))
+			endif |
+				i in 0..enum2int(max(idx_set.1)),
+				j in 0..enum2int(max(idx_set.2)),
+				k in 0..enum2int(max(idx_set.3)),
+				l in 0..enum2int(max(idx_set.4)),
+				m in 0..enum2int(max(idx_set.5)),
+				n in 0..enum2int(max(idx_set.6)),
+		],
+	);
+function array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: mzn_extend_array_opt(
+	array [$$E, $$F, $$G, $$H, $$I, $$J] of opt $T: x,
 ) =
 	let {
 		any: idx_set = index_sets(x);

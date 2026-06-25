@@ -188,6 +188,7 @@ id_registry!(
 	shackle_type,
 	empty_annotation,
 	mzn_var_where_clause,
+	mzn_fresh_var,
 	promise_total,
 	output,
 	no_output,
@@ -258,6 +259,7 @@ id_registry!(
 	mzn_defining_set,
 	mzn_construct_enum,
 	mzn_destruct_enum,
+	mzn_parse_enum,
 	mzn_show_enum,
 	default,
 	mzn_construct_opt,
@@ -272,6 +274,11 @@ id_registry!(
 	mzn_array_access_valid,
 	mzn_array_access_known_valid,
 	if_then_else,
+	val2opt,
+	bool2int,
+	int2float,
+	bool2float,
+	mzn_unwrap_bool_tuple,
 );
 
 /// Registry for common identifiers

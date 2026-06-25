@@ -569,17 +569,18 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					assignment,
 					where_clause,
 				} => {
-					let mut declaration = self.fold_declaration(db, model, &model[*assignment]);
-					let is_var_where_clause = declaration.annotations_mut().remove(
-						&self.totalised_model,
-						self.ids.annotations.mzn_var_where_clause,
-					);
-					let partial = declaration.ty() != model[*assignment].ty();
+					let orig_rhs = model[*assignment].definition().unwrap();
+					let rhs = self.fold_expression(db, model, orig_rhs);
+					let total = self.is_total(db, model, orig_rhs, &rhs);
+					let is_var_where_clause = model[*assignment]
+						.annotations()
+						.has(model, self.ids.annotations.mzn_var_where_clause);
 					let o = model[*assignment].origin();
-					let idx = self
-						.totalised_model
-						.add_declaration(Item::new(declaration, o));
-					if partial {
+					let idx = self.totalised_model.add_declaration(Item::new(
+						Declaration::from_expression(db, false, rhs),
+						o,
+					));
+					if !total {
 						// Make sure identifier refers to actual value
 						let ident = Expression::new(
 							db,
@@ -2009,6 +2010,7 @@ mod tests {
 			transformer(vec![desugar_comprehension, erase_opt, totalise]),
 			r#"
 				annotation mzn_var_where_clause;
+				function opt $T: val2opt($T: x);
                 predicate forall(array [int] of var bool);
                 test forall(array [int] of bool);
                 predicate exists(array [int] of var bool);
@@ -2034,29 +2036,25 @@ mod tests {
       bool: _DECL_9 = false;
     } in (forall([_DECL_9]), {3, 4});
     function array [int] of tuple(var bool, var int): foo_root() = [let {
-      tuple(bool, int): _DECL_30 = let {
       tuple(bool, int): _DECL_28 = (true, 1);
-    } in _DECL_28;
-      tuple(bool, int): _DECL_31 = let {
-      tuple(bool, int): _DECL_29 = (false, 0);
-    } in _DECL_29;
-      array [int] of var bool: _DECL_32 = [_DECL_26, true];
-    } in (if_then_else(_DECL_32, [(_DECL_30).1, (_DECL_31).1]), if_then_else(_DECL_32, [(_DECL_30).2, (_DECL_31).2])) | i in {1, 2}, _DECL_26 = bar(i), j in qux_root()];
+      tuple(bool, int): _DECL_29 = let {
+      tuple(bool, int): _DECL_27 = (false, 0);
+    } in _DECL_27;
+      array [int] of var bool: _DECL_30 = [_DECL_25, true];
+    } in (if_then_else(_DECL_30, [(_DECL_28).1, (_DECL_29).1]), if_then_else(_DECL_30, [(_DECL_28).2, (_DECL_29).2])) | i in {1, 2}, _DECL_25 = bar(i), j in qux_root()];
     function tuple(var bool, array [int] of tuple(var bool, var int)): foo() = let {
-      array [int] of tuple(var bool, array [int] of tuple(var bool, var int)): _DECL_20 = [let {
-      tuple(bool, array [int] of tuple(var bool, var int)): _DECL_19 = let {
+      array [int] of tuple(var bool, array [int] of tuple(var bool, var int)): _DECL_19 = [let {
+      tuple(bool, array [int] of tuple(var bool, var int)): _DECL_18 = let {
       tuple(bool, set of int): _DECL_13 = qux();
     } in (forall([(_DECL_13).1]), [let {
+      tuple(bool, int): _DECL_15 = (true, 1);
       tuple(bool, int): _DECL_16 = let {
-      tuple(bool, int): _DECL_14 = (true, 1);
+      tuple(bool, int): _DECL_14 = (false, 0);
     } in _DECL_14;
-      tuple(bool, int): _DECL_17 = let {
-      tuple(bool, int): _DECL_15 = (false, 0);
-    } in _DECL_15;
-      array [int] of var bool: _DECL_18 = [_DECL_11, true];
-    } in (if_then_else(_DECL_18, [(_DECL_16).1, (_DECL_17).1]), if_then_else(_DECL_18, [(_DECL_16).2, (_DECL_17).2])) | j in (_DECL_13).2]);
-    } in (exists([_DECL_11, (_DECL_19).1]), (_DECL_19).2) | i in {1, 2}, _DECL_11 = bar(i)];
-    } in (forall([forall([(_DECL_21).1 | _DECL_21 in _DECL_20])]), [_DECL_24 | _DECL_22 in _DECL_20, _DECL_23 = (_DECL_22).2, _DECL_24 in _DECL_23]);
+      array [int] of var bool: _DECL_17 = [_DECL_11, true];
+    } in (if_then_else(_DECL_17, [(_DECL_15).1, (_DECL_16).1]), if_then_else(_DECL_17, [(_DECL_15).2, (_DECL_16).2])) | j in (_DECL_13).2]);
+    } in (exists([_DECL_11, (_DECL_18).1]), (_DECL_18).2) | i in {1, 2}, _DECL_11 = bar(i)];
+    } in (forall([forall([(_DECL_20).1 | _DECL_20 in _DECL_19])]), [_DECL_23 | _DECL_21 in _DECL_19, _DECL_22 = (_DECL_21).2, _DECL_23 in _DECL_22]);
     solve satisfy;
 "#]),
 		)

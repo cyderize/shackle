@@ -100,8 +100,8 @@ impl Mode {
 			},
 		) = (self, other)
 		{
-			assert!(d1 <= d2, "Cannot refer to identifier defined more deeply");
-			if d1 == d2 {
+			// assert!(d1 <= d2, "Cannot refer to identifier defined more deeply");
+			if d1 >= d2 {
 				return Mode::Root {
 					result,
 					conditional_depth: d1,
@@ -152,6 +152,11 @@ impl<'a, 'db, T: Marker> ModeAnalysis<'a, 'db, T> {
 
 	/// Update the mode for an expression and return the new mode if it was updated
 	fn update(&mut self, e: &'a Expression<'db, T>, mode: Mode) -> Option<Mode> {
+		log::debug!(
+			"Updating mode of expression at {:?} to {:?}",
+			e.origin(),
+			mode
+		);
 		let mut inserted = false;
 		let mut updated = false;
 		let result = self.map.update_or_insert(
@@ -802,14 +807,14 @@ mod tests {
     function var bool: 'not'(var bool: x);
     var bool: a;
     var bool: b;
-    constraint forall([a:: ctx_non_root, b:: ctx_non_root]:: ctx_root):: ctx_root;
+    constraint forall([a:: ctx_root, b:: ctx_root]:: ctx_root):: ctx_root;
     var bool: c;
     var int: d;
     function var bool: foo(var bool: c, var int: d);
     constraint foo(c:: ctx_non_root, d:: ctx_root):: ctx_root;
     var bool: e;
     var bool: f;
-    constraint (not(((e:: ctx_non_root) \/ (f:: ctx_non_root))));
+    constraint (not(((e:: ctx_root_neg) \/ (f:: ctx_root_neg))));
     var int: g = let {
       var int: h = 1:: ctx_root;
       var bool: p = true:: ctx_non_root;
@@ -836,8 +841,8 @@ mod tests {
     function var bool: '>'(var int: x, var int: y);
     function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint '>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
-    } in '+'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
+      constraint ((x:: ctx_non_root) > (y:: ctx_non_root));
+    } in ((x:: ctx_non_root) + (y:: ctx_non_root)):: ctx_non_root;
 "#]],
 			false,
 		);
@@ -847,8 +852,8 @@ mod tests {
     function var bool: '>'(var int: x, var int: y);
     function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint '>'(x:: ctx_root, y:: ctx_root):: ctx_root;
-    } in '+'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
+      constraint ((x:: ctx_root) > (y:: ctx_root));
+    } in ((x:: ctx_root) + (y:: ctx_root)):: ctx_root;
 "#]],
 			true,
 		);
@@ -856,20 +861,31 @@ mod tests {
 
 	#[test]
 	fn test_bool_ctx_let() {
-		check_bool_ctx(
-			r#"
-            function set of int: foo() = let {
+		let program = r#"
+            function var set of int: foo() = let {
 				var bool: b;
 				constraint b;
 			} in {1, 3, 5};
-		"#,
+		"#;
+		check_bool_ctx(
+			program,
 			expect![[r#"
-    function set of int: foo() = let {
+    function var set of int: foo() = let {
       var bool: b;
       constraint b:: ctx_non_root;
     } in {1:: ctx_non_root, 3:: ctx_non_root, 5:: ctx_non_root}:: ctx_non_root:: ctx_non_root;
 "#]],
 			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    function var set of int: foo() = let {
+      var bool: b;
+      constraint b:: ctx_root;
+    } in {1:: ctx_root, 3:: ctx_root, 5:: ctx_root}:: ctx_root:: ctx_root;
+"#]],
+			true,
 		);
 	}
 
@@ -888,7 +904,7 @@ mod tests {
     function bool: mzn_abort(string: msg);
     function bool: bar(int: x);
     function int: foo(int: x) = let {
-      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_non_root):: ctx_non_root else true:: ctx_non_root endif:: ctx_non_root;
     } in x:: ctx_non_root:: ctx_non_root;
 "#]],
 			false,

@@ -908,8 +908,18 @@ impl<'db, Dst: Marker, Src: Marker> DomainRewriter<'db, Dst, Src> {
 		}
 
 		let mut inner_let_items = Vec::new();
-		let in_expression =
+		let mut in_expression =
 			self.unpack_struct_inner(db, model, elem, outer_let_items, &mut inner_let_items);
+		let fresh_bool = in_expression.ty().is_bool(db);
+		if fresh_bool {
+			// Fresh bools can't return a bool here since that would make the let its own mixed boolean context
+			in_expression = Expression::new(
+				db,
+				&self.model,
+				in_expression.origin(),
+				TupleLiteral(vec![in_expression]),
+			);
+		}
 		let template = if inner_let_items.is_empty() {
 			in_expression
 		} else {
@@ -923,7 +933,7 @@ impl<'db, Dst: Marker, Src: Marker> DomainRewriter<'db, Dst, Src> {
 				},
 			)
 		};
-		let comprehension = Expression::new(
+		let mut array = Expression::new(
 			db,
 			&self.model,
 			origin,
@@ -933,13 +943,25 @@ impl<'db, Dst: Marker, Src: Marker> DomainRewriter<'db, Dst, Src> {
 				template: Box::new(template),
 			},
 		);
+		if fresh_bool {
+			// Convert back to bool outside to not cause boolean context to transfer inside
+			array = Expression::new(
+				db,
+				&self.model,
+				origin,
+				LookupCall {
+					function: self.ids.functions.mzn_unwrap_bool_tuple.into(),
+					arguments: vec![array],
+				},
+			);
+		}
 		Expression::new(
 			db,
 			&self.model,
 			origin,
 			LookupCall {
 				function: self.ids.builtins.mzn_array_kd.into(),
-				arguments: vec![index_sets_expr, comprehension],
+				arguments: vec![index_sets_expr, array],
 			},
 		)
 	}
@@ -1062,7 +1084,7 @@ mod tests {
     array [int, int] of tuple(int, int): w;
     constraint forall([let {
       tuple(set of int, set of int): _DECL_14 = index_sets(w);
-    } in mzn_builtin("mzn_forall_par", [mzn_check_index_set("w", 1, 2, (_DECL_14).1, _DECL_10), mzn_check_index_set("w", 2, 2, (_DECL_14).2, _DECL_11)]), forall([forall([mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 1), ('[]'(w, (_DECL_16, _DECL_17))).1, _DECL_12), mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 2), ('[]'(w, (_DECL_16, _DECL_17))).2, _DECL_13)]) | _DECL_15 = index_sets(w), _DECL_16 in (_DECL_15).1, _DECL_17 in (_DECL_15).2])]);
+    } in forall([mzn_check_index_set("w", 1, 2, (_DECL_14).1, _DECL_10), mzn_check_index_set("w", 2, 2, (_DECL_14).2, _DECL_11)]), forall([forall([mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 1), ('[]'(w, (_DECL_16, _DECL_17))).1, _DECL_12), mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 2), ('[]'(w, (_DECL_16, _DECL_17))).2, _DECL_13)]) | _DECL_15 = index_sets(w), _DECL_16 in (_DECL_15).1, _DECL_17 in (_DECL_15).2])]);
     set of int: _DECL_18 = ((1) .. (2));
     set of int: _DECL_19 = ((1) .. (2));
     array [int] of opt int: p;
@@ -1116,7 +1138,7 @@ mod tests {
     array [int, int] of int: d;
     constraint let {
       tuple(set of int, set of int): _DECL_17 = index_sets(d);
-    } in mzn_builtin("mzn_forall_par", [mzn_check_index_set("d", 1, 2, (_DECL_17).1, _DECL_15), mzn_check_index_set("d", 2, 2, (_DECL_17).2, _DECL_16)]);
+    } in forall([mzn_check_index_set("d", 1, 2, (_DECL_17).1, _DECL_15), mzn_check_index_set("d", 2, 2, (_DECL_17).2, _DECL_16)]);
 "#]),
 		)
 	}
@@ -1212,6 +1234,32 @@ mod tests {
       var _DECL_9: _DECL_12;
       var _DECL_10: _DECL_13;
     } in (_DECL_12, _DECL_13) | _DECL_11 in (_DECL_8).1]);
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_bool_vars() {
+		check(
+			rewrite_domains,
+			r#"
+				tuple(var bool): a;
+				tuple(var bool, var bool): b;
+				array [1..3] of var bool: c;
+			"#,
+			expect!([r#"
+    tuple(var bool): a = let {
+      var bool: _DECL_1;
+    } in (_DECL_1,);
+    tuple(var bool, var bool): b = let {
+      var bool: _DECL_2;
+      var bool: _DECL_3;
+    } in (_DECL_2, _DECL_3);
+    array [int] of var bool: c = let {
+      tuple(set of int): _DECL_4 = (((1) .. (3)),);
+    } in mzn_array_kd(_DECL_4, mzn_unwrap_bool_tuple([let {
+      var bool: _DECL_6;
+    } in (_DECL_6,) | _DECL_5 in (_DECL_4).1]));
 "#]),
 		)
 	}

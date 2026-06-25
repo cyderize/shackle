@@ -463,10 +463,9 @@ pub fn auto_includes(db: &dyn Db) -> Vec<ModelFile> {
 pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 	log::info!("Resolving includes");
 	let inputs = InputFiles::get(db);
-	let mut result = vec![];
-	let mut seen = Set::default();
+	let mut result = resolve_auto_includes(db).clone();
+	let mut seen = Set::from_iter(result.iter().map(|i| i.unwrap_named().path(db).clone()));
 	let mut todo = inputs.files(db).iter().rev().copied().collect::<Vec<_>>();
-	todo.extend(auto_includes(db).iter().copied().rev());
 	while let Some(model) = todo.pop() {
 		if let ModelFile::Named(n) = model {
 			if seen.insert(n.path(db).to_owned()) {
@@ -479,6 +478,22 @@ pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 		}
 	}
 	db.file_handler().on_resolved_includes(db, &result);
+	result
+}
+
+/// Get the automatically included models (e.g. stdlib) and their includes
+#[salsa::tracked(returns(ref))]
+pub fn resolve_auto_includes(db: &dyn Db) -> Vec<ModelFile> {
+	let mut result = vec![];
+	let mut seen = Set::default();
+	let mut todo = auto_includes(db).iter().copied().rev().collect::<Vec<_>>();
+	while let Some(model) = todo.pop() {
+		let n = model.unwrap_named();
+		if seen.insert(n.path(db).to_owned()) {
+			result.push(model);
+			todo.extend(includes_for_file(db, model).iter().copied().rev());
+		}
+	}
 	result
 }
 

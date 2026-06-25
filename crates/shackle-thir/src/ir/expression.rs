@@ -1493,9 +1493,10 @@ impl<'db, T: Marker> Generator<'db, T> {
 					assert_eq!(
 						model[*d].ty(),
 						elem_ty,
-						"Iterator is of type {} but collection is {}",
+						"Iterator is of type {} but collection is {} at {}",
 						model[*d].ty().pretty_print(db),
-						collection.ty().pretty_print(db)
+						collection.ty().pretty_print(db),
+						collection.origin().pretty_print(db)
 					);
 					if let Some(w) = where_clause {
 						assert!(

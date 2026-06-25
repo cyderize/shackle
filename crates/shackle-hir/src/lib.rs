@@ -26,6 +26,7 @@ pub mod counts;
 pub mod db;
 pub mod diagnostics;
 pub mod input;
+pub mod interface;
 pub mod ir;
 pub mod lower;
 pub mod pattern_matching;

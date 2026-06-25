@@ -440,6 +440,12 @@ impl<'db> Ty<'db> {
 			.any(|(_, td)| matches!(td, TyData::Bottom(_)))
 	}
 
+	/// Whether this type-inst contains an enum.
+	pub fn contains_enum(&self, db: &'db dyn Db) -> bool {
+		self.walk_data(db)
+			.any(|(_, td)| matches!(td, TyData::Enum(_, _, _)))
+	}
+
 	/// Whether this type contains a type that will be erased
 	pub fn contains_erased_type(&self, db: &'db dyn Db) -> bool {
 		self.walk_data(db).any(|(_, td)| {
@@ -462,6 +468,36 @@ impl<'db> Ty<'db> {
 					| TyData::TyVar(_, Some(OptType::Opt), _)
 			)
 		})
+	}
+
+	/// Convert any enum types in this type to ints (for erasure)
+	pub fn enum2int(&self, db: &'db dyn Db) -> Ty<'db> {
+		Ty::new(
+			db,
+			match self.lookup(db) {
+				TyData::Enum(i, o, _) => TyData::Integer(*i, *o),
+				TyData::Set(i, o, ty) => TyData::Set(*i, *o, ty.enum2int(db)),
+				TyData::Array { opt, dim, element } => TyData::Array {
+					opt: *opt,
+					dim: dim.enum2int(db),
+					element: element.enum2int(db),
+				},
+				TyData::Tuple(o, fs) => {
+					TyData::Tuple(*o, fs.iter().map(|f| f.enum2int(db)).collect())
+				}
+				TyData::Record(o, fs) => {
+					TyData::Record(*o, fs.iter().map(|(i, f)| (*i, f.enum2int(db))).collect())
+				}
+				TyData::Function(o, f) => TyData::Function(
+					*o,
+					FunctionType {
+						return_type: f.return_type.enum2int(db),
+						params: f.params.iter().map(|p| p.enum2int(db)).collect(),
+					},
+				),
+				_ => return *self,
+			},
+		)
 	}
 
 	/// Walk over the `Ty`s in this `Ty`
@@ -1146,8 +1182,8 @@ impl<'db> Ty<'db> {
 				}
 				// Type-inst var coercion (par T -> var T, par T -> T, T -> var T)
 				(TyData::TyVar(i1, o1, t1), TyData::TyVar(i2, o2, t2)) => {
-					if (i1 != i2 && i1 != Some(VarType::Par) && i2.is_some())
-						|| (o1 != o2 && o1 != Some(OptType::NonOpt) && o2.is_some())
+					if (i1 != i2 && i1 != Some(VarType::Par) && i2 != Some(VarType::Var))
+						|| (o1 != o2 && o1 != Some(OptType::NonOpt) && o2 != Some(OptType::Opt))
 						|| t1 != t2
 					{
 						return false;

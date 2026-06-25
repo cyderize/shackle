@@ -22,6 +22,7 @@ function array [$X] of set of bool: enum2int(array [$X] of set of bool: x)
 function array [$X] of var set of bool: enum2int(array [$X] of var set of bool: x)
 	:: mzn_internal_representation;
 
+% (cardinality, [(constrcutor name, [(param enum id, domain)], offset)])
 type MznEnum = tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int));
 
 function MznEnum: mzn_get_enum(
@@ -40,6 +41,8 @@ function MznEnum: mzn_get_enum(
 			i in 1..length(e),
 	],
 );
+function MznEnum: mzn_get_enum(array [int] of string: e) = mzn_get_enum([(e_i, []) | e_i in e]);
+
 function set of int: mzn_defining_set(MznEnum: x) = 1..x.1;
 
 function int: mzn_construct_enum(MznEnum: e, int: i) = e.2[i].3 + 1;

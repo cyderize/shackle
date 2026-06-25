@@ -8,8 +8,10 @@ use shackle_diagnostics::Result;
 use totalise::totalise;
 
 use self::{
+	compat::old_compat,
 	// capturing_fn::decapture_model,
 	comprehension::desugar_comprehension,
+	dead_code::{eliminate_dead_code, eliminate_dead_code_conservative},
 	domain_constraint::rewrite_domains,
 	erase_enum::erase_enum,
 	erase_opt::erase_opt,
@@ -25,7 +27,9 @@ use super::Model;
 use crate::Db;
 
 pub mod capturing_fn;
+pub mod compat;
 pub mod comprehension;
+pub mod dead_code;
 pub mod domain_constraint;
 pub mod erase_enum;
 pub mod erase_opt;
@@ -55,6 +59,7 @@ pub fn transformer(
 /// Get the default THIR transformer
 pub fn thir_transforms() -> impl for<'db> FnMut(&'db dyn Db, Model<'db>) -> Result<Model<'db>> {
 	let fns = vec![
+		eliminate_dead_code_conservative,
 		generate_output,
 		rewrite_domains,
 		top_down_type,
@@ -68,6 +73,8 @@ pub fn thir_transforms() -> impl for<'db> FnMut(&'db dyn Db, Model<'db>) -> Resu
 		// decapture_model,
 		inline_functions,
 		totalise,
+		eliminate_dead_code,
+		old_compat,
 	];
 	transformer(fns)
 }

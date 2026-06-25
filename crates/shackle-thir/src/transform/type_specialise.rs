@@ -68,6 +68,14 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst
 
 		// Add bodies to specialised functions
 		while let Some((f, mut s)) = self.specialised.pop() {
+			if model[s.original].name() == self.ids.functions.array_access {
+				// Create specialised decomposition of array access for var access of struct types
+				if let Some(body) = self.decompose_array_access(db, model, f) {
+					self.specialised_model[f].set_body(body);
+					self.specialised_model[f].validate(db);
+					continue;
+				}
+			}
 			if let Some(b) = model[s.original].body() {
 				log::debug!(
 					"Adding specialised body to {} (call depth {})",
@@ -105,14 +113,6 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst
 								.pretty_print_item(f.into())
 						);
 					}
-					continue;
-				}
-			}
-			if model[s.original].name() == self.ids.functions.array_access {
-				// Create specialised decomposition of array access for var access of struct types
-				if let Some(body) = self.decompose_array_access(db, model, f) {
-					self.specialised_model[f].set_body(body);
-					self.specialised_model[f].validate(db);
 					continue;
 				}
 			}
@@ -679,6 +679,12 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 		if self.specialised_model[indices].ty().contains_var(db) {
 			let elem = self.specialised_model[array].ty().elem_ty(db).unwrap();
 			if elem.is_tuple(db) || elem.is_record(db) {
+				log::debug!(
+					"Creating specialised array access for {}",
+					PrettyPrinter::new(db, &self.specialised_model)
+						.pretty_print_signature(f.into())
+				);
+
 				// Decompose access to array of structured types
 				let call =
 					|ts: &mut Self, name: Identifier<'db>, args: Vec<Expression<'db, Dst>>| {
@@ -972,7 +978,7 @@ mod tests {
     function string: 'show<tuple(opt int, bool)>'(tuple(opt int, bool): x) = concat(["(", 'show<opt int>'((x).1), ", ", 'show<any $T>'((x).2), ")"]);
     function string: 'show<record(int: a, int: b)>'(record(int: a, int: b): x) = concat(["(", "a", ": ", 'show<any $T>'((x).a), ", ", "b", ": ", 'show<any $T>'((x).b), ")"]);
     function string: 'show<any $T>'(any $T: x);
-    function string: 'show<array [int] of tuple(opt int, bool)>'(array [int] of tuple(opt int, bool): x) = concat(["[", join(", ", ['show<tuple(opt int, bool)>'(_DECL_11) | _DECL_11 in x]), "]"]);
+    function string: 'show<array [int] of tuple(opt int, bool)>'(array [int] of tuple(opt int, bool): x) = concat(["[", join(", ", ['show<tuple(opt int, bool)>'(_DECL_13) | _DECL_13 in x]), "]"]);
     function string: 'show<array [$X] of any $T>'(array [$X] of any $T: x);
     function string: concat(array [$T] of string: x);
     function string: join(string: s, array [$T] of string: x);
@@ -1091,9 +1097,9 @@ mod tests {
 			any: b = foo(1.5);
 		"#,
 			expect!([r#"
-    function int: 'bar<int>'(int: x) = x;
     function float: 'foo<float>'(float: x) = 'bar<float>'(x);
     function int: 'foo<int>'(int: x) = 'bar<int>'(x);
+    function int: 'bar<int>'(int: x) = x;
     function float: 'bar<float>'(float: x) = 2.4;
     int: a = 'foo<int>'(1);
     float: b = 'foo<float>'(1.5);
@@ -1115,7 +1121,7 @@ mod tests {
 			expect!([r#"
     array [int] of int: x = [1, 2, 3];
     int: v = '[]<array [int] of int, int>'(x, 1);
-    var '..<int, int>'(1, 3): i;
+    var ((1) .. (3)): i;
     var int: u = '[]<array [int] of var int, var int>'(x, i);
 "#]),
 		)
@@ -1134,7 +1140,7 @@ mod tests {
 		"#,
 			expect!([r#"
     enum Foo = { A } ++ { B } ++ { C };
-    array [Foo] of var '..<int, int>'(1, 3): x;
+    array [Foo] of var ((1) .. (3)): x;
     var int: v = '[]<array [Foo] of var int, Foo>'(x, A);
     var Foo: i;
     var int: u = '[]<array [Foo] of var int, var Foo>'(x, i);
@@ -1152,8 +1158,8 @@ mod tests {
 			any: v = x[i];
 		"#,
 			expect!([r#"
-    array ['..<int, int>'(1, 3)] of tuple(int, int): x;
-    var '..<int, int>'(1, 3): i;
+    array [((1) .. (3))] of tuple(int, int): x;
+    var ((1) .. (3)): i;
     tuple(var int, var int): v = '[]<array [int] of tuple(var int, var int), var int>'(x, i);
 "#]),
 		)
@@ -1169,8 +1175,8 @@ mod tests {
 			any: v = x[i];
 		"#,
 			expect!([r#"
-    array ['..<int, int>'(1, 3)] of record(int: bar, int: foo): x;
-    var '..<int, int>'(1, 3): i;
+    array [((1) .. (3))] of record(int: bar, int: foo): x;
+    var ((1) .. (3)): i;
     record(var int: bar, var int: foo): v = '[]<array [int] of record(var int: bar, var int: foo), var int>'(x, i);
 "#]),
 		)
@@ -1190,9 +1196,9 @@ mod tests {
 		"#,
 			expect!([r#"
     function int: 'foo<var opt int>'(var opt int: x) = 1;
-    function int: 'foo<opt int>'(opt int: x) = 4;
-    function int: 'foo<int>'(int: x) = 3;
     function int: 'foo<var int>'(var int: x) = 2;
+    function int: 'foo<int>'(int: x) = 3;
+    function int: 'foo<opt int>'(opt int: x) = 4;
     var opt int: x;
     int: y = 'foo<var opt int>'(x);
 "#]),

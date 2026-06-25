@@ -413,7 +413,7 @@ mod tests {
 			expect![[r#"
     function bool: mzn_abort(string: msg) :: total;
     function bool: bar(int: x) :: total;
-    function int: foo(int: x) :: total;
+    function int: foo(int: x) :: par_partial :: needs_root;
 "#]],
 		);
 	}

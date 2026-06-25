@@ -7,9 +7,7 @@
 
 use rustc_hash::FxHashMap;
 use shackle_diagnostics::Result;
-use shackle_hir::{
-	Identifier, IntegerLiteral, StringLiteral, VarType, constants::IdentifierRegistry,
-};
+use shackle_hir::{IntegerLiteral, StringLiteral, VarType, constants::IdentifierRegistry};
 use shackle_ty::{EnumRef, registry::TypeRegistry};
 use shackle_utils::{arena::ArenaMap, maybe_grow_stack};
 
@@ -237,10 +235,15 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for EnumEraser<'db
 			let mut folded = fold_domain(self, db, model, domain);
 			if folded.ty().enum_ty(db).is_some() {
 				// Erase enum types into ints
-				if let Some(VarType::Var) = folded.ty().inst(db) {
-					folded.set_ty_unchecked(self.tys.var_int);
+				let ty = if let Some(VarType::Var) = folded.ty().inst(db) {
+					self.tys.var_int
 				} else {
-					folded.set_ty_unchecked(self.tys.par_int);
+					self.tys.par_int
+				};
+				if let Some(opt) = folded.ty().opt(db) {
+					folded.set_ty_unchecked(ty.with_opt(db, opt));
+				} else {
+					folded.set_ty_unchecked(ty);
 				}
 			}
 			folded
@@ -333,12 +336,9 @@ impl<'db, Src: Marker, Dst: Marker> EnumEraser<'db, Dst, Src> {
 			// Create declaration for enum data input
 			let mut enum_declaration = Declaration::new(
 				true,
-				Domain::unbounded(db, origin, self.tys.mzn_enum_definition),
+				Domain::unbounded(db, origin, self.tys.array_of_string),
 			);
-			enum_declaration.set_name(Identifier::new(
-				db,
-				format!("mzn_enum_{}", enumeration.enum_type().name().lookup(db)),
-			));
+			enum_declaration.set_name(enumeration.enum_type().name().into());
 			let enum_declaration_idx = self
 				.model
 				.add_declaration(Item::new(enum_declaration, origin));
@@ -366,7 +366,6 @@ impl<'db, Src: Marker, Dst: Marker> EnumEraser<'db, Dst, Src> {
 		//   set of int: Foo = mzn_defining_set(mzn_enum);
 		let mut defining_set_declaration =
 			Declaration::new(true, Domain::unbounded(db, origin, self.tys.set_of_int));
-		defining_set_declaration.set_name(enumeration.enum_type().name().into());
 		defining_set_declaration.annotations_mut().extend(
 			enumeration
 				.annotations()
@@ -466,22 +465,22 @@ mod tests {
     } in _DECL_2), ("F", let {
       array [int] of tuple(int, set of int): _DECL_3 = [];
     } in _DECL_3)]);
-    set of int: Bar = mzn_defining_set(_DECL_1);
+    set of int: _DECL_4 = mzn_defining_set(_DECL_1);
     int: E = mzn_construct_enum(_DECL_1, 1);
     int: F = mzn_construct_enum(_DECL_1, 2);
-    tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_4 = mzn_get_enum([("A", let {
-      array [int] of tuple(int, set of int): _DECL_5 = [];
-    } in _DECL_5), ("B", let {
+    tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_5 = mzn_get_enum([("A", let {
       array [int] of tuple(int, set of int): _DECL_6 = [];
-    } in _DECL_6), ("C", let {
+    } in _DECL_6), ("B", let {
       array [int] of tuple(int, set of int): _DECL_7 = [];
-    } in _DECL_7), ("D", [(1, Bar)])]);
-    set of int: Foo = mzn_defining_set(_DECL_4);
-    int: A = mzn_construct_enum(_DECL_4, 1);
-    int: B = mzn_construct_enum(_DECL_4, 2);
-    int: C = mzn_construct_enum(_DECL_4, 3);
+    } in _DECL_7), ("C", let {
+      array [int] of tuple(int, set of int): _DECL_8 = [];
+    } in _DECL_8), ("D", [(1, _DECL_4)])]);
+    set of int: _DECL_9 = mzn_defining_set(_DECL_5);
+    int: A = mzn_construct_enum(_DECL_5, 1);
+    int: B = mzn_construct_enum(_DECL_5, 2);
+    int: C = mzn_construct_enum(_DECL_5, 3);
     int: x = B;
-    int: y = mzn_construct_enum(_DECL_4, 4, [E]);
+    int: y = mzn_construct_enum(_DECL_5, 4, [E]);
 "#]),
 		);
 	}
@@ -502,22 +501,22 @@ mod tests {
     } in _DECL_2), ("F", let {
       array [int] of tuple(int, set of int): _DECL_3 = [];
     } in _DECL_3)]);
-    set of int: Bar = mzn_defining_set(_DECL_1);
+    set of int: _DECL_4 = mzn_defining_set(_DECL_1);
     int: E = mzn_construct_enum(_DECL_1, 1);
     int: F = mzn_construct_enum(_DECL_1, 2);
-    tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_4 = mzn_get_enum([("A", let {
-      array [int] of tuple(int, set of int): _DECL_5 = [];
-    } in _DECL_5), ("B", let {
+    tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_5 = mzn_get_enum([("A", let {
       array [int] of tuple(int, set of int): _DECL_6 = [];
-    } in _DECL_6), ("C", let {
+    } in _DECL_6), ("B", let {
       array [int] of tuple(int, set of int): _DECL_7 = [];
-    } in _DECL_7), ("D", [(1, Bar)])]);
-    set of int: Foo = mzn_defining_set(_DECL_4);
-    int: A = mzn_construct_enum(_DECL_4, 1);
-    int: B = mzn_construct_enum(_DECL_4, 2);
-    int: C = mzn_construct_enum(_DECL_4, 3);
-    function string: show(Foo: x) = mzn_show_enum([_DECL_1, _DECL_4], 2, x);
-    function string: show(Bar: x) = mzn_show_enum([_DECL_1], 1, x);
+    } in _DECL_7), ("C", let {
+      array [int] of tuple(int, set of int): _DECL_8 = [];
+    } in _DECL_8), ("D", [(1, _DECL_4)])]);
+    set of int: _DECL_9 = mzn_defining_set(_DECL_5);
+    int: A = mzn_construct_enum(_DECL_5, 1);
+    int: B = mzn_construct_enum(_DECL_5, 2);
+    int: C = mzn_construct_enum(_DECL_5, 3);
+    function string: show(_DECL_9: x) = mzn_show_enum([_DECL_1, _DECL_5], 2, x);
+    function string: show(_DECL_4: x) = mzn_show_enum([_DECL_1], 1, x);
 "#]),
 		);
 	}
@@ -535,9 +534,9 @@ mod tests {
     tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_1 = mzn_get_enum([("A", let {
       array [int] of tuple(int, set of int): _DECL_2 = [];
     } in _DECL_2)]);
-    set of int: Foo = mzn_defining_set(_DECL_1);
+    set of int: _DECL_3 = mzn_defining_set(_DECL_1);
     int: A = mzn_construct_enum(_DECL_1, 1);
-    Foo: x = to_enum(Foo, 1);
+    _DECL_3: x = to_enum(_DECL_3, 1);
     int: y = A;
 "#]),
 		);
@@ -555,9 +554,9 @@ mod tests {
     tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int)): _DECL_1 = mzn_get_enum([("A", let {
       array [int] of tuple(int, set of int): _DECL_2 = [];
     } in _DECL_2)]);
-    set of int: Foo = mzn_defining_set(_DECL_1);
+    set of int: _DECL_3 = mzn_defining_set(_DECL_1);
     int: A = mzn_construct_enum(_DECL_1, 1);
-    set of int: x = Foo;
+    set of int: x = _DECL_3;
 "#]),
 		);
 	}

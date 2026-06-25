@@ -58,3 +58,6 @@ function var opt $T: mzn_default_opt(var opt $T: x, var opt $T: y) :: mzn_inline
 		let { any: xx = x } in (if occurs(xx) then deopt(xx) else yy endif),
 		yy,
 	);
+
+function opt $T: val2opt($T: x);
+function var opt $T: val2opt(var $T: x);

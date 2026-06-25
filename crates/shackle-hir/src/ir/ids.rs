@@ -187,6 +187,11 @@ impl<'db> EntityRef<'db> {
 		}
 	}
 
+	/// Get the model file this entity is defined in
+	pub fn model_file(&self, db: &'db dyn Db) -> ModelFile {
+		self.item(db).model_file(db)
+	}
+
 	/// Get the source and span for emitting a diagnostic
 	pub fn source_span(&self, db: &dyn Db) -> (SourceFile, SourceSpan) {
 		match self.entity(db) {
@@ -221,6 +226,15 @@ pub enum NodeRef<'db> {
 }
 
 impl<'db> NodeRef<'db> {
+	/// Get the model file this node is defined in
+	pub fn model_file(&self, db: &'db dyn Db) -> ModelFile {
+		match *self {
+			NodeRef::Model(m) => m,
+			NodeRef::Item(i) => i.model_file(db),
+			NodeRef::Entity(e) => e.model_file(db),
+		}
+	}
+
 	/// Get the source and span for emitting a diagnostic
 	pub fn source_span(&self, db: &dyn Db) -> (SourceFile, SourceSpan) {
 		match *self {

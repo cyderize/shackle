@@ -21,6 +21,7 @@ pub type ExpressionId<'db> = ArenaIndex<Expression<'db>>;
 /// An expression
 #[derive(Clone, From, Hash, PartialEq, Eq, salsa::Update, Unwrap, TryUnwrap)]
 #[unwrap(ref)]
+#[try_unwrap(ref)]
 pub enum Expression<'db> {
 	/// Integer literal
 	#[from]

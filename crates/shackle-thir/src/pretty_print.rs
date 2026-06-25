@@ -260,6 +260,7 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 			write!(&mut buf, " :: ({})", self.pretty_print_expression(ann)).unwrap();
 		}
 		if self.old_compat {
+			write!(&mut buf, " :: promise_total").unwrap();
 			if let Some(body) = function.body() {
 				if function.name() == self.ids.functions.deopt
 					&& !function.type_inst_vars().is_empty()
@@ -461,44 +462,44 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 				}
 			}
 			ExpressionData::Call(c) => {
-				// if (c.arguments.len() == 1 || c.arguments.len() == 2)
-				// 	&& let Callable::Function(f) = &c.function
-				// 	&& self.model[*f].specialised_from().is_none()
-				// {
-				// 	let name = self.model[*f].name().as_identifier(self.db).lookup(self.db);
-				// 	if c.arguments.len() == 1 {
-				// 		if matches!(name, "o.." | "o<.." | "o..<" | "o<..<") {
-				// 			return format!(
-				// 				"({}({}))",
-				// 				&name[1..],
-				// 				self.pretty_print_expression(&c.arguments[0])
-				// 			);
-				// 		}
-				// 		if shackle_syntax::is_prefix_operator(name) {
-				// 			return format!(
-				// 				"({}({}))",
-				// 				name,
-				// 				self.pretty_print_expression(&c.arguments[0])
-				// 			);
-				// 		}
-				// 		if name.len() > 1
-				// 			&& shackle_syntax::is_postfix_operator(&name[..name.len() - 1])
-				// 		{
-				// 			return format!(
-				// 				"(({}){})",
-				// 				self.pretty_print_expression(&c.arguments[0]),
-				// 				&name[..name.len() - 1],
-				// 			);
-				// 		};
-				// 	} else if shackle_syntax::is_infix_operator(name) {
-				// 		return format!(
-				// 			"(({}) {} ({}))",
-				// 			self.pretty_print_expression(&c.arguments[0]),
-				// 			name,
-				// 			self.pretty_print_expression(&c.arguments[1])
-				// 		);
-				// 	}
-				// }
+				if (c.arguments.len() == 1 || c.arguments.len() == 2)
+					&& let Callable::Function(f) = &c.function
+					&& self.model[*f].body().is_none()
+				{
+					let name = self.model[*f].name().as_identifier(self.db).lookup(self.db);
+					if c.arguments.len() == 1 {
+						if matches!(name, "o.." | "o<.." | "o..<" | "o<..<") {
+							return format!(
+								"({}({}))",
+								&name[1..],
+								self.pretty_print_expression(&c.arguments[0])
+							);
+						}
+						if shackle_syntax::is_prefix_operator(name) {
+							return format!(
+								"({}({}))",
+								name,
+								self.pretty_print_expression(&c.arguments[0])
+							);
+						}
+						if name.len() > 1
+							&& shackle_syntax::is_postfix_operator(&name[..name.len() - 1])
+						{
+							return format!(
+								"(({}){})",
+								self.pretty_print_expression(&c.arguments[0]),
+								&name[..name.len() - 1],
+							);
+						};
+					} else if shackle_syntax::is_infix_operator(name) {
+						return format!(
+							"(({}) {} ({}))",
+							self.pretty_print_expression(&c.arguments[0]),
+							name,
+							self.pretty_print_expression(&c.arguments[1])
+						);
+					}
+				}
 
 				let f = match &c.function {
 					Callable::Annotation(a) => self.model[*a]
@@ -553,13 +554,6 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 									" \\/ "
 								});
 						}
-						if self.old_compat && name == self.ids.builtins.mzn_slice_internal {
-							return format!(
-								"(let {{ any: mzn_x = {}; any: mzn_i = {}; }} in slice_1d(mzn_x, mzn_i, 1..length(mzn_x)))",
-								self.pretty_print_expression(&c.arguments[0]),
-								self.pretty_print_expression(&c.arguments[1]),
-							);
-						}
 						(|| {
 							if let Some(tys) = self.model[*f].mangled_param_tys()
 								&& (!self.old_compat || self.model[*f].body().is_some())
@@ -612,7 +606,19 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 			ExpressionData::Identifier(i) => match i {
 				ResolvedIdentifier::Annotation(a) => self.model[*a]
 					.name
-					.map(|n| n.pretty_print(self.db))
+					.map(|n| match &n.pretty_print(self.db)[..] {
+						"shackle_mzn_internal_representation" if self.old_compat => {
+							"mzn_internal_representation".to_owned()
+						}
+						"shackle_output_only" if self.old_compat => "output_only".to_owned(),
+						"shackle_promise_total" if self.old_compat => "promise_total".to_owned(),
+						"shackle_promise_commutative" if self.old_compat => {
+							"promise_commutative".to_owned()
+						}
+						"shackle_maybe_partial" if self.old_compat => "maybe_partial".to_owned(),
+						"shackle_output" if self.old_compat => "output".to_owned(),
+						n => n.to_owned(),
+					})
 					.unwrap_or_else(|| format!("_ANN_{}", Into::<u32>::into(*a))),
 
 				ResolvedIdentifier::Declaration(d) => self.model[*d]

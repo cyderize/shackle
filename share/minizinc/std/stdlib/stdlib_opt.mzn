@@ -72,4 +72,5 @@ function bool: had_zero(opt $$E: x) = not mzn_check_absent_zero() \/ enum2int(x)
 function bool: had_zero(array [int] of var opt $$E: x) = exists (xi in x) (had_zero(xi));
 
 function tuple(var bool, var float): opt_internal_float(var opt float: x) = mzn_destruct_opt(x);
-function var opt $T: reverse_map_var_opt(var bool: b, var $T: dx) :: output_only;
+function var opt $T: reverse_map_var_opt(var bool: b, var $T: dx) :: output_only =
+	mzn_construct_opt((b, dx));

@@ -10,7 +10,7 @@ use super::top_down_type::add_coercion;
 use crate::{
 	ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Db, Declaration, Domain, Expression,
 	FunctionId, FunctionName, Generator, IfThenElse, Item, LookupCall, Marker, Model, RecordAccess,
-	SetComprehension, TupleAccess, TupleLiteral,
+	RecordLiteral, SetComprehension, TupleAccess, TupleLiteral,
 	pretty_print::PrettyPrinter,
 	traverse::{Folder, ReplacementMap, add_function, fold_function_body},
 };
@@ -483,10 +483,13 @@ impl<'db, Src: Marker, Dst: Marker> DispatchRewriter<'db, Dst, Src> {
 								field: (*i).into(),
 							},
 						);
-						self.dispatch_param(db, ce, ve, *d1, *d2, condition)
+						(
+							Identifier::from(*i),
+							self.dispatch_param(db, ce, ve, *d1, *d2, condition),
+						)
 					})
 					.collect::<Vec<_>>();
-				Expression::new(db, &self.model, origin, TupleLiteral(fields))
+				Expression::new(db, &self.model, origin, RecordLiteral(fields))
 			}
 			_ => unreachable!(
 				"Cannot dispatch {} to {}",
@@ -697,8 +700,8 @@ mod tests {
 			expect!([r#"
     function bool: foo(float: x) = true;
     function bool: foo(var int: x) = if is_fixed(x) then foo(fix(x)) else true endif;
-    function bool: foo(int: x) = false;
     function bool: foo(var float: x) = true;
+    function bool: foo(int: x) = false;
     var float: x;
     var int: y;
     constraint foo(x);

@@ -81,6 +81,7 @@ unsafe impl<T> salsa::Update for ArenaIndex<T> {
 }
 
 impl<T> ArenaIndex<T> {
+	/// Create a new arena index from a raw 1-based index
 	fn new(raw: u32) -> Self {
 		Self {
 			index: NonZeroU32::new(raw).expect("Expected non-zero index"),

@@ -1,5 +1,3 @@
-#![allow(unused_crate_dependencies)]
-
 //! Typed high-level intermediate representation.
 //!
 //! This module provides (almost) all constructs available in the HIR, along

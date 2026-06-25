@@ -549,6 +549,10 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 		self.totalise_comprehension_inner(db, model, c, origin, 0, None, Vec::new())
 	}
 
+	#[allow(
+		clippy::too_many_arguments,
+		reason = "Helper carries recursive comprehension state"
+	)]
 	fn totalise_comprehension_inner(
 		&mut self,
 		db: &'db dyn Db,
@@ -1197,7 +1201,7 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				items.push(LetItem::Declaration(conditions_idx));
 
 				let in_expression =
-					self.decompose_tuple_ite(db, model, ty, origin, conditions_e, result_idents);
+					self.decompose_tuple_ite(db, ty, origin, conditions_e, result_idents);
 				result = Expression::new(
 					db,
 					&self.totalised_model,
@@ -1258,7 +1262,6 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 	fn decompose_tuple_ite(
 		&mut self,
 		db: &'db dyn Db,
-		model: &Model<'db>,
 		ty: Ty<'db>,
 		origin: Origin<'db>,
 		conditions: Expression<'db, Dst>,
@@ -1278,7 +1281,6 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					maybe_grow_stack(|| {
 						self.decompose_tuple_ite(
 							db,
-							model,
 							inner_ty,
 							origin,
 							conditions.clone(),

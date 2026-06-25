@@ -11,6 +11,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 /// `HashMap` using pointers as keys
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefMap<'a, K, V> {
+	/// Inner map
 	map: FxHashMap<KeyRef<'a, K>, V>,
 }
 
@@ -110,6 +111,7 @@ impl<'a, K, V> Index<&'a K> for RefMap<'a, K, V> {
 /// `HashSet` of pointers
 #[derive(Debug)]
 pub struct RefSet<'a, K> {
+	/// Inner set
 	set: FxHashSet<KeyRef<'a, K>>,
 }
 
@@ -159,6 +161,7 @@ impl<'a, K> Extend<&'a K> for RefSet<'a, K> {
 	}
 }
 
+/// Acts as the key in the hash map/set
 #[derive(Copy, Clone, Debug)]
 struct KeyRef<'a, T>(&'a T);
 

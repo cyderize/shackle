@@ -50,13 +50,11 @@ impl<'db, T: Marker> Annotations<'db, T> {
 	pub fn remove(&mut self, model: &Model<'db, T>, name: Identifier<'db>) -> bool {
 		let mut had_ann = false;
 		self.annotations.retain(|ann| match &**ann {
-			ExpressionData::Identifier(ResolvedIdentifier::Annotation(item)) => {
-				if model[*item].name == Some(name) {
-					had_ann = true;
-					false
-				} else {
-					true
-				}
+			ExpressionData::Identifier(ResolvedIdentifier::Annotation(item))
+				if model[*item].name == Some(name) =>
+			{
+				had_ann = true;
+				false
 			}
 			_ => true,
 		});

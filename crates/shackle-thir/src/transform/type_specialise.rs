@@ -220,19 +220,18 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 		let f = lookup.function;
 
 		// Also instantiate root versions of functions
-		if !name.is_root(db) {
-			if let Ok(lookup) = self
+		if !name.is_root(db)
+			&& let Ok(lookup) = self
 				.original_functions
 				.lookup_function(db, name.root(db), args)
+		{
+			let f = lookup.function;
+			if model[f].is_polymorphic()
+				&& !model[f]
+					.annotations()
+					.has(model, self.ids.annotations.mzn_unreachable)
 			{
-				let f = lookup.function;
-				if model[f].is_polymorphic()
-					&& !model[f]
-						.annotations()
-						.has(model, self.ids.annotations.mzn_unreachable)
-				{
-					let _ = self.instantiate(db, model, name.root(db), args);
-				}
+				let _ = self.instantiate(db, model, name.root(db), args);
 			}
 		}
 

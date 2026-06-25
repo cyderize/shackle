@@ -15,6 +15,9 @@ use crate::{
 
 static MINIZINC_COMPAT: &str = include_str!("../../../share/minizinc/compat.mzn");
 
+/// Callback which adds an annotation to a pretty-printed expression.
+pub type ExpressionAnnotator<'db, T> = dyn Fn(&Expression<'db, T>) -> Option<String> + 'db;
+
 /// Pretty prints THIR as MiniZinc
 pub struct PrettyPrinter<'db, T: Marker = ()> {
 	db: &'db dyn Db,
@@ -23,7 +26,7 @@ pub struct PrettyPrinter<'db, T: Marker = ()> {
 	/// Whether to output a model compatible with old MiniZinc (default `false`)
 	pub old_compat: bool,
 	/// Add an extra annotation on each expression using the given function
-	pub expression_annotator: Option<Box<dyn Fn(&Expression<'db, T>) -> Option<String> + 'db>>,
+	pub expression_annotator: Option<Box<ExpressionAnnotator<'db, T>>>,
 }
 
 impl<'db, T: Marker> std::fmt::Debug for PrettyPrinter<'db, T> {

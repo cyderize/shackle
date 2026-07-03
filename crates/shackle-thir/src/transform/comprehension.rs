@@ -530,7 +530,7 @@ mod tests {
 				any: y = [x_i | x_i in x where foo(x_i)];
 			"#,
 			expect!([r#"
-    function var bool: foo(var int: x);
+    predicate foo(var int: x);
     array [int] of var int: x;
     array [int] of var opt int: y = [if _DECL_1 then val2opt(x_i) else let {
       var opt int: _DECL_2 = <>;
@@ -551,7 +551,7 @@ mod tests {
     var set of int: x;
     array [int] of var opt int: y = [if _DECL_1 then val2opt(x_i) else let {
       opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | x_i in ub(x), _DECL_1 :: (mzn_var_where_clause) = ((x_i) in (x))];
+    } in _DECL_2 endif | x_i in ub(x), _DECL_1 :: (mzn_var_where_clause) = 'in'(x_i, x)];
 "#]),
 		)
 	}
@@ -568,11 +568,11 @@ mod tests {
 			",
 			expect!([r#"
     var set of int: x;
-    function var bool: foo(var int: x);
+    predicate foo(var int: x);
     function bool: bar(int: x);
     array [int] of var opt int: y = [if forall([_DECL_3, _DECL_2, _DECL_1]) then val2opt(x_i) else let {
       opt int: _DECL_4 = <>;
-    } in _DECL_4 endif | x_i in ub(x) where bar(x_i), _DECL_1 :: (mzn_var_where_clause) = ((x_i) in (x)), _DECL_2 :: (mzn_var_where_clause) = foo(x_i), x_j in ub(x) where bar(x_j), _DECL_3 :: (mzn_var_where_clause) = ((x_j) in (x))];
+    } in _DECL_4 endif | x_i in ub(x) where bar(x_i), _DECL_1 :: (mzn_var_where_clause) = 'in'(x_i, x), _DECL_2 :: (mzn_var_where_clause) = foo(x_i), x_j in ub(x) where bar(x_j), _DECL_3 :: (mzn_var_where_clause) = 'in'(x_j, x)];
 "#]),
 		)
 	}
@@ -587,9 +587,9 @@ mod tests {
 				constraint forall (i in S) (foo(i));
 			"#,
 			expect!([r#"
-    function var bool: foo(var int: x);
+    predicate foo(var int: x);
     var set of int: S;
-    constraint forall([((_DECL_1) -> (foo(i))) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
+    constraint forall(['->'(_DECL_1, foo(i)) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -604,9 +604,9 @@ mod tests {
 				constraint exists (i in S) (foo(i));
 			"#,
 			expect!([r#"
-    function var bool: foo(var int: x);
+    predicate foo(var int: x);
     var set of int: S;
-    constraint exists([((_DECL_1) /\ (foo(i))) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
+    constraint exists(['/\'(_DECL_1, foo(i)) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -621,7 +621,7 @@ mod tests {
 			"#,
 			expect!([r#"
     var set of int: S;
-    var int: x = sum([((_DECL_1) * (i)) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
+    var int: x = sum(['*'(_DECL_1, i) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -638,7 +638,7 @@ mod tests {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var int: x = sum([if _DECL_1 then foo(i) else 0 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
+    var int: x = sum([if _DECL_1 then foo(i) else 0 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}
@@ -674,7 +674,7 @@ mod tests {
     function var int: foo(int: x);
     var set of int: x = mzn_array2set([if _DECL_1 then val2opt(foo(i)) else let {
       var opt int: _DECL_2 = <>;
-    } in _DECL_2 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = ((i) in (S))]);
+    } in _DECL_2 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}

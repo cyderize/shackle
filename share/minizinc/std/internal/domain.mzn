@@ -51,7 +51,7 @@ predicate mzn_var_dom(var opt int: x, set of int: s) =
 	mzn_var_dom(deopt(x), mzn_opt_domain(s)) /\ mzn_opt_channel(x, s);
 test mzn_var_dom(set of int: x, set of int: s) = x subset s;
 predicate mzn_var_dom(var set of int: x, set of int: s) =
-	if has_ub_set(x) /\ ub(x) subset s then true else set_subset(x, s) endif;
+	if has_ub_set(x) /\ ub(x) subset s then true else x subset s endif;
 
 test mzn_var_dom(array [int] of int: x, set of int: d) = forall (x_i in x) (mzn_var_dom(x_i, d));
 predicate mzn_var_dom(array [int] of var int: x, set of int: d) =

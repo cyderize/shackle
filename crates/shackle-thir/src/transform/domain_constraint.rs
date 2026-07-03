@@ -1005,46 +1005,46 @@ mod tests {
 			"#,
 			expect!([r#"
     tuple(var int, var int): x = let {
-      set of int: _DECL_1 = ((1) .. (3));
-      set of int: _DECL_2 = ((2) .. (4));
+      set of int: _DECL_1 = '..'(1, 3);
+      set of int: _DECL_2 = '..'(2, 4);
       var _DECL_1: _DECL_3;
       var _DECL_2: _DECL_4;
     } in (_DECL_3, _DECL_4);
     record(var int: a, var int: b): y = let {
-      set of int: _DECL_5 = ((1) .. (3));
-      set of int: _DECL_6 = ((2) .. (4));
+      set of int: _DECL_5 = '..'(1, 3);
+      set of int: _DECL_6 = '..'(2, 4);
       var _DECL_5: _DECL_7;
       var _DECL_6: _DECL_8;
     } in (a: _DECL_7, b: _DECL_8);
     array [int] of tuple(var int, record(var int: a)): z = let {
-      tuple(set of int): _DECL_9 = (((1) .. (2)),);
-      set of int: _DECL_10 = ((1) .. (3));
-      set of int: _DECL_11 = ((2) .. (4));
+      tuple(set of int): _DECL_9 = ('..'(1, 2),);
+      set of int: _DECL_10 = '..'(1, 3);
+      set of int: _DECL_11 = '..'(2, 4);
     } in mzn_array_kd(_DECL_9, [let {
       var _DECL_10: _DECL_13;
       var _DECL_11: _DECL_14;
     } in (_DECL_13, (a: _DECL_14)) | _DECL_12 in (_DECL_9).1]);
     array [int, int] of tuple(var int, var int): w = let {
-      tuple(set of int, set of int): _DECL_15 = (((1) .. (2)), ((2) .. (3)));
-      set of int: _DECL_16 = ((1) .. (3));
-      set of int: _DECL_17 = ((2) .. (4));
+      tuple(set of int, set of int): _DECL_15 = ('..'(1, 2), '..'(2, 3));
+      set of int: _DECL_16 = '..'(1, 3);
+      set of int: _DECL_17 = '..'(2, 4);
     } in mzn_array_kd(_DECL_15, [let {
       var _DECL_16: _DECL_20;
       var _DECL_17: _DECL_21;
     } in (_DECL_20, _DECL_21) | _DECL_18 in (_DECL_15).1, _DECL_19 in (_DECL_15).2]);
     var int: v = let {
       tuple(var int): m = let {
-      set of int: _DECL_22 = ((1) .. (2));
+      set of int: _DECL_22 = '..'(1, 2);
       var _DECL_22: _DECL_23;
     } in (_DECL_23,);
       record(var int: n): o = let {
-      set of int: _DECL_24 = ((1) .. (3));
+      set of int: _DECL_24 = '..'(1, 3);
       var _DECL_24: _DECL_25;
     } in (n: _DECL_25);
     } in (m).1;
     array [int] of var opt int: p = let {
-      tuple(set of int): _DECL_26 = (((1) .. (2)),);
-      set of int: _DECL_27 = ((1) .. (2));
+      tuple(set of int): _DECL_26 = ('..'(1, 2),);
+      set of int: _DECL_27 = '..'(1, 2);
     } in mzn_array_kd(_DECL_26, [let {
       var opt _DECL_27: _DECL_29;
     } in _DECL_29 | _DECL_28 in (_DECL_26).1]);
@@ -1064,29 +1064,29 @@ mod tests {
 				array [1..2] of opt 1..2: p;
 			"#,
 			expect!([r#"
-    set of int: _DECL_1 = ((1) .. (3));
-    set of int: _DECL_2 = ((2) .. (4));
+    set of int: _DECL_1 = '..'(1, 3);
+    set of int: _DECL_2 = '..'(2, 4);
     tuple(int, int): x;
     constraint forall([mzn_domain_constraint(mzn_show_tuple_access("x", 1), (x).1, _DECL_1), mzn_domain_constraint(mzn_show_tuple_access("x", 2), (x).2, _DECL_2)]);
-    set of int: _DECL_3 = ((1) .. (3));
-    set of int: _DECL_4 = ((2) .. (4));
+    set of int: _DECL_3 = '..'(1, 3);
+    set of int: _DECL_4 = '..'(2, 4);
     record(int: a, int: b): y;
     constraint forall([mzn_domain_constraint(mzn_show_record_access("y", "a"), (y).a, _DECL_3), mzn_domain_constraint(mzn_show_record_access("y", "b"), (y).b, _DECL_4)]);
-    set of int: _DECL_5 = ((1) .. (2));
-    set of int: _DECL_6 = ((1) .. (3));
-    set of int: _DECL_7 = ((2) .. (4));
+    set of int: _DECL_5 = '..'(1, 2);
+    set of int: _DECL_6 = '..'(1, 3);
+    set of int: _DECL_7 = '..'(2, 4);
     array [int] of tuple(int, record(int: a)): z;
     constraint forall([mzn_check_index_set("z", index_set(z), _DECL_5), forall([forall([mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("z", _DECL_9), 1), ('[]'(z, _DECL_9)).1, _DECL_6), mzn_domain_constraint(mzn_show_record_access(mzn_show_tuple_access(mzn_show_array_access("z", _DECL_9), 2), "a"), (('[]'(z, _DECL_9)).2).a, _DECL_7)]) | _DECL_8 = index_sets(z), _DECL_9 in (_DECL_8).1])]);
-    set of int: _DECL_10 = ((1) .. (2));
-    set of int: _DECL_11 = ((2) .. (3));
-    set of int: _DECL_12 = ((1) .. (3));
-    set of int: _DECL_13 = ((2) .. (4));
+    set of int: _DECL_10 = '..'(1, 2);
+    set of int: _DECL_11 = '..'(2, 3);
+    set of int: _DECL_12 = '..'(1, 3);
+    set of int: _DECL_13 = '..'(2, 4);
     array [int, int] of tuple(int, int): w;
     constraint forall([let {
       tuple(set of int, set of int): _DECL_14 = index_sets(w);
     } in forall([mzn_check_index_set("w", 1, 2, (_DECL_14).1, _DECL_10), mzn_check_index_set("w", 2, 2, (_DECL_14).2, _DECL_11)]), forall([forall([mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 1), ('[]'(w, (_DECL_16, _DECL_17))).1, _DECL_12), mzn_domain_constraint(mzn_show_tuple_access(mzn_show_array_access("w", (_DECL_16, _DECL_17)), 2), ('[]'(w, (_DECL_16, _DECL_17))).2, _DECL_13)]) | _DECL_15 = index_sets(w), _DECL_16 in (_DECL_15).1, _DECL_17 in (_DECL_15).2])]);
-    set of int: _DECL_18 = ((1) .. (2));
-    set of int: _DECL_19 = ((1) .. (2));
+    set of int: _DECL_18 = '..'(1, 2);
+    set of int: _DECL_19 = '..'(1, 2);
     array [int] of opt int: p;
     constraint forall([mzn_check_index_set("p", index_set(p), _DECL_18), forall([mzn_domain_constraint(mzn_show_array_access("p", _DECL_21), '[]'(p, _DECL_21), _DECL_19) | _DECL_20 = index_sets(p), _DECL_21 in (_DECL_20).1])]);
 "#]),
@@ -1108,33 +1108,33 @@ mod tests {
 				array [1..2, 1..2] of int: d;
 			"#,
 			expect!([r#"
-    set of int: _DECL_1 = ((1) .. (3));
-    set of int: _DECL_2 = ((2) .. (4));
+    set of int: _DECL_1 = '..'(1, 3);
+    set of int: _DECL_2 = '..'(2, 4);
     tuple(var int, var int): x = (1, 2);
     constraint forall([mzn_domain_constraint(mzn_show_tuple_access("x", 1), (x).1, _DECL_1), mzn_domain_constraint(mzn_show_tuple_access("x", 2), (x).2, _DECL_2)]);
-    set of int: _DECL_3 = ((1) .. (3));
-    set of int: _DECL_4 = ((2) .. (4));
+    set of int: _DECL_3 = '..'(1, 3);
+    set of int: _DECL_4 = '..'(2, 4);
     tuple(int, int): y;
     constraint forall([mzn_domain_constraint(mzn_show_tuple_access("y", 1), (y).1, _DECL_3), mzn_domain_constraint(mzn_show_tuple_access("y", 2), (y).2, _DECL_4)]);
-    set of int: _DECL_5 = ((1) .. (2));
+    set of int: _DECL_5 = '..'(1, 2);
     record(int: a): z;
     constraint mzn_domain_constraint(mzn_show_record_access("z", "a"), (z).a, _DECL_5);
-    set of int: _DECL_6 = ((1) .. (3));
+    set of int: _DECL_6 = '..'(1, 3);
     function var bool: foo(var int: x) = let {
       constraint mzn_domain_constraint("x", x, _DECL_6);
     } in true;
-    set of int: _DECL_7 = ((1) .. (2));
+    set of int: _DECL_7 = '..'(1, 2);
     array [int] of int: a;
     constraint forall([mzn_domain_constraint(mzn_show_array_access("a", _DECL_9), '[]'(a, _DECL_9), _DECL_7) | _DECL_8 = index_sets(a), _DECL_9 in (_DECL_8).1]);
-    set of int: _DECL_10 = ((1) .. (2));
+    set of int: _DECL_10 = '..'(1, 2);
     array [int] of int: b;
     constraint mzn_check_index_set("b", index_set(b), _DECL_10);
-    set of int: _DECL_11 = ((1) .. (2));
-    set of int: _DECL_12 = ((1) .. (2));
+    set of int: _DECL_11 = '..'(1, 2);
+    set of int: _DECL_12 = '..'(1, 2);
     array [int] of int: c;
     constraint forall([mzn_check_index_set("c", index_set(c), _DECL_11), forall([mzn_domain_constraint(mzn_show_array_access("c", _DECL_14), '[]'(c, _DECL_14), _DECL_12) | _DECL_13 = index_sets(c), _DECL_14 in (_DECL_13).1])]);
-    set of int: _DECL_15 = ((1) .. (2));
-    set of int: _DECL_16 = ((1) .. (2));
+    set of int: _DECL_15 = '..'(1, 2);
+    set of int: _DECL_16 = '..'(1, 2);
     array [int, int] of int: d;
     constraint let {
       tuple(set of int, set of int): _DECL_17 = index_sets(d);
@@ -1157,22 +1157,22 @@ mod tests {
 				} in x;
 			"#,
 			expect!([r#"
-    var ((1) .. (3)): a;
-    var set of ((1) .. (3)): b;
+    var '..'(1, 3): a;
+    var set of '..'(1, 3): b;
     array [int] of var int: c = let {
-      tuple(set of int): _DECL_1 = (((1) .. (2)),);
-      set of int: _DECL_2 = ((1) .. (3));
+      tuple(set of int): _DECL_1 = ('..'(1, 2),);
+      set of int: _DECL_2 = '..'(1, 3);
     } in mzn_array_kd(_DECL_1, [let {
       var _DECL_2: _DECL_4;
     } in _DECL_4 | _DECL_3 in (_DECL_1).1]);
     array [int] of var set of int: d = let {
-      tuple(set of int): _DECL_5 = (((1) .. (2)),);
-      set of int: _DECL_6 = ((1) .. (3));
+      tuple(set of int): _DECL_5 = ('..'(1, 2),);
+      set of int: _DECL_6 = '..'(1, 3);
     } in mzn_array_kd(_DECL_5, [let {
       var set of _DECL_6: _DECL_8;
     } in _DECL_8 | _DECL_7 in (_DECL_5).1]);
     var int: e = let {
-      var ((1) .. (3)): x;
+      var '..'(1, 3): x;
     } in x;
 "#]),
 		)
@@ -1187,15 +1187,15 @@ mod tests {
 				function var 1..2: bar(var 1..3: x) = x;
 			"#,
 			expect!([r#"
-    set of int: _DECL_1 = ((1) .. (3));
-    set of int: _DECL_2 = ((1) .. (2));
+    set of int: _DECL_1 = '..'(1, 3);
+    set of int: _DECL_2 = '..'(1, 2);
     function int: foo(int: x) = let {
       constraint mzn_domain_constraint("x", x, _DECL_1);
       int: _DECL_3 = x;
       constraint mzn_domain_constraint("<return value>", _DECL_3, _DECL_2);
     } in _DECL_3;
-    set of int: _DECL_4 = ((1) .. (3));
-    set of int: _DECL_5 = ((1) .. (2));
+    set of int: _DECL_4 = '..'(1, 3);
+    set of int: _DECL_5 = '..'(1, 2);
     function var int: bar(var int: x) = let {
       constraint mzn_domain_constraint("x", x, _DECL_4);
       var int: _DECL_6 = x;
@@ -1216,20 +1216,20 @@ mod tests {
 			"#,
 			expect!([r#"
     array [int] of var int: x = let {
-      tuple(set of int): _DECL_1 = (((1) .. (3)),);
+      tuple(set of int): _DECL_1 = ('..'(1, 3),);
     } in mzn_array_kd(_DECL_1, [let {
       var int: _DECL_3;
     } in _DECL_3 | _DECL_2 in (_DECL_1).1]);
     array [int] of var int: y = let {
-      tuple(set of int): _DECL_4 = (((1) .. (3)),);
-      set of int: _DECL_5 = ((1) .. (3));
+      tuple(set of int): _DECL_4 = ('..'(1, 3),);
+      set of int: _DECL_5 = '..'(1, 3);
     } in mzn_array_kd(_DECL_4, [let {
       var _DECL_5: _DECL_7;
     } in _DECL_7 | _DECL_6 in (_DECL_4).1]);
     array [int] of tuple(var int, var int): z = let {
-      tuple(set of int): _DECL_8 = (((1) .. (3)),);
-      set of int: _DECL_9 = ((1) .. (2));
-      set of int: _DECL_10 = ((3) .. (4));
+      tuple(set of int): _DECL_8 = ('..'(1, 3),);
+      set of int: _DECL_9 = '..'(1, 2);
+      set of int: _DECL_10 = '..'(3, 4);
     } in mzn_array_kd(_DECL_8, [let {
       var _DECL_9: _DECL_12;
       var _DECL_10: _DECL_13;
@@ -1256,7 +1256,7 @@ mod tests {
       var bool: _DECL_3;
     } in (_DECL_2, _DECL_3);
     array [int] of var bool: c = let {
-      tuple(set of int): _DECL_4 = (((1) .. (3)),);
+      tuple(set of int): _DECL_4 = ('..'(1, 3),);
     } in mzn_array_kd(_DECL_4, mzn_unwrap_bool_tuple([let {
       var bool: _DECL_6;
     } in (_DECL_6,) | _DECL_5 in (_DECL_4).1]));

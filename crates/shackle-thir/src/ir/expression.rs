@@ -1073,40 +1073,32 @@ impl<'db, T: Marker> ExpressionBuilder<'db, T> for Let<'db, T> {
 		origin: Origin<'db>,
 	) -> Expression<'db, T> {
 		let types = TypeRegistry::lookup(db);
+		let ids = IdentifierRegistry::lookup(db);
 		let mut ty = self.in_expression.ty();
-		if self.items.iter().any(|item| match item {
-			LetItem::Constraint(idx) => model[*idx].expression().ty() == types.var_bool,
-			LetItem::Declaration(idx) => {
-				model[*idx].definition().is_some()
-					&& model[*idx].domain().walk().any(|d| {
-						d.ty().inst(db) == Some(VarType::Var)
-							&& matches!(**d, DomainData::Bounded(_))
-					})
-			}
-		}) {
+		if !ty.contains_var(db)
+			&& self.items.iter().any(|item| match item {
+				LetItem::Constraint(idx) => {
+					model[*idx].expression().ty() == types.var_bool
+						&& !model[*idx]
+							.annotations()
+							.has(model, ids.annotations.shackle_totalised)
+				}
+				LetItem::Declaration(idx) => {
+					model[*idx].definition().is_some()
+						&& model[*idx]
+							.domain()
+							.walk()
+							.any(|d| d.ty().inst(db) == Some(VarType::Var) && !d.ty().is_bool(db))
+						&& !model[*idx]
+							.annotations()
+							.has(model, ids.annotations.shackle_totalised)
+				}
+			}) {
 			ty = ty
 				.make_var(db)
 				.unwrap_or_else(|| panic!("Could not make {} var", ty.pretty_print(db)));
 		}
 		Expression::new_unchecked(ty, self, origin)
-	}
-}
-
-/// A let expression produced during totalisation
-///
-/// Needed because normal lets promote par bool to var when it can't prove that
-/// the definedness is always par.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, salsa::Update, From)]
-pub struct TotalLet<'db, T: Marker = ()>(pub Let<'db, T>);
-
-impl<'db, T: Marker> ExpressionBuilder<'db, T> for TotalLet<'db, T> {
-	fn build(
-		self,
-		_db: &'db dyn Db,
-		_model: &Model<'db, T>,
-		origin: Origin<'db>,
-	) -> Expression<'db, T> {
-		Expression::new_unchecked(self.0.in_expression.ty(), self.0, origin)
 	}
 }
 

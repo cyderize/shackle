@@ -194,6 +194,36 @@ impl<'db> Identifier<'db> {
 		self.lookup(db).ends_with("_root")
 	}
 
+	/// Get this identifier but with `_reif` appended
+	pub fn reif(&self, db: &'db dyn Db) -> Self {
+		let mut v = self.lookup(db).to_owned();
+		if v.ends_with("_reif") {
+			return *self;
+		}
+		v.push_str("_reif");
+		Self::new(db, v)
+	}
+
+	/// Whether or not this identifier ends with `_reif`
+	pub fn is_reif(&self, db: &'db dyn Db) -> bool {
+		self.lookup(db).ends_with("_reif")
+	}
+
+	/// Get this identifier but with `_imp` appended
+	pub fn imp(&self, db: &'db dyn Db) -> Self {
+		let mut v = self.lookup(db).to_owned();
+		if v.ends_with("_imp") {
+			return *self;
+		}
+		v.push_str("_imp");
+		Self::new(db, v)
+	}
+
+	/// Whether or not this identifier ends with `_imp`
+	pub fn is_imp(&self, db: &'db dyn Db) -> bool {
+		self.lookup(db).ends_with("_imp")
+	}
+
 	/// Whether this identifier matches a string
 	pub fn is<T: AsRef<str>>(&self, db: &'db dyn Db, v: T) -> bool {
 		self.0.lookup(db) == v.as_ref()

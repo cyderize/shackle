@@ -6,7 +6,7 @@ function any $T: '[]'(array [$E] of any $T: x, $E: idx) :: mzn_inline =
 % Array access using var indices
 function var $T: '[]'(array [$E] of var $T: x, var $E: idx) :: mzn_inline =
 	if mzn_array_access_known_valid(x, idx) then
-		shackle_element_root(x, idx)
+		shackle_element_t(x, idx)
 	else
 		shackle_element(x, idx)
 	endif;
@@ -18,25 +18,25 @@ function var opt $T: '[]'(array [$E] of var opt $T: x, var $E: idx) :: mzn_inlin
 function any $T: mzn_element_internal(array [$E] of any $T: x, $F: idx);
 
 % To allow var dispatch to par version
-function any $T: shackle_element_root(array [$E] of any $T: x, $E: idx) =
+function any $T: shackle_element_t(array [$E] of any $T: x, $E: idx) :: promise_total =
 	mzn_element_internal(x, idx);
 function any $T: shackle_element(array [$E] of any $T: x, $E: idx) = '[]'(x, idx);
 
 % 1D var array access
-function var $T: shackle_element_root(array [$$E] of var $T: x, var $$E: idx) =
-	shackle_element_root(index2int(x), enum2int(idx));
+function var $T: shackle_element_t(array [$$E] of var $T: x, var $$E: idx) :: promise_total =
+	shackle_element_t(index2int(x), enum2int(idx));
 function var $T: shackle_element(array [$$E] of var $T: x, var $$E: idx) =
 	let {
 		var index_set(x): idx2 =
 			mzn_totalise(mzn_array_access_valid(x, idx), idx, min(index_set(x)));
-	} in shackle_element_root(x, idx2);
-function var $$T: shackle_element_root(array [$$E] of var $$T: x, var $$E: idx) =
-	to_enum_internal(enum_of(x), shackle_element_root(index2int(enum2int(x)), enum2int(idx)));
+	} in shackle_element_t(x, idx2);
+function var $$T: shackle_element_t(array [$$E] of var $$T: x, var $$E: idx) :: promise_total =
+	to_enum_internal(enum_of(x), shackle_element_t(index2int(enum2int(x)), enum2int(idx)));
 function var $$T: shackle_element(array [$$E] of var $$T: x, var $$E: idx) =
 	let {
 		var index_set(x): idx2 =
 			mzn_totalise(mzn_array_access_valid(x, idx), idx, min(index_set(x)));
-	} in shackle_element_root(x, idx2);
+	} in shackle_element_t(x, idx2);
 function var $T: shackle_element(array [$$E] of var $T: x, tuple(var $$E): idx) =
 	shackle_element(x, idx.1);
 
@@ -62,11 +62,12 @@ function var $$T: shackle_element(array [$$E, $$F] of var $$T: x, tuple(var $$E,
 	endif;
 
 % 2D var array access known to be total
-function var $T: shackle_element_root(array [$$E, $$F] of var $T: x, tuple(var $$E, var $$F): idx) =
+function var $T: shackle_element_t(array [$$E, $$F] of var $T: x, tuple(var $$E, var $$F): idx)
+	:: promise_total =
 	if is_fixed(idx.1) then
 		let {
 			any: idx_set = index_sets(x);
-		} in shackle_element_root(
+		} in shackle_element_t(
 			array1d(
 				idx_set.2,
 				mzn_slice_internal(x, [{enum2int(fix(idx.1))}, enum2int(idx_set.2)]),
@@ -76,7 +77,7 @@ function var $T: shackle_element_root(array [$$E, $$F] of var $T: x, tuple(var $
 	elseif is_fixed(idx.2) then
 		let {
 			any: idx_set = index_sets(x);
-		} in shackle_element_root(
+		} in shackle_element_t(
 			array1d(
 				idx_set.1,
 				mzn_slice_internal(x, [enum2int(idx_set.1), {enum2int(fix(idx.2))}]),
@@ -84,16 +85,14 @@ function var $T: shackle_element_root(array [$$E, $$F] of var $T: x, tuple(var $
 			idx.1,
 		)
 	else
-		shackle_element_root(index2int(x), (enum2int(idx.1), enum2int(idx.2)))
+		shackle_element_t(index2int(x), (enum2int(idx.1), enum2int(idx.2)))
 	endif;
-function var $$T: shackle_element_root(
-	array [$$E, $$F] of var $$T: x,
-	tuple(var $$E, var $$F): idx,
-) =
+function var $$T: shackle_element_t(array [$$E, $$F] of var $$T: x, tuple(var $$E, var $$F): idx)
+	:: promise_total =
 	if is_fixed(idx.1) then
 		let {
 			any: idx_set = index_sets(x);
-		} in shackle_element_root(
+		} in shackle_element_t(
 			array1d(
 				idx_set.2,
 				mzn_slice_internal(x, [{enum2int(fix(idx.1))}, enum2int(idx_set.2)]),
@@ -103,7 +102,7 @@ function var $$T: shackle_element_root(
 	elseif is_fixed(idx.2) then
 		let {
 			any: idx_set = index_sets(x);
-		} in shackle_element_root(
+		} in shackle_element_t(
 			array1d(
 				idx_set.1,
 				mzn_slice_internal(x, [enum2int(idx_set.1), {enum2int(fix(idx.2))}]),
@@ -113,7 +112,7 @@ function var $$T: shackle_element_root(
 	else
 		to_enum_internal(
 			enum_of(x),
-			shackle_element_root(enum2int(x), (enum2int(idx.1), enum2int(idx.2))),
+			shackle_element_t(enum2int(x), (enum2int(idx.1), enum2int(idx.2))),
 		)
 	endif;
 
@@ -151,7 +150,7 @@ function var $T: shackle_element(array [$E] of var $T: x, var $F: idx) =
 				) :: domain_propagation;
 		} in shackle_element(xx, index)
 	endif;
-function var $T: shackle_element_root(array [$E] of var $T: x, var $F: idx) =
+function var $T: shackle_element_t(array [$E] of var $T: x, var $F: idx) :: promise_total =
 	let {
 		any: pairs = mzn_index_pairs(x, idx);
 		any: xx =
@@ -160,12 +159,12 @@ function var $T: shackle_element_root(array [$E] of var $T: x, var $F: idx) =
 	} in if length(var_pairs) == 1 then
 		let {
 			any: (i, is) = mzn_element_internal(var_pairs, 1);
-		} in shackle_element_root(xx, i - min(is) + 1)
+		} in shackle_element_t(xx, i - min(is) + 1)
 	elseif length(var_pairs) == 2 then
 		let {
 			any: (i1, is1) = mzn_element_internal(var_pairs, 1);
 			any: (i2, is2) = mzn_element_internal(var_pairs, 2);
-		} in shackle_element_root(array2d(is1, is2, xx), (i1 - min(is1) + 1, i2 - min(is2) + 1))
+		} in shackle_element_t(array2d(is1, is2, xx), (i1 - min(is1) + 1, i2 - min(is2) + 1))
 	else
 		let {
 			any: index =
@@ -181,7 +180,7 @@ function var $T: shackle_element_root(array [$E] of var $T: x, var $F: idx) =
 								)
 						)
 				) :: domain_propagation;
-		} in shackle_element_root(xx, index)
+		} in shackle_element_t(xx, index)
 	endif;
 
 % Helper to check validity of runtime fixed indices
@@ -293,17 +292,15 @@ function array [int] of tuple(var int, set of int): mzn_index_pairs(
 	];
 
 % Element on integers
-function var int: shackle_element_root(array [int] of var int: x, var int: idx) =
+function var int: shackle_element_t(array [int] of var int: x, var int: idx) :: promise_total =
 	let {
 		var dom_bounds_array(x): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
 		constraint array_var_int_element_nonshifted(idx, x, r) :: defines_var(r);
 	} in r;
 
-function var int: shackle_element_root(
-	array [int, int] of var int: x,
-	tuple(var int, var int): idx,
-) =
+function var int: shackle_element_t(array [int, int] of var int: x, tuple(var int, var int): idx)
+	:: promise_total =
 	let {
 		var dom_bounds_array(x): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
@@ -311,17 +308,18 @@ function var int: shackle_element_root(
 	} in r;
 
 % Element on floats
-function var float: shackle_element_root(array [int] of var float: x, var int: idx) =
+function var float: shackle_element_t(array [int] of var float: x, var int: idx) :: promise_total =
 	let {
 		var lb_array(x)..ub_array(x): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
 		constraint array_var_float_element_nonshifted(idx, x, r) :: defines_var(r);
 	} in r;
 
-function var float: shackle_element_root(
+function var float: shackle_element_t(
 	array [int, int] of var float: x,
 	tuple(var int, var int): idx,
-) =
+)
+	:: promise_total =
 	let {
 		var lb_array(x)..ub_array(x): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
@@ -329,17 +327,19 @@ function var float: shackle_element_root(
 	} in r;
 
 % Element on sets
-function var set of int: shackle_element_root(array [int] of var set of int: x, var int: idx) =
+function var set of int: shackle_element_t(array [int] of var set of int: x, var int: idx)
+	:: promise_total =
 	let {
 		var set of min(ub_array(x))..max(ub_array(x)): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
 		constraint array_var_set_element_nonshifted(idx, x, r) :: defines_var(r);
 	} in r;
 
-function var set of int: shackle_element_root(
+function var set of int: shackle_element_t(
 	array [int, int] of var set of int: x,
 	tuple(var int, var int): idx,
-) =
+)
+	:: promise_total =
 	let {
 		var set of min(ub_array(x))..max(ub_array(x)): r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
@@ -347,17 +347,15 @@ function var set of int: shackle_element_root(
 	} in r;
 
 % Element on booleans
-function var bool: shackle_element_root(array [int] of var bool: x, var int: idx) =
+function var bool: shackle_element_t(array [int] of var bool: x, var int: idx) :: promise_total =
 	let {
 		var bool: r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);
 		constraint array_var_bool_element_nonshifted(idx, x, r) :: defines_var(r);
 	} in r;
 
-function var bool: shackle_element_root(
-	array [int, int] of var bool: x,
-	tuple(var int, var int): idx,
-) =
+function var bool: shackle_element_t(array [int, int] of var bool: x, tuple(var int, var int): idx)
+	:: promise_total =
 	let {
 		var bool: r :: is_defined_var;
 		constraint mzn_array_access_valid(x, idx);

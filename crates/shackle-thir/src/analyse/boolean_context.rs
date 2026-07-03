@@ -22,14 +22,11 @@ pub enum Mode {
 	Root {
 		/// True if root, false if root negative
 		result: bool,
-		/// Depth of the condition expression is inside
-		conditional_depth: usize,
 	},
+	/// Promise total
+	PromiseTotal,
 	/// Positive, negative or mixed context
-	NonRoot {
-		/// Depth of the condition expression is inside
-		conditional_depth: usize,
-	},
+	NonRoot,
 }
 
 impl Not for Mode {
@@ -37,13 +34,7 @@ impl Not for Mode {
 
 	fn not(self) -> Self::Output {
 		match self {
-			Mode::Root {
-				result,
-				conditional_depth,
-			} => Mode::Root {
-				result: !result,
-				conditional_depth,
-			},
+			Mode::Root { result } => Mode::Root { result: !result },
 			_ => self,
 		}
 	}
@@ -52,10 +43,7 @@ impl Not for Mode {
 impl Mode {
 	/// Create a new root mode
 	pub fn root() -> Self {
-		Mode::Root {
-			result: true,
-			conditional_depth: 0,
-		}
+		Mode::Root { result: true }
 	}
 
 	/// Whether this is root context
@@ -68,45 +56,15 @@ impl Mode {
 		matches!(self, Mode::Root { result: false, .. })
 	}
 
-	/// Depth of the condition expression is inside
-	pub fn conditional_depth(&self) -> usize {
-		match self {
-			Mode::Root {
-				conditional_depth, ..
-			}
-			| Mode::NonRoot { conditional_depth } => *conditional_depth,
-		}
-	}
-
-	/// Set depth of the condition expression is inside
-	pub fn set_conditional_depth(&mut self, depth: usize) {
-		match self {
-			Mode::Root {
-				conditional_depth, ..
-			}
-			| Mode::NonRoot { conditional_depth } => *conditional_depth = depth,
-		}
+	/// Whether this is the promise total context
+	pub fn is_promise_total(&self) -> bool {
+		matches!(self, Mode::PromiseTotal)
 	}
 
 	/// Update this mode
 	pub fn update(self, other: Mode) -> Mode {
-		if let (
-			Mode::NonRoot {
-				conditional_depth: d1,
-			},
-			Mode::Root {
-				result,
-				conditional_depth: d2,
-			},
-		) = (self, other)
-		{
-			// assert!(d1 <= d2, "Cannot refer to identifier defined more deeply");
-			if d1 >= d2 {
-				return Mode::Root {
-					result,
-					conditional_depth: d1,
-				};
-			}
+		if let (Mode::NonRoot | Mode::PromiseTotal, Mode::Root { result }) = (self, other) {
+			return Mode::Root { result };
 		}
 		self
 	}
@@ -227,9 +185,6 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 			in_root_mode: false,
 		};
 		let root = Mode::root();
-		let non_root = Mode::NonRoot {
-			conditional_depth: 0,
-		};
 		// Analyse model items
 		for item in model.top_level_items() {
 			match item {
@@ -251,7 +206,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 					}
 					if let Some(def) = model[d].definition() {
 						if def.ty().is_bool(db) {
-							analyser.update(def, non_root, false);
+							analyser.update(def, Mode::NonRoot, false);
 						} else {
 							analyser.update(def, root, false);
 						}
@@ -267,12 +222,24 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 						}
 					}
 					if let Some(b) = model[f].body() {
-						let is_root = model[f].name().is_root(db)
-							|| model[f]
+						analyser.update(
+							b,
+							if model[f].return_type() == analyser.tys.ann {
+								root
+							} else if model[f]
 								.annotations()
 								.has(model, analyser.ids.annotations.promise_total)
-							|| model[f].return_type() == analyser.tys.ann;
-						analyser.update(b, if is_root { root } else { non_root }, false);
+							{
+								if model[f].return_type() == analyser.tys.var_bool {
+									Mode::PromiseTotal
+								} else {
+									root
+								}
+							} else {
+								Mode::NonRoot
+							},
+							false,
+						);
 					}
 				}
 				ItemId::Solve => {
@@ -341,11 +308,8 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 							self.update(e, it.mode, false);
 						}
 					} else {
-						let non_root = Mode::NonRoot {
-							conditional_depth: it.mode.conditional_depth(),
-						};
 						for e in al.iter() {
-							self.update(e, non_root, false);
+							self.update(e, Mode::NonRoot, false);
 						}
 					}
 				} else {
@@ -356,11 +320,8 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 			}
 			ExpressionData::SetLiteral(sl) => {
 				if it.expression.ty().elem_ty(db).unwrap().is_bool(db) {
-					let non_root = Mode::NonRoot {
-						conditional_depth: it.mode.conditional_depth(),
-					};
 					for e in sl.iter() {
-						self.update(e, non_root, false);
+						self.update(e, Mode::NonRoot, false);
 					}
 				} else {
 					for e in sl.iter() {
@@ -371,13 +332,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 			ExpressionData::TupleLiteral(tl) => {
 				for e in tl.iter() {
 					if e.ty().is_bool(db) {
-						self.update(
-							e,
-							Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth(),
-							},
-							false,
-						);
+						self.update(e, Mode::NonRoot, false);
 					} else {
 						self.update(e, it.mode, false);
 					}
@@ -391,9 +346,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 						}
 						Generator::Assignment { assignment, .. } => {
 							let mode = if self.model[*assignment].ty().is_bool(db) {
-								Mode::NonRoot {
-									conditional_depth: it.mode.conditional_depth(),
-								}
+								Mode::NonRoot
 							} else {
 								it.mode
 							};
@@ -401,13 +354,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 						}
 					}
 					if let Some(w) = g.where_clause() {
-						self.update(
-							w,
-							Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth(),
-							},
-							false,
-						);
+						self.update(w, Mode::NonRoot, false);
 					}
 				}
 				if let Some(e) = &c.indices {
@@ -415,13 +362,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 				}
 				if it.expression.ty().elem_ty(db).unwrap().is_bool(db) {
 					if it.update_bools {
-						self.update(
-							&c.template,
-							Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth(),
-							},
-							false,
-						);
+						self.update(&c.template, Mode::NonRoot, false);
 					} else {
 						self.update(&c.template, it.mode, false);
 					}
@@ -437,19 +378,10 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 			}
 			ExpressionData::IfThenElse(ite) => {
 				let mut mode = it.mode;
-				mode.set_conditional_depth(mode.conditional_depth() + 1);
 				for b in ite.branches.iter() {
-					self.update(
-						&b.condition,
-						Mode::NonRoot {
-							conditional_depth: it.mode.conditional_depth(),
-						},
-						false,
-					);
+					self.update(&b.condition, Mode::NonRoot, false);
 					if b.var_condition(db) {
-						mode = Mode::NonRoot {
-							conditional_depth: mode.conditional_depth(),
-						};
+						mode = Mode::NonRoot;
 					}
 					self.update(&b.result, mode, it.update_bools);
 				}
@@ -496,11 +428,8 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 						} else if name == self.ids.builtins.mzn_default_partial
 							&& c.arguments.len() == 2
 						{
-							let mode = Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth() + 1,
-							};
-							self.update(&c.arguments[0], mode, it.update_bools);
-							self.update(&c.arguments[1], mode, it.update_bools);
+							self.update(&c.arguments[0], Mode::NonRoot, it.update_bools);
+							self.update(&c.arguments[1], Mode::NonRoot, it.update_bools);
 							return;
 						}
 					}
@@ -514,13 +443,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 				}
 				for e in c.arguments.iter() {
 					if e.ty().is_bool(db) {
-						self.update(
-							e,
-							Mode::NonRoot {
-								conditional_depth: it.mode.conditional_depth(),
-							},
-							false,
-						);
+						self.update(e, Mode::NonRoot, false);
 					} else {
 						self.update(e, it.mode, false);
 					}
@@ -535,16 +458,14 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 							}
 
 							let in_expression = self.model[*c].expression();
-							let mode = if BooleanVisitor::is_true(
-								db,
-								self.model,
-								&mut self.booleans,
-								in_expression,
-							) {
-								Mode::Root {
-									result: true,
-									conditional_depth: it.mode.conditional_depth(),
-								}
+							let mode = if it.mode.is_promise_total()
+								|| BooleanVisitor::is_true(
+									db,
+									self.model,
+									&mut self.booleans,
+									in_expression,
+								) {
+								Mode::root()
 							} else {
 								it.mode
 							};
@@ -562,13 +483,7 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 							}
 							if let Some(def) = self.model[*d].definition() {
 								if self.model[*d].ty().is_bool(db) {
-									self.update(
-										def,
-										Mode::NonRoot {
-											conditional_depth: it.mode.conditional_depth(),
-										},
-										false,
-									);
+									self.update(def, Mode::NonRoot, false);
 								} else {
 									self.update(def, it.mode, false);
 								}
@@ -588,8 +503,6 @@ impl<'a, 'db, T: Marker> ModeAnalyser<'a, 'db, T> {
 	}
 
 	/// Update the context of an expression.
-	///
-	/// Returns false if this context update has caused model failure.
 	fn update(&mut self, expression: &'a Expression<'db, T>, mode: Mode, update_bools: bool) {
 		let new_mode = if self.in_root_mode {
 			self.result.update_in_root_fn(expression, mode)
@@ -802,7 +715,7 @@ mod tests {
 			} in h;
 			"#,
 			expect![[r#"
-    function var bool: forall(array [int] of var bool: b);
+    predicate forall(array [int] of var bool: b);
     function var bool: '\/'(var bool: x, var bool: y);
     function var bool: 'not'(var bool: x);
     var bool: a;
@@ -810,11 +723,11 @@ mod tests {
     constraint forall([a:: ctx_root, b:: ctx_root]:: ctx_root):: ctx_root;
     var bool: c;
     var int: d;
-    function var bool: foo(var bool: c, var int: d);
+    predicate foo(var bool: c, var int: d);
     constraint foo(c:: ctx_non_root, d:: ctx_root):: ctx_root;
     var bool: e;
     var bool: f;
-    constraint (not(((e:: ctx_root_neg) \/ (f:: ctx_root_neg))));
+    constraint 'not'('\/'(e:: ctx_root_neg, f:: ctx_root_neg):: ctx_root_neg):: ctx_root;
     var int: g = let {
       var int: h = 1:: ctx_root;
       var bool: p = true:: ctx_non_root;
@@ -841,8 +754,8 @@ mod tests {
     function var bool: '>'(var int: x, var int: y);
     function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint ((x:: ctx_non_root) > (y:: ctx_non_root));
-    } in ((x:: ctx_non_root) + (y:: ctx_non_root)):: ctx_non_root;
+      constraint '>'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root;
+    } in '+'(x:: ctx_non_root, y:: ctx_non_root):: ctx_non_root:: ctx_non_root;
 "#]],
 			false,
 		);
@@ -852,8 +765,8 @@ mod tests {
     function var bool: '>'(var int: x, var int: y);
     function var int: '+'(var int: x, var int: y);
     function var int: foo(var int: x, var int: y) = let {
-      constraint ((x:: ctx_root) > (y:: ctx_root));
-    } in ((x:: ctx_root) + (y:: ctx_root)):: ctx_root;
+      constraint '>'(x:: ctx_root, y:: ctx_root):: ctx_root;
+    } in '+'(x:: ctx_root, y:: ctx_root):: ctx_root:: ctx_root;
 "#]],
 			true,
 		);
@@ -892,19 +805,19 @@ mod tests {
 	#[test]
 	fn test_bool_ctx_abort() {
 		let program = r#"
-			test mzn_abort(string: msg);
+			test abort(string: msg);
 			test bar(int: x);
 			function int: foo(int: x) = let {
-				constraint if bar(x) then mzn_abort("foo") endif;
+				constraint if bar(x) then abort("foo") endif;
 			} in x;
 		"#;
 		check_bool_ctx(
 			program,
 			expect![[r#"
-    function bool: mzn_abort(string: msg);
+    function bool: abort(string: msg);
     function bool: bar(int: x);
     function int: foo(int: x) = let {
-      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_non_root):: ctx_non_root else true:: ctx_non_root endif:: ctx_non_root;
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
     } in x:: ctx_non_root:: ctx_non_root;
 "#]],
 			false,
@@ -912,10 +825,10 @@ mod tests {
 		check_bool_ctx(
 			program,
 			expect![[r#"
-    function bool: mzn_abort(string: msg);
+    function bool: abort(string: msg);
     function bool: bar(int: x);
     function int: foo(int: x) = let {
-      constraint if bar(x:: ctx_non_root):: ctx_non_root then mzn_abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
+      constraint if bar(x:: ctx_non_root):: ctx_non_root then abort("foo":: ctx_root):: ctx_root else true:: ctx_root endif:: ctx_root;
     } in x:: ctx_root:: ctx_root;
 "#]],
 			true,
@@ -941,6 +854,80 @@ mod tests {
 			expect![[r#"
     function var int: mzn_default_partial(var int: _DECL_1, var int: _DECL_2);
     function var int: foo() = mzn_default_partial(1:: ctx_non_root, 2:: ctx_non_root):: ctx_root;
+"#]],
+			true,
+		);
+	}
+
+	#[test]
+	fn test_bool_ctx_promise_total_bool() {
+		let program = r#"
+			annotation promise_total;
+			predicate bar(var int: x, var bool: r);
+			function var int: foo(var int: x) :: promise_total =
+				let {
+					var bool: r;
+					constraint bar(x, r);
+				} in r;
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    annotation promise_total;
+    predicate bar(var int: x, var bool: r);
+    function var int: foo(var int: x) :: (promise_total:: ctx_root) = let {
+      var bool: r;
+      constraint bar(x:: ctx_root, r:: ctx_non_root):: ctx_root;
+    } in r:: ctx_root:: ctx_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    annotation promise_total;
+    predicate bar(var int: x, var bool: r);
+    function var int: foo(var int: x) :: (promise_total:: ctx_root) = let {
+      var bool: r;
+      constraint bar(x:: ctx_root, r:: ctx_non_root):: ctx_root;
+    } in r:: ctx_root:: ctx_root;
+"#]],
+			true,
+		);
+	}
+
+	#[test]
+	fn test_bool_ctx_promise_total_non_bool() {
+		let program = r#"
+			annotation promise_total;
+			predicate bar(var int: x, var int: r);
+			function var int: foo(var int: x) :: promise_total =
+				let {
+					var int: r;
+					constraint bar(x, r);
+				} in r;
+		"#;
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    annotation promise_total;
+    predicate bar(var int: x, var int: r);
+    function var int: foo(var int: x) :: (promise_total:: ctx_root) = let {
+      var int: r;
+      constraint bar(x:: ctx_root, r:: ctx_root):: ctx_root;
+    } in r:: ctx_root:: ctx_root;
+"#]],
+			false,
+		);
+		check_bool_ctx(
+			program,
+			expect![[r#"
+    annotation promise_total;
+    predicate bar(var int: x, var int: r);
+    function var int: foo(var int: x) :: (promise_total:: ctx_root) = let {
+      var int: r;
+      constraint bar(x:: ctx_root, r:: ctx_root):: ctx_root;
+    } in r:: ctx_root:: ctx_root;
 "#]],
 			true,
 		);

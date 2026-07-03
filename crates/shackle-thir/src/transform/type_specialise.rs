@@ -10,7 +10,10 @@ use std::collections::hash_map::Entry;
 use rustc_hash::{FxHashMap, FxHashSet};
 use shackle_diagnostics::{Result, TypeSpecialisationRecursionLimit};
 use shackle_hir::constants::IdentifierRegistry;
-use shackle_ty::{FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations};
+use shackle_ty::{
+	FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations,
+	registry::TypeRegistry,
+};
 use shackle_utils::maybe_grow_stack;
 
 use crate::{
@@ -37,6 +40,7 @@ struct TypeSpecialiser<'a, 'db, Dst: Marker> {
 	specialised: Vec<(FunctionId<'db, Dst>, SpecialisedFunction<'db, Dst>)>,
 	todo: Vec<SpecialisedFunction<'db, Dst>>,
 	ids: &'db IdentifierRegistry<'db>,
+	tys: &'db TypeRegistry<'db>,
 	position: FxHashMap<FunctionId<'db>, ItemId<'db, Dst>>,
 	count: usize,
 	reached_recursion_limit: Option<FunctionId<'db>>,
@@ -219,19 +223,39 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 			.unwrap_or_else(|e| panic!("{}", e.pretty_print(db)));
 		let f = lookup.function;
 
-		// Also instantiate root versions of functions
-		if !name.is_root(db)
-			&& let Ok(lookup) = self
-				.original_functions
-				.lookup_function(db, name.root(db), args)
-		{
-			let f = lookup.function;
-			if model[f].is_polymorphic()
-				&& !model[f]
-					.annotations()
-					.has(model, self.ids.annotations.mzn_unreachable)
+		// Also instantiate reif version of function
+		if model[f].return_type() == self.tys.var_bool {
+			if !name.is_reif(db)
+				&& let Ok(lookup) = self
+					.original_functions
+					.lookup_function(db, name.reif(db), args)
 			{
-				let _ = self.instantiate(db, model, name.root(db), args);
+				let mut new_args = args.to_vec();
+				new_args.push(self.tys.var_bool);
+				let f = lookup.function;
+				if model[f].is_polymorphic()
+					&& !model[f]
+						.annotations()
+						.has(model, self.ids.annotations.mzn_unreachable)
+				{
+					let _ = self.instantiate(db, model, name.reif(db), args);
+				}
+			}
+			if !name.is_imp(db)
+				&& let Ok(lookup) = self
+					.original_functions
+					.lookup_function(db, name.imp(db), args)
+			{
+				let mut new_args = args.to_vec();
+				new_args.push(self.tys.var_bool);
+				let f = lookup.function;
+				if model[f].is_polymorphic()
+					&& !model[f]
+						.annotations()
+						.has(model, self.ids.annotations.mzn_unreachable)
+				{
+					let _ = self.instantiate(db, model, name.imp(db), args);
+				}
 			}
 		}
 
@@ -852,6 +876,7 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for RemoveUnreachableFunctions<'db, 
 pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<'db>> {
 	log::info!("Performing type specialisation");
 	let ids = IdentifierRegistry::lookup(db);
+	let tys = TypeRegistry::lookup(db);
 	let mut ts = TypeSpecialiser {
 		replacement_map: ReplacementMap::default(),
 		specialised_model: Model::with_capacities(&model.item_counts()),
@@ -859,6 +884,7 @@ pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<
 		specialised: Vec::new(),
 		todo: Vec::new(),
 		ids,
+		tys,
 		position: FxHashMap::default(),
 		count: 0,
 		reached_recursion_limit: None,
@@ -1120,7 +1146,7 @@ mod tests {
 			expect!([r#"
     array [int] of int: x = [1, 2, 3];
     int: v = '[]<array [int] of int, int>'(x, 1);
-    var ((1) .. (3)): i;
+    var '..<$$E, $$E>'(1, 3): i;
     var int: u = '[]<array [int] of var int, var int>'(x, i);
 "#]),
 		)
@@ -1139,7 +1165,7 @@ mod tests {
 		"#,
 			expect!([r#"
     enum Foo = { A } ++ { B } ++ { C };
-    array [Foo] of var ((1) .. (3)): x;
+    array [Foo] of var '..<$$E, $$E>'(1, 3): x;
     var int: v = '[]<array [Foo] of var int, Foo>'(x, A);
     var Foo: i;
     var int: u = '[]<array [Foo] of var int, var Foo>'(x, i);
@@ -1157,8 +1183,8 @@ mod tests {
 			any: v = x[i];
 		"#,
 			expect!([r#"
-    array [((1) .. (3))] of tuple(int, int): x;
-    var ((1) .. (3)): i;
+    array ['..<$$E, $$E>'(1, 3)] of tuple(int, int): x;
+    var '..<$$E, $$E>'(1, 3): i;
     tuple(var int, var int): v = '[]<array [int] of tuple(var int, var int), var int>'(x, i);
 "#]),
 		)
@@ -1174,8 +1200,8 @@ mod tests {
 			any: v = x[i];
 		"#,
 			expect!([r#"
-    array [((1) .. (3))] of record(int: bar, int: foo): x;
-    var ((1) .. (3)): i;
+    array ['..<$$E, $$E>'(1, 3)] of record(int: bar, int: foo): x;
+    var '..<$$E, $$E>'(1, 3): i;
     record(var int: bar, var int: foo): v = '[]<array [int] of record(var int: bar, var int: foo), var int>'(x, i);
 "#]),
 		)

@@ -63,7 +63,6 @@ pub fn analyse_totality<'db>(
 			},
 		);
 		let already_total = f.annotations().has(model, ids.annotations.promise_total)
-			|| f.name().is_root(db)
 			|| f.body().is_none()
 			|| f.return_type() == tys.ann;
 		if !already_total && let Some(body) = f.body() {
@@ -443,8 +442,40 @@ mod tests {
 				);
             "#,
 			expect![[r#"
-    function var bool: bar(int: x) :: total;
+    predicate bar(int: x) :: total;
     function var float: foo() :: total :: needs_root;
+"#]],
+		);
+	}
+
+	#[test]
+	fn test_totality_mzn_in_root_context() {
+		check_totality(
+			r#"
+				annotation promise_total;
+				test mzn_in_root_context();
+				predicate bar(var int: x);
+				predicate bar_reif(var int: x, var bool: b);
+				function var bool: foo(var int: x) =
+					if mzn_in_root_context() then
+						let {
+							constraint bar(x);
+						} in true
+					else
+						foo_t(x).1
+					endif;
+				function tuple(var bool): foo_t(var int: x) :: promise_total =
+					let {
+						var bool: b;
+						constraint bar_reif(x, b);
+					} in (b,);
+            "#,
+			expect![[r#"
+    function bool: mzn_in_root_context() :: total;
+    predicate bar(var int: x) :: total;
+    predicate bar_reif(var int: x, var bool: b) :: total;
+    function var bool: foo(var int: x) :: total :: needs_root;
+    function tuple(var bool): foo_t(var int: x) :: (promise_total) :: total;
 "#]],
 		);
 	}

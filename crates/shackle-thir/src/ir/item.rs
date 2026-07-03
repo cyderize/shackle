@@ -429,6 +429,38 @@ impl<'db> FunctionName<'db> {
 		}
 	}
 
+	/// Get this name but with `_reif` appended
+	pub fn reif(&self, db: &'db dyn Db) -> Self {
+		match *self {
+			FunctionName::Named(i) => FunctionName::Named(i.reif(db)),
+			_ => Self::anonymous(),
+		}
+	}
+
+	/// Whether or not this function name ends with `_reif`
+	pub fn is_reif(&self, db: &'db dyn Db) -> bool {
+		match *self {
+			FunctionName::Named(i) => i.is_reif(db),
+			_ => false,
+		}
+	}
+
+	/// Get this name but with `_imp` appended
+	pub fn imp(&self, db: &'db dyn Db) -> Self {
+		match *self {
+			FunctionName::Named(i) => FunctionName::Named(i.imp(db)),
+			_ => Self::anonymous(),
+		}
+	}
+
+	/// Whether or not this function name ends with `_imp`
+	pub fn is_imp(&self, db: &'db dyn Db) -> bool {
+		match *self {
+			FunctionName::Named(i) => i.is_imp(db),
+			_ => false,
+		}
+	}
+
 	/// Get as an identifier
 	pub fn as_identifier(&self, db: &'db dyn Db) -> Identifier<'db> {
 		match self {

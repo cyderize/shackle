@@ -27,6 +27,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserializer;
 // Result type for Shackle operations
 pub use shackle_diagnostics::{Error, FileError, Result, SourceFile};
+use shackle_fmt::{MiniZincFormatOptions, format_str};
 use shackle_hir::{
 	CompilerDatabase, Db,
 	constants::IdentifierRegistry,
@@ -425,7 +426,16 @@ impl Program {
 	pub fn write<W: Write>(&self, out: &mut W) -> Result<(), std::io::Error> {
 		let model = final_thir(&self.db).unwrap();
 		let printer = PrettyPrinter::new_compat(&self.db, model);
-		out.write_all(printer.pretty_print().as_bytes())
+		let code = printer.pretty_print();
+		let formatted = format_str(
+			&code,
+			&MiniZincFormatOptions {
+				keep_parentheses: false,
+				..Default::default()
+			},
+		)
+		.unwrap();
+		out.write_all(formatted.as_bytes())
 	}
 
 	/// Add and parse data to be used by the program.

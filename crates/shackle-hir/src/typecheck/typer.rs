@@ -1456,7 +1456,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 
 	fn collect_let(&mut self, l: &Let<'db>) -> Ty<'db> {
 		let db = self.db;
-		let mut is_var_partial = false;
+		let mut make_var = false;
 		for item in l.items.iter() {
 			match item {
 				LetItem::Constraint(c) => {
@@ -1464,8 +1464,15 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 						let _ = self.typecheck_expression(*ann, self.types.ann);
 					}
 					let ty = self.typecheck_expression(c.expression, self.types.var_bool);
-					if ty == self.types.var_bool {
-						is_var_partial = true;
+					if ty == self.types.var_bool
+						&& !c.annotations.iter().any(|ann| match &self.data[*ann] {
+							Expression::Identifier(i) => {
+								*i == self.identifiers.annotations.shackle_totalised
+							}
+							_ => false,
+						}) {
+						// Var constraints make the return type var
+						make_var = true;
 					}
 				}
 				LetItem::Declaration(d) => {
@@ -1487,15 +1494,25 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 							},
 						);
 					}
-					if result.has_var_bounded && d.definition.is_some() {
-						// Constrained by domain and RHS
-						is_var_partial = true;
+					if result
+						.ty
+						.walk(db)
+						.any(|ty| ty != self.types.var_bool && ty.inst(db) == Some(VarType::Var))
+						&& d.definition.is_some()
+						&& !d.annotations.iter().any(|ann| match &self.data[*ann] {
+							Expression::Identifier(i) => {
+								*i == self.identifiers.annotations.shackle_totalised
+							}
+							_ => false,
+						}) {
+						// Var declarations make the return type var
+						make_var = true;
 					}
 				}
 			}
 		}
 		let mut ty = self.collect_expression(l.in_expression);
-		if is_var_partial {
+		if make_var && !ty.contains_var(db) {
 			ty = ty.make_var(db).unwrap_or_else(|| {
 				let (src, span) =
 					ExpressionRef::new(db, self.item, l.in_expression).source_span(db);

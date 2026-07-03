@@ -140,8 +140,18 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 	fn pretty_print_constraint(&self, idx: ConstraintId<'db, T>) -> String {
 		let constraint = &self.model[idx];
 		let mut buf = "constraint ".to_owned();
-		for ann in constraint.annotations().iter() {
-			write!(&mut buf, ":: ({}) ", self.pretty_print_expression(ann)).unwrap();
+		if self.old_compat {
+			for ann in constraint.annotations().iter() {
+				if matches!(&**ann, ExpressionData::StringLiteral(_)) {
+					// Old compiler only supports single string annotation
+					write!(&mut buf, ":: ({}) ", self.pretty_print_expression(ann)).unwrap();
+					break;
+				}
+			}
+		} else {
+			for ann in constraint.annotations().iter() {
+				write!(&mut buf, ":: ({}) ", self.pretty_print_expression(ann)).unwrap();
+			}
 		}
 		write!(
 			&mut buf,
@@ -246,10 +256,22 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 			function.name().pretty_print(self.db)
 		})();
 		let mut buf = String::new();
+		if function.body().is_none()
+			&& function.return_type() == TypeRegistry::lookup(self.db).var_bool
+			&& !name.starts_with('\'')
+		{
+			write!(&mut buf, "predicate",).unwrap();
+		} else {
+			write!(
+				&mut buf,
+				"function {}:",
+				self.pretty_print_domain(function.domain()),
+			)
+			.unwrap();
+		}
 		write!(
 			&mut buf,
-			"function {}: {}({})",
-			self.pretty_print_domain(function.domain()),
+			" {}({})",
 			name,
 			function
 				.parameters()
@@ -465,7 +487,8 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 				}
 			}
 			ExpressionData::Call(c) => {
-				if (c.arguments.len() == 1 || c.arguments.len() == 2)
+				if self.old_compat
+					&& (c.arguments.len() == 1 || c.arguments.len() == 2)
 					&& let Callable::Function(f) = &c.function
 					&& self.model[*f].body().is_none()
 				{
@@ -617,6 +640,12 @@ impl<'db, T: Marker> PrettyPrinter<'db, T> {
 						"shackle_promise_total" if self.old_compat => "promise_total".to_owned(),
 						"shackle_promise_commutative" if self.old_compat => {
 							"promise_commutative".to_owned()
+						}
+						"shackle_promise_ctx_monotone" if self.old_compat => {
+							"promise_ctx_monotone".to_owned()
+						}
+						"shackle_promise_ctx_antitone" if self.old_compat => {
+							"promise_ctx_antitone".to_owned()
 						}
 						"shackle_maybe_partial" if self.old_compat => "maybe_partial".to_owned(),
 						"shackle_output" if self.old_compat => "output".to_owned(),

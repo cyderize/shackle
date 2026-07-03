@@ -12,6 +12,7 @@ rustc-hash = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 shackle-diagnostics = {path = "../shackle-diagnostics"}
+shackle-fmt = {path = "../shackle-fmt"}
 shackle-hir = {path = "../shackle-hir"}
 shackle-syntax = {path = "../shackle-syntax"}
 shackle-thir = {path = "../shackle-thir"}

@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use shackle_utils::maybe_grow_stack;
 
-use crate::{Db, pretty_print::PrettyPrinter, source::Origin, *};
+use crate::{Db, source::Origin, *};
 
 /// Replacement map for references to items
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -122,13 +122,15 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this annotation item into the destination model.
+	///
+	/// If the annotation has already been added, this will return the existing ID.
 	fn add_annotation(
 		&mut self,
 		db: &'db dyn Db,
 		model: &'a Model<'db, Src>,
 		a: AnnotationId<'db, Src>,
 	) {
-		let _ = add_annotation(self, db, model, a);
+		let _ = fold_annotation_id(self, db, model, a);
 	}
 
 	/// Fold an annotation item.
@@ -152,13 +154,20 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this constraint item into the destination model.
+	///
+	/// If the constraint is top-level and has already been added, this will return the existing ID.
 	fn add_constraint(
 		&mut self,
 		db: &'db dyn Db,
 		model: &'a Model<'db, Src>,
 		c: ConstraintId<'db, Src>,
 	) {
-		let _ = add_constraint(self, db, model, c);
+		if model[c].top_level() {
+			let _ = fold_constraint_id(self, db, model, c);
+		} else {
+			// Non top-level constraints must be added again
+			let _ = add_constraint(self, db, model, c);
+		}
 	}
 
 	/// Fold a constraint item.
@@ -182,6 +191,8 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this variable declaration item into the destination model.
+	///
+	/// If the declaration is top-level and has already been added, this will return the existing ID.
 	fn add_variable_declaration(
 		&mut self,
 		db: &'db dyn Db,
@@ -192,13 +203,20 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this declaration item into the destination model.
+	///
+	/// If the declaration is top-level and has already been added, this will return the existing ID.
 	fn add_declaration(
 		&mut self,
 		db: &'db dyn Db,
 		model: &'a Model<'db, Src>,
 		d: DeclarationId<'db, Src>,
 	) {
-		let _ = add_declaration(self, db, model, d);
+		if model[d].top_level() {
+			let _ = fold_declaration_id(self, db, model, d);
+		} else {
+			// Non top-level declarations must be added again
+			let _ = add_declaration(self, db, model, d);
+		}
 	}
 
 	/// Fold a declaration item.
@@ -222,13 +240,15 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this enumeration item into the destination model.
+	///
+	/// If the enumeration has already been added, this will return the existing ID.
 	fn add_enumeration(
 		&mut self,
 		db: &'db dyn Db,
 		model: &'a Model<'db, Src>,
 		e: EnumerationId<'db, Src>,
 	) {
-		let _ = add_enumeration(self, db, model, e);
+		let _ = fold_enumeration_id(self, db, model, e);
 	}
 
 	/// Fold an enumeration item.
@@ -272,13 +292,20 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this function item into the destination model.
+	///
+	/// If the function is top-level and has already been added, this will return the existing ID.
 	fn add_function(
 		&mut self,
 		db: &'db dyn Db,
 		model: &'a Model<'db, Src>,
 		f: FunctionId<'db, Src>,
 	) {
-		let _ = add_function(self, db, model, f);
+		if model[f].top_level() {
+			let _ = fold_function_id(self, db, model, f);
+		} else {
+			// Non top-level functions must be added again
+			let _ = add_function(self, db, model, f);
+		}
 	}
 
 	/// Add the folded version of this parameter declaration item into the destination model.
@@ -329,8 +356,10 @@ pub trait Folder<'a, 'db, Dst: Marker, Src: Marker = ()> {
 	}
 
 	/// Add the folded version of this output item into the destination model.
+	///
+	/// If the output has already been added, this will return the existing ID.
 	fn add_output(&mut self, db: &'db dyn Db, model: &'a Model<'db, Src>, o: OutputId<'db, Src>) {
-		let _ = add_output(self, db, model, o);
+		let _ = fold_output_id(self, db, model, o);
 	}
 
 	/// Fold an output item.
@@ -687,13 +716,7 @@ pub fn fold_annotation_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T
 	folder
 		.replacement_map()
 		.get_annotation(a)
-		.unwrap_or_else(|| {
-			panic!(
-				"Annotation {} at {} has not been added to destination model",
-				PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
-				model[a].origin().pretty_print(db)
-			)
-		})
+		.unwrap_or_else(|| add_annotation(folder, db, model, a))
 }
 
 /// Add the folded version of this constraint item into the destination model.
@@ -735,17 +758,12 @@ pub fn fold_constraint_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T
 	folder: &mut F,
 	db: &'db dyn Db,
 	model: &'a Model<'db, T>,
-	a: ConstraintId<'db, T>,
+	c: ConstraintId<'db, T>,
 ) -> ConstraintId<'db, U> {
 	folder
 		.replacement_map()
-		.get_constraint(a)
-		.unwrap_or_else(|| {
-			panic!(
-				"Constraint at {} has not been added to destination model",
-				model[a].origin().pretty_print(db)
-			)
-		})
+		.get_constraint(c)
+		.unwrap_or_else(|| add_constraint(folder, db, model, c))
 }
 
 /// Add the folded version of this declaration item into the destination model.
@@ -798,13 +816,7 @@ pub fn fold_declaration_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, 
 	folder
 		.replacement_map()
 		.get_declaration(d)
-		.unwrap_or_else(|| {
-			panic!(
-				"Declaration {} at {} has not been added to destination model",
-				PrettyPrinter::new(db, model).pretty_print_signature(d.into()),
-				model[d].origin().pretty_print(db)
-			)
-		})
+		.unwrap_or_else(|| add_declaration(folder, db, model, d))
 }
 
 /// Add the folded version of this enumeration item into the destination model.
@@ -846,18 +858,12 @@ pub fn fold_enumeration_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, 
 	folder: &mut F,
 	db: &'db dyn Db,
 	model: &'a Model<'db, T>,
-	a: EnumerationId<'db, T>,
+	e: EnumerationId<'db, T>,
 ) -> EnumerationId<'db, U> {
 	folder
 		.replacement_map()
-		.get_enumeration(a)
-		.unwrap_or_else(|| {
-			panic!(
-				"Enumeration {} at {} has not been added to destination model",
-				PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
-				model[a].origin().pretty_print(db)
-			)
-		})
+		.get_enumeration(e)
+		.unwrap_or_else(|| add_enumeration(folder, db, model, e))
 }
 
 /// Fold an enum member ID
@@ -944,13 +950,10 @@ pub fn fold_function_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> 
 	model: &'a Model<'db, T>,
 	f: FunctionId<'db, T>,
 ) -> FunctionId<'db, U> {
-	folder.replacement_map().get_function(f).unwrap_or_else(|| {
-		panic!(
-			"Function {} at {} has not been added to destination model",
-			PrettyPrinter::new(db, model).pretty_print_signature(f.into()),
-			model[f].origin().pretty_print(db)
-		)
-	})
+	folder
+		.replacement_map()
+		.get_function(f)
+		.unwrap_or_else(|| add_function(folder, db, model, f))
 }
 
 /// Fold the body of a function.
@@ -1005,15 +1008,12 @@ pub fn fold_output_id<'a, 'db, T: Marker, U: Marker, F: Folder<'a, 'db, U, T> + 
 	folder: &mut F,
 	db: &'db dyn Db,
 	model: &'a Model<'db, T>,
-	a: OutputId<'db, T>,
+	o: OutputId<'db, T>,
 ) -> OutputId<'db, U> {
-	folder.replacement_map().get_output(a).unwrap_or_else(|| {
-		panic!(
-			"Output item {} at {} has not been added to destination model",
-			PrettyPrinter::new(db, model).pretty_print_signature(a.into()),
-			model[a].origin().pretty_print(db)
-		)
-	})
+	folder
+		.replacement_map()
+		.get_output(o)
+		.unwrap_or_else(|| add_output(folder, db, model, o))
 }
 
 /// Add the folded version of the solve item into the destination model.

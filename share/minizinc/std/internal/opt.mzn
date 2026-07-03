@@ -27,6 +27,15 @@ predicate mzn_opt_channel(var opt float: x, set of float: s) =
 function set of int: mzn_opt_domain(set of int: s) = s union {0};
 function set of float: mzn_opt_domain(set of float: s) = s union {0.0};
 
+function var bool: '='(
+	var opt $T: x,
+	var opt $T: y,
+) =
+	let {
+		any: (bx, dx) = mzn_destruct_opt(x);
+		any: (by, dy) = mzn_destruct_opt(y);
+	} in bx = by /\ dx = dy;
+
 annotation mzn_opt_bool;
 
 function $T: mzn_default_opt(opt $T: x, $T: y) :: mzn_inline_call_by_name =

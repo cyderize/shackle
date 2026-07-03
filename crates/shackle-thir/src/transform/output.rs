@@ -134,7 +134,7 @@ mod tests {
             "#,
 			expect!([r#"
     string: mzn_output_default :: (output_only) = concat(["Hello, world"]);
-    string: mzn_output_one :: (output_only) = concat(((["A"]) ++ (["C"])));
+    string: mzn_output_one :: (output_only) = concat('++'(["A"], ["C"]));
     string: mzn_output_two :: (output_only) = concat(["B"]);
 "#]),
 		);
@@ -154,13 +154,13 @@ mod tests {
 				var 1..3: b = 2;
 			"#,
 			expect!([r#"
-    var ((1) .. (3)): x :: ('output');
-    var opt ((1) .. (3)): y :: ('output');
-    array [((1) .. (2))] of var ((1) .. (3)): z :: ('output');
-    var ((1) .. (3)): p :: ('output');
-    var ((1) .. (2)): q :: (no_output);
-    ((1) .. (3)): a;
-    var ((1) .. (3)): b = 2;
+    var '..'(1, 3): x :: ('output');
+    var opt '..'(1, 3): y :: ('output');
+    array ['..'(1, 2)] of var '..'(1, 3): z :: ('output');
+    var '..'(1, 3): p :: ('output');
+    var '..'(1, 2): q :: (no_output);
+    '..'(1, 3): a;
+    var '..'(1, 3): b = 2;
 "#]),
 		);
 	}

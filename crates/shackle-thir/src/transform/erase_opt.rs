@@ -170,7 +170,7 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for OptEraser<'db,
 				}
 				ExpressionData::Call(c) if c.matches_builtin(model, self.ids.functions.val2opt) => {
 					// Known to occur, transform `x` into `(true, x)`
-					log::info!("Erasing val2opt at {}", origin.pretty_print(db));
+					log::debug!("Erasing val2opt at {}", origin.pretty_print(db));
 					assert_eq!(c.arguments.len(), 1, "val2opt should have one argument");
 					let bool_true = Expression::new(db, &self.model, origin, BooleanLiteral(true));
 					let value = self.fold_expression(db, model, &c.arguments[0]);
@@ -327,7 +327,7 @@ mod tests {
 			expect!([r#"
     annotation mzn_opt_bool;
     function set of int: mzn_opt_domain(set of int: x);
-    function var bool: mzn_opt_channel(tuple(var bool, var int): x, set of int: s);
+    predicate mzn_opt_channel(tuple(var bool, var int): x, set of int: s);
     tuple(bool, int): x = (true, 2);
     tuple(bool, bool): y = let {
       tuple(bool, bool): _DECL_5 = (false, false);

@@ -179,6 +179,7 @@ id_registry!(
 	acosh,
 	atanh,
 	mzn_default_partial,
+	mzn_in_root_context,
 );
 
 id_registry!(
@@ -190,6 +191,9 @@ id_registry!(
 	mzn_var_where_clause,
 	mzn_fresh_var,
 	promise_total,
+	promise_commutative,
+	promise_ctx_monotone,
+	promise_ctx_antitone,
 	output,
 	no_output,
 	mzn_inline,
@@ -198,6 +202,7 @@ id_registry!(
 	mzn_opt_bool,
 	mzn_builtin,
 	mzn_internal_representation,
+	shackle_totalised,
 );
 
 id_registry!(

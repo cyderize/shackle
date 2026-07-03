@@ -13,7 +13,6 @@ use shackle_utils::hash::{Map, Set};
 use super::PatternTy;
 use crate::{
 	Db, Expression, GlobalScope, Goal, Item, Pattern, Type,
-	constants::IdentifierRegistry,
 	diagnostics::Errors,
 	ids::{ExpressionRef, NodeRef, PatternRef},
 	lower::lower_models,
@@ -58,7 +57,6 @@ pub fn topological_sort<'db>(db: &'db dyn Db) -> Vec<Item<'db>> {
 #[derive(Debug)]
 pub struct TopoSorter<'db> {
 	db: &'db dyn Db,
-	ids: &'db IdentifierRegistry<'db>,
 	sorted: Vec<Item<'db>>,
 	visited: Set<Item<'db>>,
 	current: Set<PatternRef<'db>>,
@@ -70,7 +68,6 @@ impl<'db> TopoSorter<'db> {
 	pub fn new(db: &'db dyn Db, assignments: Map<Item<'db>, Item<'db>>) -> Self {
 		Self {
 			db,
-			ids: IdentifierRegistry::lookup(db),
 			sorted: Vec::new(),
 			visited: Set::default(),
 			current: Set::default(),
@@ -235,23 +232,6 @@ impl<'db> TopoSorter<'db> {
 							// Ignore this function since it has been subsumed by another
 							return;
 						}
-
-						if !name.is_root(self.db) {
-							// Make sure root versions of this function appear first
-							let ps = GlobalScope::find_function(self.db, name.root(self.db));
-							for p in ps.iter() {
-								let signature = p.item(self.db).signature(self.db);
-								let matches = match &signature.patterns[&p.pattern(self.db)] {
-									PatternTy::Function(fe) => {
-										fe.overload.params().len() == f.overload.params().len()
-									}
-									_ => false,
-								};
-								if matches {
-									self.run(p.item(self.db));
-								}
-							}
-						}
 					}
 					_ => unreachable!(),
 				}
@@ -273,19 +253,9 @@ impl<'db> TopoSorter<'db> {
 					self.visit_expression(ExpressionRef::new(self.db, item, *ann), None);
 				}
 				if let Some(body) = function.body {
-					if function.annotations.iter().any(|e| match function[*e] {
-						Expression::Identifier(ident) => {
-							ident == self.ids.annotations.mzn_inline
-								|| ident == self.ids.annotations.mzn_inline_call_by_name
-						}
-						_ => false,
-					}) {
-						self.visit_expression(ExpressionRef::new(self.db, item, body), None);
-					} else {
-						// Inside this expression, don't visit function items for calls, instead visit the body since we
-						// only care about globals and recursive functions are allowed.
-						self.visit_expression(ExpressionRef::new(self.db, item, body), Some(p));
-					}
+					// Inside this expression, don't visit function items for calls, instead visit the body since we
+					// only care about globals and recursive functions are allowed.
+					self.visit_expression(ExpressionRef::new(self.db, item, body), Some(p));
 				}
 				let _ = self.current.remove(&p);
 			}
@@ -480,20 +450,6 @@ mod tests {
     int: y;
     int: x;
     x = y;
-"#]),
-		);
-	}
-
-	#[test]
-	fn test_topological_sort_root() {
-		check_toposort(
-			r#"
-			test foo(int: x) = true;
-			test foo_root(int: x) = true;
-		"#,
-			expect!([r#"
-	test foo_root(int: x) = true;
-	test foo(int: x) = true;
 "#]),
 		);
 	}

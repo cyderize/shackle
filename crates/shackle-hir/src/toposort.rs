@@ -77,10 +77,10 @@ impl<'db> TopoSorter<'db> {
 
 	/// Run the topological sorter on an item
 	pub fn run(&mut self, item: Item<'db>) {
-		if self.visited.contains(&item) {
+		if !self.visited.insert(item) {
 			return;
 		}
-		let _ = self.visited.insert(item);
+
 		match item {
 			Item::Annotation(a) => {
 				let annotation = a.annotation(self.db);
@@ -351,7 +351,9 @@ impl<'db> TopoSorter<'db> {
 						}
 						continue;
 					}
-					self.run(it);
+					if it != item {
+						self.run(it);
+					}
 				}
 			}
 		}

@@ -57,7 +57,7 @@ function var $$T: shackle_element(array [$$E, $$F] of var $$T: x, tuple(var $$E,
 	else
 		to_enum_internal(
 			enum_of(x),
-			shackle_element(enum2int(x), (enum2int(idx.1), enum2int(idx.2))),
+			shackle_element(index2int(enum2int(x)), (enum2int(idx.1), enum2int(idx.2))),
 		)
 	endif;
 
@@ -112,12 +112,12 @@ function var $$T: shackle_element_t(array [$$E, $$F] of var $$T: x, tuple(var $$
 	else
 		to_enum_internal(
 			enum_of(x),
-			shackle_element_t(enum2int(x), (enum2int(idx.1), enum2int(idx.2))),
+			shackle_element_t(index2int(enum2int(x)), (enum2int(idx.1), enum2int(idx.2))),
 		)
 	endif;
 
 % Multidimensional var array access
-function var $T: shackle_element(array [$E] of var $T: x, var $F: idx) =
+function var $T: shackle_element(array [$E] of var $T: x, var $E: idx) =
 	let {
 		any: pairs = mzn_index_pairs(x, idx);
 		constraint mzn_fixed_array_access_valid(x, idx);
@@ -150,7 +150,7 @@ function var $T: shackle_element(array [$E] of var $T: x, var $F: idx) =
 				) :: domain_propagation;
 		} in shackle_element(xx, index)
 	endif;
-function var $T: shackle_element_t(array [$E] of var $T: x, var $F: idx) :: promise_total =
+function var $T: shackle_element_t(array [$E] of var $T: x, var $E: idx) :: promise_total =
 	let {
 		any: pairs = mzn_index_pairs(x, idx);
 		any: xx =
@@ -184,7 +184,7 @@ function var $T: shackle_element_t(array [$E] of var $T: x, var $F: idx) :: prom
 	endif;
 
 % Helper to check validity of runtime fixed indices
-test mzn_fixed_array_access_valid(array [$E] of any $T: x, var $F: idx) :: mzn_unreachable;
+test mzn_fixed_array_access_valid(array [$E] of any $T: x, var $E: idx) :: mzn_unreachable;
 test mzn_fixed_array_access_valid(
 	array [$$E, $$F, $$G] of any $T: x,
 	tuple(var $$E, var $$F, var $$G): idx,
@@ -238,7 +238,7 @@ test mzn_fixed_array_access_valid(
 % Helper to turn runtime fixed indexing into slicing
 function array [int] of tuple(var int, set of int): mzn_index_pairs(
 	array [$E] of any $T: x,
-	var $F: idx,
+	var $E: idx,
 ) :: mzn_unreachable;
 function array [int] of tuple(var int, set of int): mzn_index_pairs(
 	array [$$E, $$F, $$G] of any $T: x,
@@ -372,7 +372,7 @@ test mzn_array_access_valid($$E: idx, set of $$E: idx_set, int: n) =
 			"array access out of bounds, index set is \(idx_set), but given index is \(idx)"
 		endif,
 	);
-test mzn_array_access_valid(array [$E] of any $T: x, $F: idx) :: mzn_unreachable;
+test mzn_array_access_valid(array [$E] of any $T: x, $E: idx) :: mzn_unreachable;
 test mzn_array_access_valid(array [$$E] of any $T: x, $$E: idx) =
 	mzn_array_access_valid(idx, index_set(x), 0);
 test mzn_array_access_valid(array [$$E] of any $T: x, tuple($$E): idx) =
@@ -482,7 +482,7 @@ predicate mzn_array_access_valid(
 	]);
 
 % Var index bounds optimisation
-test mzn_array_access_known_valid(array [$E] of any $T: x, var $F: idx) :: mzn_unreachable;
+test mzn_array_access_known_valid(array [$E] of any $T: x, var $E: idx) :: mzn_unreachable;
 test mzn_array_access_known_valid(array [$$E] of any $T: x, var $$E: idx) =
 	has_bounds(idx) /\ lb(idx)..ub(idx) subset index_set(x);
 test mzn_array_access_known_valid(array [$$E] of any $T: x, tuple(var $$E): idx) =

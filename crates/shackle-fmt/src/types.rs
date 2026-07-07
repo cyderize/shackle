@@ -12,6 +12,7 @@ impl<'tree> Format for minizinc::Type<'tree> {
 				minizinc::Type::AnyType(a) => Element::text(a.cst_text(formatter.source())),
 				minizinc::Type::TypeBase(b) => b.format(formatter),
 				minizinc::Type::ArrayType(a) => a.format(formatter),
+				minizinc::Type::ListType(l) => l.format(formatter),
 				minizinc::Type::SetType(s) => s.format(formatter),
 				minizinc::Type::TupleType(t) => t.format(formatter),
 				minizinc::Type::RecordType(r) => r.format(formatter),
@@ -65,6 +66,15 @@ impl<'tree> Format for minizinc::ArrayType<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		Element::sequence(vec![
 			formatter.format_list("array [", "] of ", self.dimensions()),
+			self.element_type().format(formatter),
+		])
+	}
+}
+
+impl<'tree> Format for minizinc::ListType<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		Element::sequence(vec![
+			Element::text("list of "),
 			self.element_type().format(formatter),
 		])
 	}

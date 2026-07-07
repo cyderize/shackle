@@ -202,7 +202,6 @@ id_registry!(
 	mzn_opt_bool,
 	mzn_builtin,
 	mzn_internal_representation,
-	shackle_totalised,
 );
 
 id_registry!(
@@ -278,6 +277,7 @@ id_registry!(
 	mzn_show_record_access,
 	mzn_array_access_valid,
 	mzn_array_access_known_valid,
+	mzn_array_2d_literal,
 	if_then_else,
 	val2opt,
 	bool2int,

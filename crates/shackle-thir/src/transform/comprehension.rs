@@ -2,18 +2,21 @@
 //! - Move where clauses as early as possible
 //! - Turn var comprehensions into comprehensions over optional values
 //! - Change set comprehensions into array comprehensions surrounded by `array2set`.
+//! - Change indexed comprehensions into comprehensions over tuples surrounded by `mzn_indexed_array`
 //!
 
 use rustc_hash::FxHashMap;
 use shackle_diagnostics::Result;
 use shackle_hir::{OptType, constants::IdentifierRegistry};
+use shackle_ty::Ty;
 use shackle_utils::maybe_grow_stack;
 
 use super::top_down_type::add_coercion;
 use crate::{
 	Absent, ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Db, Declaration,
 	DeclarationId, Expression, ExpressionData, Generator, IfThenElse, IntegerLiteral, Item,
-	LookupCall, LookupIdentifier, Marker, Model, ResolvedIdentifier, SetComprehension, VarType,
+	LookupCall, LookupIdentifier, Marker, Model, ResolvedIdentifier, SetComprehension,
+	TupleLiteral, VarType,
 	traverse::{Folder, ReplacementMap, Visitor, fold_call, fold_expression},
 };
 
@@ -38,15 +41,6 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for ComprehensionRewriter<'db, Dst> 
 
 	fn replacement_map(&mut self) -> &mut ReplacementMap<'db, Dst> {
 		&mut self.replacement_map
-	}
-
-	fn fold_array_comprehension(
-		&mut self,
-		db: &'db dyn Db,
-		model: &Model<'db>,
-		c: &ArrayComprehension<'db>,
-	) -> ArrayComprehension<'db, Dst> {
-		self.rewrite_array_comprehension(db, model, c, SurroundingCall::Other)
 	}
 
 	fn fold_call(
@@ -94,34 +88,65 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for ComprehensionRewriter<'db, Dst> 
 		expression: &Expression<'db>,
 	) -> Expression<'db, Dst> {
 		maybe_grow_stack(|| {
-			if let ExpressionData::SetComprehension(c) = &**expression {
-				// Set comprehensions are turned into array comprehensions surrounded by array2set()
-				let array = self.rewrite_set_comprehension(db, model, c, SurroundingCall::Other);
-				let desugared = Expression::new(
-					db,
-					&self.result,
-					expression.origin(),
-					LookupCall {
-						function: self.ids.builtins.mzn_array2set.into(),
-						arguments: vec![Expression::new(
+			match &**expression {
+				ExpressionData::ArrayComprehension(c) => {
+					let mut array =
+						self.rewrite_array_comprehension(db, model, c, SurroundingCall::Other);
+					if let Some(indices) = array.indices.take() {
+						array.template = Box::new(Expression::new(
 							db,
 							&self.result,
 							expression.origin(),
-							array,
-						)],
-					},
-				);
-				assert_eq!(
-					expression.ty(),
-					desugared.ty(),
-					"Desugared type has changed from {} to {} at {}",
-					expression.ty().pretty_print(db),
-					desugared.ty().pretty_print(db),
-					expression.origin().pretty_print(db)
-				);
-				return desugared;
+							TupleLiteral(vec![*indices, *array.template]),
+						));
+
+						return Expression::new(
+							db,
+							&self.result,
+							expression.origin(),
+							LookupCall {
+								function: self.ids.builtins.mzn_indexed_array.into(),
+								arguments: vec![Expression::new(
+									db,
+									&self.result,
+									expression.origin(),
+									array,
+								)],
+							},
+						);
+					}
+					Expression::new(db, &self.result, expression.origin(), array)
+				}
+				ExpressionData::SetComprehension(c) => {
+					// Set comprehensions are turned into array comprehensions surrounded by array2set()
+					let array =
+						self.rewrite_set_comprehension(db, model, c, SurroundingCall::Other);
+					let desugared = Expression::new(
+						db,
+						&self.result,
+						expression.origin(),
+						LookupCall {
+							function: self.ids.builtins.mzn_array2set.into(),
+							arguments: vec![Expression::new(
+								db,
+								&self.result,
+								expression.origin(),
+								array,
+							)],
+						},
+					);
+					assert_eq!(
+						expression.ty(),
+						desugared.ty(),
+						"Desugared type has changed from {} to {} at {}",
+						expression.ty().pretty_print(db),
+						desugared.ty().pretty_print(db),
+						expression.origin().pretty_print(db)
+					);
+					desugared
+				}
+				_ => fold_expression(self, db, model, expression),
 			}
-			fold_expression(self, db, model, expression)
 		})
 	}
 }
@@ -416,17 +441,24 @@ impl<'db, Dst: Marker> ComprehensionRewriter<'db, Dst> {
 				SurroundingCall::Sum => {
 					if template.ty().inst(db) == Some(VarType::Par) {
 						// Rewrite var where clauses into linear sum
+						let coercion_target =
+							Ty::most_specific_supertype(db, [template.ty(), condition.ty()])
+								.unwrap();
+						let coerced_condition =
+							add_coercion(db, &mut self.result, coercion_target, condition);
 						Expression::new(
 							db,
 							&self.result,
 							origin,
 							LookupCall {
 								function: self.ids.functions.times.into(),
-								arguments: vec![condition, template],
+								arguments: vec![coerced_condition, template],
 							},
 						)
 					} else {
 						// Rewrite var where clauses into if-then-else
+						let zero = Expression::new(db, &self.result, origin, IntegerLiteral(0));
+						let coerced_zero = add_coercion(db, &mut self.result, template.ty(), zero);
 						Expression::new(
 							db,
 							&self.result,
@@ -436,12 +468,7 @@ impl<'db, Dst: Marker> ComprehensionRewriter<'db, Dst> {
 									condition,
 									result: template,
 								}],
-								else_result: Box::new(Expression::new(
-									db,
-									&self.result,
-									origin,
-									IntegerLiteral(0),
-								)),
+								else_result: Box::new(coerced_zero),
 							},
 						)
 					}
@@ -621,7 +648,7 @@ mod tests {
 			"#,
 			expect!([r#"
     var set of int: S;
-    var int: x = sum(['*'(_DECL_1, i) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
+    var int: x = sum(['*'(bool2int(_DECL_1), i) | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),
 		)
 	}

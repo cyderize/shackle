@@ -44,6 +44,21 @@ function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_array_kd(
 	array [$U] of any $T: x,
 );
 
+function array [$$E, $$F] of any $T: mzn_array_2d_literal(
+	array [int] of $$E: idx1,
+	array [int] of $$F: idx2,
+	array [int] of any $T: x,
+) = [
+	(mzn_element_internal(idx1, i), mzn_element_internal(idx2, j)): mzn_element_internal(
+		x,
+		(i - 1) * length(idx2) + j,
+	) |
+		i in index_set(idx1),
+		j in index_set(idx2),
+];
+
+function array [$E] of any $T: mzn_indexed_array(array [int] of tuple($E, any $T): x);
+
 function var set of int: mzn_array2set(array [int] of var int: x) :: promise_total =
 	if length(x) = 0 then
 		{}

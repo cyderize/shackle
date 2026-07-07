@@ -486,11 +486,16 @@ impl<'a, 'db, Src: Marker, Dst: Marker> TopDownTyper<'a, 'db, Dst, Src> {
 						.as_ref()
 						.unwrap()
 						.iter()
-						.map(|p| model[*p].ty())
+						.map(|p| {
+							EnumConstructorKind::from_tys(
+								db,
+								c.arguments.iter().map(|arg| arg.ty()),
+							)
+							.lift(db, model[*p].ty())
+						})
 						.collect::<Vec<_>>(),
 					Callable::EnumDestructor(_) => {
-						let (_, ty) = EnumConstructorKind::from_ty(db, c.arguments[0].ty());
-						vec![ty]
+						return false;
 					}
 					Callable::Expression(e) => e.ty().function_params(db).unwrap(),
 					Callable::Function(f) => {

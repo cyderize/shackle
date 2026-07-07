@@ -179,6 +179,10 @@ impl<'db> ItemCollector<'db> {
 
 	/// Collect an assignment item
 	fn collect_assignment(&mut self, it: shackle_hir::AssignmentItem<'db>) {
+		log::info!(
+			"Lowering assignment {:?}",
+			it.origin(self.db).source_span(self.db)
+		);
 		let item: Item<'_> = it.into();
 		let db = self.db;
 		let a = it.assignment(db);
@@ -804,9 +808,10 @@ impl<'db, 'a, 'b, 'c> ExpressionCollector<'db, 'a, 'b, 'c> {
 				let columns = idx_array(&al.columns);
 				alloc_expression(
 					LookupCall {
-						function: self.parent.ids.builtins.mzn_array_kd.into(),
+						function: self.parent.ids.functions.mzn_array_2d_literal.into(),
 						arguments: vec![
-							alloc_expression(TupleLiteral(vec![rows, columns]), self, origin),
+							rows,
+							columns,
 							alloc_expression(
 								ArrayLiteral(
 									al.members

@@ -7,6 +7,7 @@ ast_enum!(
 	/// Type from a declaration
 	Type,
 	"array_type" => ArrayType,
+	"list_type" => ListType,
 	"set_type" => SetType,
 	"tuple_type" => TupleType,
 	"record_type" => RecordType,
@@ -28,6 +29,19 @@ impl<'tree> ArrayType<'tree> {
 		children_with_field_name(self, "dimension")
 	}
 
+	/// The type contained in the array
+	pub fn element_type(&self) -> Type<'tree> {
+		child_with_field_name(self, "type")
+	}
+}
+
+ast_node!(
+	/// Type of a list
+	ListType,
+	element_type
+);
+
+impl<'tree> ListType<'tree> {
 	/// The type contained in the array
 	pub fn element_type(&self) -> Type<'tree> {
 		child_with_field_name(self, "type")

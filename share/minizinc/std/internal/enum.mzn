@@ -241,3 +241,5 @@ function array [int] of tuple(array [int] of int): mzn_cartesian_product(
 function array [int] of tuple(array [int] of int): mzn_cartesian_product(
 	array [int] of set of int: x,
 ) = mzn_cartesian_product(x, 1);
+
+function set of int: mzn_infinite_range() = -infinity..infinity;

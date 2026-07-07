@@ -83,7 +83,8 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst
 			if let Some(b) = model[s.original].body() {
 				log::debug!(
 					"Adding specialised body to {} (call depth {})",
-					model[s.original].name().pretty_print(db),
+					PrettyPrinter::new(db, &self.specialised_model)
+						.pretty_print_signature(f.into()),
 					s.depth
 				);
 				if s.depth > 1000 {

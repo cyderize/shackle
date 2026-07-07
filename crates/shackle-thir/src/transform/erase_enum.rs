@@ -13,11 +13,11 @@ use shackle_utils::{arena::ArenaMap, maybe_grow_stack};
 
 use super::top_down_type::add_coercion;
 use crate::{
-	ArrayLiteral, Call, Callable, Db, Declaration, DeclarationId, Domain, DomainData, EnumMemberId,
+	ArrayLiteral, Callable, Db, Declaration, DeclarationId, Domain, DomainData, EnumMemberId,
 	EnumerationId, EnumerationItem, Expression, ExpressionData, Function, FunctionId, FunctionName,
-	Item, ItemId, LookupCall, Marker, Model, ResolvedIdentifier, TupleLiteral,
+	Item, ItemId, Let, LetItem, LookupCall, Marker, Model, ResolvedIdentifier, TupleLiteral,
 	traverse::{
-		Folder, ReplacementMap, add_function, add_item, fold_call, fold_domain, fold_expression,
+		Folder, ReplacementMap, add_function, add_item, fold_domain, fold_expression,
 		fold_function, fold_function_body, fold_identifier,
 	},
 };
@@ -128,63 +128,6 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for EnumEraser<'db
 		}
 	}
 
-	fn fold_call(
-		&mut self,
-		db: &'db dyn Db,
-		model: &Model<'db, Src>,
-		call: &Call<'db, Src>,
-	) -> Call<'db, Dst> {
-		// Erase enum constructor into function call
-		match &call.function {
-			Callable::EnumConstructor(e) => {
-				let mzn_enum = self.mzn_enum_for_item[e.enumeration_id()];
-				let member_id = e.member_index() as i64 + 1;
-				let origin = model[e.enumeration_id()].origin();
-				let arguments = if model[*e].parameters.is_none() {
-					vec![
-						Expression::new(db, &self.model, origin, mzn_enum),
-						Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
-					]
-				} else {
-					let al = ArrayLiteral(
-						call.arguments
-							.iter()
-							.map(|arg| self.fold_expression(db, model, arg))
-							.collect(),
-					);
-					vec![
-						Expression::new(db, &self.model, origin, mzn_enum),
-						Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
-						Expression::new(db, &self.model, origin, al),
-					]
-				};
-				LookupCall {
-					function: self.ids.functions.mzn_construct_enum.into(),
-					arguments,
-				}
-				.resolve(db, &self.model)
-				.0
-			}
-			Callable::EnumDestructor(e) => {
-				let mzn_enum = self.mzn_enum_for_item[e.enumeration_id()];
-				let member_id = e.member_index() as i64 + 1;
-				let origin = model[e.enumeration_id()].origin();
-				let arguments = vec![
-					Expression::new(db, &self.model, origin, mzn_enum),
-					Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
-					self.fold_expression(db, model, &call.arguments[0]),
-				];
-				LookupCall {
-					function: self.ids.functions.mzn_destruct_enum.into(),
-					arguments,
-				}
-				.resolve(db, &self.model)
-				.0
-			}
-			_ => fold_call(self, db, model, call),
-		}
-	}
-
 	fn fold_expression(
 		&mut self,
 		db: &'db dyn Db,
@@ -192,33 +135,177 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for EnumEraser<'db
 		expression: &Expression<'db, Src>,
 	) -> Expression<'db, Dst> {
 		maybe_grow_stack(|| {
-			if let ExpressionData::Call(c) = &**expression
-				&& let Callable::Function(f) = &c.function
-			{
-				if model[*f].name() == self.ids.functions.enum2int
-					|| model[*f].name() == self.ids.functions.index2int
-				{
-					return self.fold_expression(db, model, &c.arguments[0]);
-				} else if model[*f].name() == self.ids.functions.to_enum_internal {
-					return self.fold_expression(db, model, &c.arguments[1]);
-				} else if model[*f].name() == self.ids.functions.enum_of {
-					if let Some(e) = c.arguments[0].ty().enum_ty(db) {
+			if let ExpressionData::Call(c) = &**expression {
+				match &c.function {
+					Callable::EnumConstructor(e) => {
+						log::debug!(
+							"Erasing constructor at {}",
+							expression.origin().pretty_print(db)
+						);
+						let mzn_enum = self.mzn_enum_for_item[e.enumeration_id()];
+						let member_id = e.member_index() as i64 + 1;
+						let origin = model[e.enumeration_id()].origin();
+						let arguments = if model[*e].parameters.is_none() {
+							vec![
+								Expression::new(db, &self.model, origin, mzn_enum),
+								Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
+							]
+						} else {
+							let al = ArrayLiteral(
+								c.arguments
+									.iter()
+									.map(|arg| self.fold_expression(db, model, arg))
+									.collect(),
+							);
+							vec![
+								Expression::new(db, &self.model, origin, mzn_enum),
+								Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
+								Expression::new(db, &self.model, origin, al),
+							]
+						};
 						return Expression::new(
 							db,
 							&self.model,
 							expression.origin(),
-							self.defining_set_for_ty[&e],
+							LookupCall {
+								function: self.ids.functions.mzn_construct_enum.into(),
+								arguments,
+							},
 						);
 					}
-					return Expression::new(
-						db,
-						&self.model,
-						expression.origin(),
-						LookupCall {
-							function: self.ids.functions.mzn_infinite_range.into(),
-							arguments: vec![],
-						},
-					);
+					Callable::EnumDestructor(e) => {
+						log::debug!(
+							"Erasing destructor at {}",
+							expression.origin().pretty_print(db)
+						);
+						let mzn_enum = self.mzn_enum_for_item[e.enumeration_id()];
+						let member_id = e.member_index() as i64 + 1;
+						let origin = model[e.enumeration_id()].origin();
+						let arguments = vec![
+							Expression::new(db, &self.model, origin, mzn_enum),
+							Expression::new(db, &self.model, origin, IntegerLiteral(member_id)),
+							self.fold_expression(db, model, &c.arguments[0]),
+						];
+						// mzn_destruct_enum returns a list of values, which we need to convert to a tuple
+						let array = Expression::new(
+							db,
+							&self.model,
+							origin,
+							LookupCall {
+								function: self.ids.functions.mzn_destruct_enum.into(),
+								arguments,
+							},
+						);
+
+						let len = model[e.enumeration_id()].definition().as_ref().unwrap()
+							[e.member_index() as usize]
+							.parameters
+							.as_ref()
+							.unwrap()
+							.len();
+						if len == 1 {
+							return Expression::new(
+								db,
+								&self.model,
+								expression.origin(),
+								LookupCall {
+									function: self.ids.builtins.mzn_element_internal.into(),
+									arguments: vec![
+										array,
+										Expression::new(db, &self.model, origin, IntegerLiteral(1)),
+									],
+								},
+							);
+						}
+
+						let array_decl = Declaration::from_expression(db, false, array);
+						let array_decl_idx =
+							self.model.add_declaration(Item::new(array_decl, origin));
+						let array_decl_ident =
+							Expression::new(db, &self.model, origin, array_decl_idx);
+						let in_expression = Expression::new(
+							db,
+							&self.model,
+							origin,
+							ArrayLiteral(
+								(1..len + 1)
+									.map(|i| {
+										Expression::new(
+											db,
+											&self.model,
+											origin,
+											LookupCall {
+												function: self
+													.ids
+													.builtins
+													.mzn_element_internal
+													.into(),
+												arguments: vec![
+													array_decl_ident.clone(),
+													Expression::new(
+														db,
+														&self.model,
+														origin,
+														IntegerLiteral(i as i64),
+													),
+												],
+											},
+										)
+									})
+									.collect::<Vec<_>>(),
+							),
+						);
+
+						return Expression::new(
+							db,
+							&self.model,
+							expression.origin(),
+							Let {
+								items: vec![LetItem::Declaration(array_decl_idx)],
+								in_expression: Box::new(in_expression),
+							},
+						);
+					}
+					Callable::Function(f) => {
+						if model[*f].name() == self.ids.functions.enum2int
+							|| model[*f].name() == self.ids.functions.index2int
+						{
+							log::debug!(
+								"Erasing enum to integer coercion at {}",
+								expression.origin().pretty_print(db)
+							);
+							return self.fold_expression(db, model, &c.arguments[0]);
+						} else if model[*f].name() == self.ids.functions.to_enum_internal {
+							log::debug!(
+								"Erasing integer to enum coercion at {}",
+								expression.origin().pretty_print(db)
+							);
+							return self.fold_expression(db, model, &c.arguments[1]);
+						} else if model[*f].name() == self.ids.functions.enum_of {
+							log::debug!(
+								"Erasing enum_of call at {}",
+								expression.origin().pretty_print(db)
+							);
+							if let Some(e) = c.arguments[0].ty().enum_ty(db) {
+								return Expression::new(
+									db,
+									&self.model,
+									expression.origin(),
+									self.defining_set_for_ty[&e],
+								);
+							}
+							return Expression::new(
+								db,
+								&self.model,
+								expression.origin(),
+								LookupCall {
+									function: self.ids.functions.mzn_infinite_range.into(),
+									arguments: vec![],
+								},
+							);
+						}
+					}
+					_ => (),
 				}
 			}
 			fold_expression(self, db, model, expression)
@@ -234,6 +321,10 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for EnumEraser<'db
 		maybe_grow_stack(|| {
 			let mut folded = fold_domain(self, db, model, domain);
 			if folded.ty().enum_ty(db).is_some() {
+				log::debug!(
+					"Erasing enum domain to int at {}",
+					domain.origin().pretty_print(db)
+				);
 				// Erase enum types into ints
 				let ty = if let Some(VarType::Var) = folded.ty().inst(db) {
 					self.tys.var_int

@@ -172,6 +172,23 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 					is_fn_parameter,
 				),
 			},
+			minizinc::Type::ListType(l) => Type::Array {
+				opt: OptType::NonOpt,
+				dimensions: self.alloc_type(
+					t,
+					Type::Primitive {
+						inst: VarType::Par,
+						opt: OptType::NonOpt,
+						primitive_type: PrimitiveType::Int,
+					},
+				),
+				element: self.collect_type_with_tiids(
+					&l.element_type(),
+					tiids,
+					false,
+					is_fn_parameter,
+				),
+			},
 			minizinc::Type::SetType(s) => Type::Set {
 				inst: s.var_type(),
 				opt: s.opt_type(),

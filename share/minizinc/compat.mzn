@@ -125,6 +125,24 @@ function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_array_kd(
 	array [$U] of any $T: x,
 ) = array6d(idx.1, idx.2, idx.3, idx.4, idx.5, idx.6, x);
 
+function array [$$E] of any $T: mzn_indexed_array(array [int] of tuple($$E, any $T): x) =
+	arrayNd(x.1, x.2);
+function array [$$E, $$F] of any $T: mzn_indexed_array(
+	array [int] of tuple(tuple($$E, $$F), any $T): x,
+) = arrayNd(x.1.1, x.1.2, x.2);
+function array [$$E, $$F, $$G] of any $T: mzn_indexed_array(
+	array [int] of tuple(tuple($$E, $$F, $$G), any $T): x,
+) = arrayNd(x.1.1, x.1.2, x.1.3, x.2);
+function array [$$E, $$F, $$G, $$H] of any $T: mzn_indexed_array(
+	array [int] of tuple(tuple($$E, $$F, $$G, $$H), any $T): x,
+) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.2);
+function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_indexed_array(
+	array [int] of tuple(tuple($$E, $$F, $$G, $$H, $$I), any $T): x,
+) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.1.5, x.2);
+function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_indexed_array(
+	array [int] of tuple(tuple($$E, $$F, $$G, $$H, $$I, $$J), any $T): x,
+) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.1.5, x.1.6, x.2);
+
 function set of int: mzn_array2set(array [int] of int: x) = array2set(x);
 function set of float: mzn_array2set(array [int] of float: x) = array2set(x);
 

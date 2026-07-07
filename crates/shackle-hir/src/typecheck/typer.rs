@@ -1464,13 +1464,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 						let _ = self.typecheck_expression(*ann, self.types.ann);
 					}
 					let ty = self.typecheck_expression(c.expression, self.types.var_bool);
-					if ty == self.types.var_bool
-						&& !c.annotations.iter().any(|ann| match &self.data[*ann] {
-							Expression::Identifier(i) => {
-								*i == self.identifiers.annotations.shackle_totalised
-							}
-							_ => false,
-						}) {
+					if ty == self.types.var_bool {
 						// Var constraints make the return type var
 						make_var = true;
 					}
@@ -1499,12 +1493,7 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 						.walk(db)
 						.any(|ty| ty != self.types.var_bool && ty.inst(db) == Some(VarType::Var))
 						&& d.definition.is_some()
-						&& !d.annotations.iter().any(|ann| match &self.data[*ann] {
-							Expression::Identifier(i) => {
-								*i == self.identifiers.annotations.shackle_totalised
-							}
-							_ => false,
-						}) {
+					{
 						// Var declarations make the return type var
 						make_var = true;
 					}

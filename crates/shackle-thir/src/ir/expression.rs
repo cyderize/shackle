@@ -103,16 +103,6 @@ impl<'db, T: Marker> Deref for Expression<'db, T> {
 	}
 }
 
-// impl<'db, T: Marker> Drop for Expression<'db, T> {
-// 	fn drop(&mut self) {
-// 		// Default recursive drop can cause stack overflow
-// 		maybe_grow_stack(|| {
-// 			let _ = std::mem::replace(&mut self.data, ExpressionData::Absent);
-// 			let _ = std::mem::take(&mut self.annotations);
-// 		})
-// 	}
-// }
-
 impl<'db, T: Marker> Clone for Expression<'db, T> {
 	fn clone(&self) -> Self {
 		// Default recursive clone can cause stack overflow
@@ -1073,25 +1063,17 @@ impl<'db, T: Marker> ExpressionBuilder<'db, T> for Let<'db, T> {
 		origin: Origin<'db>,
 	) -> Expression<'db, T> {
 		let types = TypeRegistry::lookup(db);
-		let ids = IdentifierRegistry::lookup(db);
 		let mut ty = self.in_expression.ty();
-		if !ty.contains_var(db)
+		if ty != types.ann
+			&& !ty.contains_var(db)
 			&& self.items.iter().any(|item| match item {
-				LetItem::Constraint(idx) => {
-					model[*idx].expression().ty() == types.var_bool
-						&& !model[*idx]
-							.annotations()
-							.has(model, ids.annotations.shackle_totalised)
-				}
+				LetItem::Constraint(idx) => model[*idx].expression().ty() == types.var_bool,
 				LetItem::Declaration(idx) => {
 					model[*idx].definition().is_some()
 						&& model[*idx]
 							.domain()
 							.walk()
 							.any(|d| d.ty().inst(db) == Some(VarType::Var) && !d.ty().is_bool(db))
-						&& !model[*idx]
-							.annotations()
-							.has(model, ids.annotations.shackle_totalised)
 				}
 			}) {
 			ty = ty

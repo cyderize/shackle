@@ -3672,6 +3672,20 @@
             "named": true
           }
         ]
+      },
+      "var_par": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "par",
+            "named": false
+          },
+          {
+            "type": "var",
+            "named": false
+          }
+        ]
       }
     }
   },
@@ -4041,6 +4055,20 @@
           {
             "type": "_type",
             "named": true
+          }
+        ]
+      },
+      "var_par": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "par",
+            "named": false
+          },
+          {
+            "type": "var",
+            "named": false
           }
         ]
       }

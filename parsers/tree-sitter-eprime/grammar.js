@@ -30,7 +30,7 @@ const ADDITIVE_OPERATORS = ["+", "-"]
 const COMPARISON_OPERATORS = [
 	"=", "!=", "<", "<=", ">", ">=",
 	"<lex", "<=lex", ">=lex", ">lex"
-];
+]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "%"]
 
 module.exports = grammar({

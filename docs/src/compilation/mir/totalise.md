@@ -37,7 +37,7 @@ The basic idea of the transformation is to turn any partially defined expression
    The type is transformed from `set of T` into `tuple(bool, set of T)` as follows.
    `{ e1, e2, pde1, ..., pdek, ... }` into
    `let { any: (b1,tmp1) = pde1;
-      any: (bk,tmpk) = pdek; }
+any: (bk,tmpk) = pdek; }
 in (forall([b1,...,bk]), {e1, e2, tmp1, ..., tmpk ...})`
 4. Array literals (containing partially defined expressions)
    ~~Change type `array[...] of T` into `array[...] of tuple(bool, T)` and change
@@ -45,12 +45,10 @@ in (forall([b1,...,bk]), {e1, e2, tmp1, ..., tmpk ...})`
    `[ (true, e1), ..., pde1, ... pdek, ... (true,en) ]`~~
    Change type `array[...] of T` into `tuple(bool, array [...] of T` and change `[ e1, ..., (b1, pde1), ... (bk, pdek), ... en]` into `(b1 /\ ... /\ bk, [e1, pde1, ... pdek, ... en])`
 5. Array comprehensions
-
    - Partially defined generators are not permitted (static type error).
    - Partially defined generated expressions are fine. The resulting type changes from `array[...] of T` into `tuple(bool, array[...] of T)` (like array literals). May need to create `array [...] of tuple(bool, T)` first, then extract the definedness from that.\*\*\*\*
    - Partially defined where clauses are fine (they are their own Boolean context)
    - These examples show why it would be a bad idea to allow partial generators.
-
      - par comprehensions:
 
        ```mzn

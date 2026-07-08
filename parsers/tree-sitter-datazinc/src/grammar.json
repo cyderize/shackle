@@ -124,12 +124,91 @@
               "type": "BLANK"
             }
           ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "="
+                },
+                {
+                  "type": "FIELD",
+                  "name": "body",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_expression"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         }
       ]
     },
     "annotation_parameters": {
-      "type": "SYMBOL",
-      "name": "_parameters"
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "("
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "parameter",
+              "content": {
+                "type": "SYMBOL",
+                "name": "parameter"
+              }
+            },
+            {
+              "type": "REPEAT",
+              "content": {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": ","
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "parameter",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "parameter"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": ","
+                },
+                {
+                  "type": "BLANK"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": ")"
+        }
+      ]
     },
     "assignment": {
       "type": "SEQ",
@@ -609,7 +688,7 @@
           "type": "REPEAT1",
           "content": {
             "type": "PREC_LEFT",
-            "value": 16,
+            "value": 140,
             "content": {
               "type": "SEQ",
               "members": [
@@ -1298,7 +1377,7 @@
     },
     "generator_call": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1624,7 +1703,7 @@
     },
     "indexed_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1736,7 +1815,7 @@
     },
     "tuple_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1770,7 +1849,7 @@
     },
     "record_access": {
       "type": "PREC",
-      "value": 18,
+      "value": 150,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1912,7 +1991,7 @@
     },
     "annotated_expression": {
       "type": "PREC",
-      "value": 16,
+      "value": 140,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1928,7 +2007,7 @@
             "type": "REPEAT1",
             "content": {
               "type": "PREC_LEFT",
-              "value": 16,
+              "value": 140,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -2202,7 +2281,7 @@
       "members": [
         {
           "type": "PREC",
-          "value": 15,
+          "value": 110,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2240,7 +2319,7 @@
         },
         {
           "type": "PREC_LEFT",
-          "value": 10,
+          "value": 80,
           "content": {
             "type": "SEQ",
             "members": [
@@ -2284,7 +2363,7 @@
     },
     "postfix_operator": {
       "type": "PREC_RIGHT",
-      "value": 10,
+      "value": 80,
       "content": {
         "type": "SEQ",
         "members": [
@@ -2655,6 +2734,31 @@
       "type": "SEQ",
       "members": [
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "var_par",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "var"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "par"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "STRING",
           "value": "tuple"
         },
@@ -2716,6 +2820,31 @@
     "record_type": {
       "type": "SEQ",
       "members": [
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "var_par",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "var"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "par"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
         {
           "type": "STRING",
           "value": "record"
@@ -3908,7 +4037,8 @@
     },
     "identifier": {
       "type": "PATTERN",
-      "value": "[^\"'\\s\\.\\-\\[\\]\\^\\/,;:(){}&|$.∞%<>⟷⇔>→⇒<←⇐∨⊻∧===!=≠<<=≤>>=≥∈⊆⊇~=~!=∪∖∩+++~+~*~*~~]+"
+      "value": "[\\p{L}_][\\p{L}\\p{N}_]*",
+      "flags": "u"
     },
     "quoted_identifier": {
       "type": "PATTERN",

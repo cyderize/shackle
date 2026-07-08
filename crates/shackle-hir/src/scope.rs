@@ -363,6 +363,16 @@ fn collect_global_scope_with_diagnostics<'db>(db: &'db dyn Db) -> (ScopeData<'db
 	(scope, diagnostics)
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+enum PatternMode {
+	/// Must be irrefutable, atoms bind new variables
+	Destructuring,
+	/// Can be refutable, atoms bind new variables
+	Generator,
+	/// Can be refutable, atoms resolve to existing variables
+	Case,
+}
+
 /// Variable scope
 #[derive(Clone, Default, PartialEq, Eq, salsa::Update)]
 pub struct ScopeData<'db> {
@@ -640,15 +650,15 @@ impl<'db> ScopeCollector<'db> {
 	}
 
 	/// Add leaves of a pattern into the current scope.
-	fn collect_pattern(&mut self, index: PatternId<'db>, is_destructuring: bool) {
+	fn collect_pattern(&mut self, index: PatternId<'db>, mode: PatternMode) {
 		self.increment_generation();
-		self.collect_pattern_inner(index, is_destructuring, false);
+		self.collect_pattern_inner(index, mode, false);
 	}
 
 	fn collect_pattern_inner(
 		&mut self,
 		index: PatternId<'db>,
-		is_destructuring: bool,
+		mode: PatternMode,
 		mut had_error: bool,
 	) {
 		let generation = self.generation();
@@ -664,7 +674,7 @@ impl<'db> ScopeCollector<'db> {
 								current = *parent;
 								continue;
 							}
-							if !is_destructuring && scope.is_atom(*i, generation) {
+							if mode == PatternMode::Case && scope.is_atom(*i, generation) {
 								// This identifier refers to this atom and does not create a new binding
 								break;
 							}
@@ -694,7 +704,7 @@ impl<'db> ScopeCollector<'db> {
 						}
 						Scope::Model { global_scope } => {
 							let scope = self.item.model(self.db).global_scope(self.db);
-							if !is_destructuring && scope.is_atom(*i, 0) {
+							if mode == PatternMode::Case && scope.is_atom(*i, 0) {
 								// This identifier refers to this atom and does not create a new binding
 								break;
 							}
@@ -723,7 +733,7 @@ impl<'db> ScopeCollector<'db> {
 							current = *global_scope;
 						}
 						Scope::Global => {
-							if !is_destructuring && GlobalScope::is_atom(self.db, *i) {
+							if mode == PatternMode::Case && GlobalScope::is_atom(self.db, *i) {
 								// This identifier refers to this atom and does not create a new binding
 								break;
 							}
@@ -746,7 +756,7 @@ impl<'db> ScopeCollector<'db> {
 				}
 			}
 			Pattern::Call { arguments, .. } => {
-				if is_destructuring {
+				if mode == PatternMode::Destructuring {
 					if !had_error {
 						let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
 						self.diagnostics.add_error(InvalidPattern {
@@ -759,21 +769,21 @@ impl<'db> ScopeCollector<'db> {
 					had_error = true;
 				}
 				for argument in arguments.iter() {
-					self.collect_pattern_inner(*argument, is_destructuring, had_error);
+					self.collect_pattern_inner(*argument, mode, had_error);
 				}
 			}
 			Pattern::Tuple { fields } => {
 				for field in fields.iter() {
-					self.collect_pattern_inner(*field, is_destructuring, had_error);
+					self.collect_pattern_inner(*field, mode, had_error);
 				}
 			}
 			Pattern::Record { fields } => {
 				for (_, pattern) in fields.iter() {
-					self.collect_pattern_inner(*pattern, is_destructuring, had_error);
+					self.collect_pattern_inner(*pattern, mode, had_error);
 				}
 			}
 			_ => {
-				if is_destructuring && !had_error {
+				if mode == PatternMode::Destructuring && !had_error {
 					let (src, span) = self.item.sources(self.db)[index].source_span(self.db);
 					self.diagnostics.add_error(InvalidPattern {
 						span,
@@ -883,7 +893,7 @@ impl<'db> ScopeCollector<'db> {
 							if let Some(def) = d.definition {
 								self.collect_expression(def)
 							}
-							self.collect_pattern(d.pattern, true);
+							self.collect_pattern(d.pattern, PatternMode::Destructuring);
 						}
 					}
 				}
@@ -923,7 +933,7 @@ impl<'db> ScopeCollector<'db> {
 				self.collect_expression(c.expression);
 				for i in c.cases.iter() {
 					self.push();
-					self.collect_pattern(i.pattern, false);
+					self.collect_pattern(i.pattern, PatternMode::Case);
 					self.collect_expression(i.value);
 					self.pop();
 				}
@@ -940,7 +950,7 @@ impl<'db> ScopeCollector<'db> {
 				}
 				self.push();
 				for pattern in l.parameters.iter().filter_map(|param| param.pattern) {
-					self.collect_pattern(pattern, true);
+					self.collect_pattern(pattern, PatternMode::Destructuring);
 				}
 				self.collect_expression(l.body);
 				self.pop();
@@ -959,7 +969,7 @@ impl<'db> ScopeCollector<'db> {
 			} => {
 				self.collect_expression(*collection);
 				for p in patterns.iter() {
-					self.collect_pattern(*p, false);
+					self.collect_pattern(*p, PatternMode::Generator);
 				}
 				if let Some(e) = where_clause {
 					self.collect_expression(*e)
@@ -971,7 +981,7 @@ impl<'db> ScopeCollector<'db> {
 				where_clause,
 			} => {
 				self.collect_expression(*value);
-				self.collect_pattern(*pattern, true);
+				self.collect_pattern(*pattern, PatternMode::Generator);
 				if let Some(e) = where_clause {
 					self.collect_expression(*e)
 				}
@@ -1512,7 +1522,7 @@ fn collect_function_scope<'db>(
 	collector.push();
 	for t in function.type_inst_vars.iter() {
 		if !t.anonymous {
-			collector.collect_pattern(t.name, true);
+			collector.collect_pattern(t.name, PatternMode::Destructuring);
 		}
 	}
 	for p in function.parameters.iter() {
@@ -1523,7 +1533,7 @@ fn collect_function_scope<'db>(
 	for p in function.parameters.iter() {
 		// Add parameters into scope
 		if let Some(pat) = p.pattern {
-			collector.collect_pattern(pat, true);
+			collector.collect_pattern(pat, PatternMode::Destructuring);
 		}
 	}
 	if let Some(e) = function.body {

@@ -44,18 +44,6 @@ const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]
 const ADDITIVE_OPERATORS = ["+", "-", "++", "~+", "~-"]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "div", "mod", "~*", "~div", "~/"]
 
-const OPERATOR_CHARACTERS = `,;:(){}&|$.∞%`.concat(
-	getOpChars(EQUIVALENCE_OPERATORS),
-	getOpChars(IMPLICATION_OPERATORS),
-	getOpChars(DISJUNCTION_OPERATORS),
-	getOpChars(CONJUNCTION_OPERATORS),
-	getOpChars(COMPARISON_OPERATORS),
-	getOpChars(UNION_DIFF_OPERATORS),
-	getOpChars(INTERSECTION_OPERATORS),
-	getOpChars(ADDITIVE_OPERATORS),
-	getOpChars(MULTIPLICATIVE_OPERATORS)
-)
-
 module.exports = grammar({
 	name: "minizinc",
 
@@ -363,7 +351,6 @@ module.exports = grammar({
 			),
 
 		infix_operator: ($) => {
-			// WARNING: All non-word operators must be included in the OPERATOR_CHARACTERS string
 			const table = /** @type {const} */ ([
 				[prec.left, PREC.equivalence, choice(...EQUIVALENCE_OPERATORS)],
 				[prec.left, PREC.implication, choice(...IMPLICATION_OPERATORS)],
@@ -526,9 +513,21 @@ module.exports = grammar({
 				field("type", $._type)
 			),
 		tuple_type: ($) =>
-			seq("tuple", "(", sepBy1(",", field("field", $._type)), ")"),
+			seq(
+				optional(field("var_par", choice("var", "par"))),
+				"tuple",
+				"(",
+				sepBy1(",", field("field", $._type)),
+				")"
+			),
 		record_type: ($) =>
-			seq("record", "(", sepBy1(",", field("field", $.record_type_field)), ")"),
+			seq(
+				optional(field("var_par", choice("var", "par"))),
+				"record",
+				"(",
+				sepBy1(",", field("field", $.record_type_field)),
+				")"
+			),
 		record_type_field: ($) =>
 			seq(field("type", $._type), ":", field("name", $._identifier)),
 		operation_type: ($) =>

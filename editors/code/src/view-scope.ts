@@ -40,7 +40,7 @@ class ScopeProvider implements TextDocumentContentProvider {
 
 		workspace.onDidChangeTextDocument(
 			(e) => {
-				if (e.document === window.activeTextEditor.document) {
+				if (e.document === window.activeTextEditor?.document) {
 					this.invalidate()
 				}
 			},

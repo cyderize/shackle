@@ -29,7 +29,7 @@ The following syntax describes the types available in MicroZinc. The type syntax
 Importantly, MicroZinc includes two types of sub-typing. When type \\( T_1 \\) is a sub-type of type \\( T_2 \\) then \\( T_1 \\) can be used anywhere where the type \\( T_2 \\) is required.
 
 - In MicroZinc, \\( \mathsf{par}~T \\) is a sub-type of \\( \mathsf{var}~T \\).
-- MicroZinc also has numeric subtyping (i.e., \\( \mathsf{par~bool} \\) is a subtype of \\( \mathsf{par~int} \\), which is a sub-type of \\( \mathsf{par~float} \\), and similarly \\( \mathsf{var~bool} \\) is a sub-type of \\( \mathsf{var~int} \\), which is a sub-type of \\( \mathsf{var~float} \\))
+- MicroZinc also has numeric subtyping (i.e., \\( \mathsf{par~~bool} \\) is a subtype of \\( \mathsf{par~~int} \\), which is a sub-type of \\( \mathsf{par~~float} \\), and similarly \\( \mathsf{var~~bool} \\) is a sub-type of \\( \mathsf{var~~int} \\), which is a sub-type of \\( \mathsf{var~~float} \\))
 
 The \\( \mathsf{pred} \\) type is a special value given to expressions that enforce constraints, but do not return a value. This It should be noted that the
 
@@ -158,7 +158,7 @@ Identifiers are typed simply using a lookup in the typing context. The typing of
 
 ### Comprehensions and Generators
 
-As shown in the following rules, the \\( \mathit{genExpr} \\) rules will must have either type \\( \mathsf{set~of~int} \\) or \\( \mathsf{array1d~of}~T \\). The \\( \text{T_Comp} \\) rule, to type array comprehensions, will use the \\( elem \\) function which maps the former type to \\( \mathsf{int} \\) and the latter to \\( T \\).
+As shown in the following rules, the \\( \mathit{genExpr} \\) rules will must have either type \\( \mathsf{set~~of~~int} \\) or \\( \mathsf{array1d~of}~T \\). The \\( \text{T_Comp} \\) rule, to type array comprehensions, will use the \\( elem \\) function which maps the former type to \\( \mathsf{int} \\) and the latter to \\( T \\).
 
 <div>
 \[

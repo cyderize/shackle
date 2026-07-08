@@ -4,7 +4,6 @@ import {
 	LanguageClient,
 	LanguageClientOptions,
 	ServerOptions,
-	TransportKind,
 } from "vscode-languageclient/node"
 import { handleAstViewCommand } from "./view-ast"
 import { handleCstViewCommand } from "./view-cst"
@@ -22,8 +21,7 @@ export function activate(context: ExtensionContext) {
 		.get<string>("executable")
 
 	const run = {
-		command,
-		transport: TransportKind.stdio,
+		command: command ?? "shackle-ls",
 	}
 	const serverOptions: ServerOptions = {
 		run,

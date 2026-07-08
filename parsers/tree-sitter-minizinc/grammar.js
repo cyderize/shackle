@@ -37,7 +37,7 @@ const COMPARISON_OPERATORS = [
 	"=", "==", "!=", "≠", "<", "<=", "≤", ">", ">=",
 	"≥", "in", "∈", "subset", "⊆", "superset", "⊇",
 	"~=", "~!=",
-];
+]
 const UNION_DIFF_OPERATORS = ["union", "∪", "diff", "∖", "symdiff"]
 const INTERSECTION_OPERATORS = ["intersect", "∩"]
 const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]

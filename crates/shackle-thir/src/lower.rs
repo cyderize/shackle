@@ -81,6 +81,11 @@ impl<'db> ItemCollector<'db> {
 
 	/// Collect an item
 	fn collect_item(&mut self, item: Item<'db>) {
+		log::debug!(
+			"Lowering {:?} at {} to THIR",
+			item.get_item_with_data_as_debug(self.db),
+			Origin::from(item).pretty_print(self.db)
+		);
 		match item {
 			Item::Annotation(a) => {
 				let _ = self.collect_annotation(a);
@@ -179,10 +184,6 @@ impl<'db> ItemCollector<'db> {
 
 	/// Collect an assignment item
 	fn collect_assignment(&mut self, it: shackle_hir::AssignmentItem<'db>) {
-		log::info!(
-			"Lowering assignment {:?}",
-			it.origin(self.db).source_span(self.db)
-		);
 		let item: Item<'_> = it.into();
 		let db = self.db;
 		let a = it.assignment(db);

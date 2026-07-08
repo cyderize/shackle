@@ -1,6 +1,3 @@
-include "stdlib.mzn";
-include "solver_redefinitions.mzn";
-
 include "internal/annotation.mzn";
 include "internal/array.mzn";
 include "internal/coercion.mzn";
@@ -17,3 +14,6 @@ include "internal/reflect.mzn";
 include "internal/shackle_redefinitions.mzn";
 include "internal/slice.mzn";
 include "internal/string.mzn";
+
+include "stdlib.mzn";
+include "solver_redefinitions.mzn";

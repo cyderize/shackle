@@ -13,6 +13,8 @@ use log::warn;
 use miette::{IntoDiagnostic, Report, Result};
 use shackle::{Error, Message, Model, Solver, Status, error::InternalError};
 use shackle_fmt::{MiniZincFormatOptions, check_format, format_files};
+#[cfg(test)]
+use tempfile as _;
 
 /// The main function is the entry point for the `shackle` executable.
 ///
@@ -137,6 +139,87 @@ impl Solve {
 
 		// Compilation succeeded
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn compile_args(files: &[&str]) -> Compile {
+		Compile {
+			solver: "gecode".to_owned(),
+			files: files.iter().map(PathBuf::from).collect(),
+		}
+	}
+
+	#[test]
+	fn sort_files_splits_model_from_data_files() {
+		let compile = compile_args(&["instance.dzn", "model.mzn", "values.json"]);
+
+		let (model, data) = compile.sort_files().unwrap();
+
+		assert_eq!(model, PathBuf::from("model.mzn"));
+		assert_eq!(
+			data,
+			[PathBuf::from("instance.dzn"), PathBuf::from("values.json")]
+		);
+	}
+
+	#[test]
+	fn sort_files_accepts_eprime_models() {
+		let compile = compile_args(&["model.eprime", "instance.dzn"]);
+
+		let (model, data) = compile.sort_files().unwrap();
+
+		assert_eq!(model, PathBuf::from("model.eprime"));
+		assert_eq!(data, [PathBuf::from("instance.dzn")]);
+	}
+
+	#[test]
+	fn sort_files_rejects_multiple_model_files() {
+		let compile = compile_args(&["first.mzn", "second.eprime"]);
+
+		let err = compile.sort_files().unwrap_err().to_string();
+
+		assert!(err.contains("detected multiple model files"));
+		assert!(err.contains("first.mzn"));
+		assert!(err.contains("second.eprime"));
+	}
+
+	#[test]
+	fn sort_files_rejects_unsupported_file_types() {
+		let compile = compile_args(&["model.mzn", "notes.txt"]);
+
+		let err = compile.sort_files().unwrap_err().to_string();
+
+		assert!(err.contains("unsupported file type"));
+		assert!(err.contains("notes.txt"));
+	}
+
+	#[test]
+	fn sort_files_requires_a_model_file() {
+		let compile = compile_args(&["instance.dzn", "values.json"]);
+
+		let err = compile.sort_files().unwrap_err().to_string();
+
+		assert!(err.contains("no model file detected"));
+	}
+
+	#[test]
+	fn solver_resolves_registered_solver_tags() {
+		let compile = Compile {
+			solver: "test-solver".to_owned(),
+			files: vec![PathBuf::from("model.mzn")],
+		};
+
+		assert!(compile.solver().is_ok());
+	}
+
+	#[test]
+	fn boolean_flags_convert_to_bool() {
+		assert!(bool::from(BooleanFlag::On));
+		assert!(!bool::from(BooleanFlag::Off));
 	}
 }
 

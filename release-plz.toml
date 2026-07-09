@@ -11,7 +11,7 @@ name = "shackle-cli"
 release = false
 
 [[package]]
-name = "shackle-compiler"
+name = "shackle-diagnostics"
 release = false
 
 [[package]]
@@ -19,7 +19,31 @@ name = "shackle-fmt"
 release = false
 
 [[package]]
+name = "shackle-hir"
+release = false
+
+[[package]]
 name = "shackle-ls"
+release = false
+
+[[package]]
+name = "shackle-syntax"
+release = false
+
+[[package]]
+name = "shackle-thir"
+release = false
+
+[[package]]
+name = "shackle-ty"
+release = false
+
+[[package]]
+name = "shackle-utils"
+release = false
+
+[[package]]
+name = "shackle-utils-derive"
 release = false
 
 [[package]]

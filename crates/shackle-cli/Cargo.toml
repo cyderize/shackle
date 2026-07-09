@@ -18,3 +18,6 @@ miette = {workspace = true, features = ["fancy"]}
 serde_json = {workspace = true}
 shackle = {path = "../shackle"}
 shackle-fmt = {path = "../shackle-fmt", features = ["fancy"]}
+
+[dev-dependencies]
+tempfile = "3.5.0"

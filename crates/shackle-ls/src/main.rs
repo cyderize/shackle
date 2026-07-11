@@ -6,7 +6,7 @@ use lsp_server::{Connection, ExtractError, Message};
 use lsp_types::{
 	CompletionOptions, HoverProviderCapability, InitializeParams, OneOf, SemanticTokensFullOptions,
 	SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
-	ServerCapabilities, TextDocumentSyncKind,
+	ServerCapabilities, SignatureHelpOptions, TextDocumentSyncKind,
 	notification::{DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument},
 };
 
@@ -42,6 +42,10 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
 		references_provider: Some(OneOf::Left(true)),
 		text_document_sync: Some(TextDocumentSyncKind::FULL.into()),
 		hover_provider: Some(HoverProviderCapability::Simple(true)),
+		signature_help_provider: Some(SignatureHelpOptions {
+			trigger_characters: Some(vec!["(".to_owned(), ",".to_owned()]),
+			..Default::default()
+		}),
 		inlay_hint_provider: Some(OneOf::Left(true)),
 		rename_provider: Some(OneOf::Left(true)),
 		completion_provider: Some(CompletionOptions {
@@ -102,6 +106,7 @@ fn main_loop(
 					.on::<ReferencesHandler, _, _>()
 					.on::<RenameHandler, _, _>()
 					.on::<HoverHandler, _, _>()
+					.on::<SignatureHelpHandler, _, _>()
 					.on::<InlayHintHandler, _, _>()
 					.on::<CompletionsHandler, _, _>()
 					.on::<SemanticTokensHandler, _, _>()

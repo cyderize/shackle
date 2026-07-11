@@ -230,6 +230,46 @@ impl<'tree> CstNode<'tree> {
 		self.0.parent().map(Self::from)
 	}
 
+	/// Get the previous sibling of this node, including anonymous nodes.
+	pub fn previous_sibling(&self) -> Option<Self> {
+		self.0.prev_sibling().map(Self::from)
+	}
+
+	/// Get the next sibling of this node, including anonymous nodes.
+	pub fn next_sibling(&self) -> Option<Self> {
+		self.0.next_sibling().map(Self::from)
+	}
+
+	/// Get the previous named sibling of this node.
+	pub fn previous_named_sibling(&self) -> Option<Self> {
+		self.0.prev_named_sibling().map(Self::from)
+	}
+
+	/// Get the next named sibling of this node.
+	pub fn next_named_sibling(&self) -> Option<Self> {
+		self.0.next_named_sibling().map(Self::from)
+	}
+
+	/// Whether this node is an extra node, such as a comment.
+	pub fn is_extra(&self) -> bool {
+		self.0.is_extra()
+	}
+
+	/// Whether this node is named by the grammar.
+	pub fn is_named(&self) -> bool {
+		self.0.is_named()
+	}
+
+	/// Get the start point of this node.
+	pub fn start_point(&self) -> Point {
+		self.0.start_position()
+	}
+
+	/// Get the end point of this node.
+	pub fn end_point(&self) -> Point {
+		self.0.end_position()
+	}
+
 	/// Get the given child by index (if present)
 	pub fn child(&self, idx: u32) -> Option<Self> {
 		self.0.child(idx).map(CstNode::from)

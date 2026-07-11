@@ -7,6 +7,7 @@
 use std::fmt::Debug;
 
 pub mod container;
+mod documentation;
 pub mod expression;
 pub mod item;
 pub mod pattern;
@@ -14,6 +15,7 @@ pub mod primitive;
 pub mod types;
 
 pub use container::*;
+pub use documentation::*;
 pub use expression::*;
 pub use item::*;
 pub use pattern::*;
@@ -94,7 +96,11 @@ impl Debug for DznFile {
 mod tests {
 	use expect_test::{expect, expect_file};
 
-	use crate::ast::tests::*;
+	use crate::{
+		ast::{AstNode, tests::*},
+		cst::Cst,
+		minizinc::{Declaration, MznModel},
+	};
 
 	#[test]
 	fn test_model() {
@@ -115,6 +121,24 @@ MznModel(
 		check_ast_file(
 			include_str!("../../../../docs/src/examples/simple-model.mzn"),
 			expect_file!("../../../../docs/src/examples/simple-model-ast.txt"),
+		);
+	}
+
+	#[test]
+	fn test_doc_comment_association() {
+		let source = "/*** @groupdef ignored */\n/** Value docs */\nint: value;\n/* ordinary */\nint: other;";
+		let model = MznModel::new(Cst::new(source, crate::InputLang::MiniZinc));
+		let mut items = model.items();
+		let value = items.next().unwrap().cast::<Declaration>().unwrap();
+		let other = items.next().unwrap().cast::<Declaration>().unwrap();
+		assert_eq!(
+			value.doc_comment().map(|comment| comment.text(source)),
+			Some("/** Value docs */")
+		);
+		assert!(other.doc_comment().is_none());
+		assert_eq!(
+			model.cst().root().children().next().unwrap().kind(),
+			"file_doc_comment"
 		);
 	}
 }

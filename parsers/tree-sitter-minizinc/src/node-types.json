@@ -4396,6 +4396,11 @@
     "named": false
   },
   {
+    "type": "doc_comment",
+    "named": true,
+    "extra": true
+  },
+  {
     "type": "else",
     "named": false
   },
@@ -4418,6 +4423,11 @@
   {
     "type": "false",
     "named": false
+  },
+  {
+    "type": "file_doc_comment",
+    "named": true,
+    "extra": true
   },
   {
     "type": "float",

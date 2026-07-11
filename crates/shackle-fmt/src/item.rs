@@ -8,9 +8,9 @@ use crate::{
 impl<'tree> Format for minizinc::Item<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
 		let mut elements = Vec::new();
-		let node = self.cst_node().as_ref();
-		if let Some(p) = node.prev_sibling()
-			&& p.end_position().row < node.start_position().row.saturating_sub(1)
+		let node = self.cst_node();
+		if let Some(p) = node.previous_sibling()
+			&& p.end_point().row < node.start_point().row.saturating_sub(1)
 		{
 			elements.push(Element::line_break());
 		}

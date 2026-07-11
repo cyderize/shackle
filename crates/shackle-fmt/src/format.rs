@@ -1,10 +1,11 @@
 use rustc_hash::FxHashMap;
 use shackle_syntax::{
 	ast::AstNode,
+	cst::CstNode,
 	minizinc::{Expression, MznModel},
 };
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Node, Query, QueryCursor};
+use tree_sitter::{Query, QueryCursor};
 use tree_sitter_minizinc::Precedence;
 
 use crate::{MiniZincFormatOptions, ir::Element};
@@ -234,37 +235,38 @@ impl CommentMap {
 		let mut captures = cursor.captures(&query, *model.cst().root().as_ref(), text);
 
 		while let Some((c, _)) = captures.next() {
-			let node = c.captures[0].node;
-			let contents = node.utf8_text(text).unwrap();
+			let node = CstNode::from(c.captures[0].node);
+			let contents = node.text(source);
 			let is_line = node.kind() == "line_comment";
-			let mut prev = Some(node);
-			while let Some(n) = prev {
+			let mut prev = Some(node.clone());
+			while let Some(n) = prev.clone() {
 				if !n.is_extra() {
 					break;
 				}
-				prev = n.prev_named_sibling();
+				prev = n.previous_named_sibling();
 			}
-			let mut next_non_extra = Some(node);
-			while let Some(n) = next_non_extra {
+			let mut next_non_extra = Some(node.clone());
+			while let Some(n) = next_non_extra.clone() {
 				if !n.is_extra() {
 					break;
 				}
 				next_non_extra = n.next_sibling();
 			}
 			let blank_line_before = node
-				.prev_sibling()
-				.map(|n| n.end_position().row < node.start_position().row.saturating_sub(1))
+				.previous_sibling()
+				.map(|n| n.end_point().row < node.start_point().row.saturating_sub(1))
 				.unwrap_or_default()
 				&& node
 					.parent()
 					.map(|n| n.kind() == "source_file")
 					.unwrap_or_default();
 			let is_suffix = prev
-				.map(|p| p.end_position().row == node.start_position().row)
+				.as_ref()
+				.map(|p| p.end_point().row == node.start_point().row)
 				.unwrap_or_default()
 				&& (is_line
 					|| next_non_extra
-						.map(|n| n.start_position().row > node.end_position().row || !n.is_named())
+						.map(|n| n.start_point().row > node.end_point().row || !n.is_named())
 						.unwrap_or(true));
 			if is_suffix {
 				let attach_to = ensure_valid_node(prev.unwrap());
@@ -280,8 +282,8 @@ impl CommentMap {
 					.after
 					.push(Element::line_suffix(format!(" {}", contents.trim_end())));
 			} else {
-				let mut next = Some(node);
-				while let Some(n) = next {
+				let mut next = Some(node.clone());
+				while let Some(n) = next.clone() {
 					if !n.is_extra() {
 						break;
 					}
@@ -320,7 +322,7 @@ impl CommentMap {
 						comments.before.push(Element::text(contents));
 						if node
 							.next_sibling()
-							.map(|n| node.end_position().row == n.start_position().row)
+							.map(|n| node.end_point().row == n.start_point().row)
 							.unwrap_or_default()
 						{
 							comments.before.push(Element::line_break_or_space());
@@ -347,12 +349,12 @@ impl CommentMap {
 	}
 }
 
-fn ensure_valid_node(mut node: Node<'_>) -> Node<'_> {
+fn ensure_valid_node(mut node: CstNode<'_>) -> CstNode<'_> {
 	while matches!(node.kind(), "strategy") {
 		node = node.parent().unwrap()
 	}
 	while node.kind() == "parenthesised_expression" {
-		node = node.child_by_field_name("expression").unwrap();
+		node = node.child_with_field_name("expression");
 	}
 	node
 }

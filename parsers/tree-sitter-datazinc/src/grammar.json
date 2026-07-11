@@ -4384,6 +4384,54 @@
         ]
       }
     },
+    "doc_comment": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 1,
+        "content": {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "/**"
+            },
+            {
+              "type": "PATTERN",
+              "value": "([^*]|\\*[^\\/]|\\n)*?\\*?"
+            },
+            {
+              "type": "STRING",
+              "value": "*/"
+            }
+          ]
+        }
+      }
+    },
+    "file_doc_comment": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 2,
+        "content": {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "/***"
+            },
+            {
+              "type": "PATTERN",
+              "value": "([^*]|\\*[^\\/]|\\n)*?\\*?"
+            },
+            {
+              "type": "STRING",
+              "value": "*/"
+            }
+          ]
+        }
+      }
+    },
     "block_comment": {
       "type": "TOKEN",
       "content": {
@@ -4438,6 +4486,14 @@
     {
       "type": "SYMBOL",
       "name": "line_comment"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_comment"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "file_doc_comment"
     },
     {
       "type": "SYMBOL",

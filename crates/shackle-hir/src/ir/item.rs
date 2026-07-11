@@ -65,6 +65,18 @@ pub enum Item<'db> {
 }
 
 impl<'db> Item<'db> {
+	/// Get the origin of the documentation comment attached to this item, if any.
+	pub fn documentation(&self, db: &'db dyn Db) -> Option<Origin> {
+		match self {
+			Item::Annotation(i) => i.documentation(db),
+			Item::Declaration(i) => i.documentation(db),
+			Item::Enumeration(i) => i.documentation(db),
+			Item::Function(i) => i.documentation(db),
+			Item::TypeAlias(i) => i.documentation(db),
+			_ => None,
+		}
+	}
+
 	/// Get the data for this item
 	pub fn data(&self, db: &'db dyn Db) -> &ItemData<'db> {
 		match self {
@@ -303,6 +315,9 @@ mod declaration_item {
 		#[returns(ref)]
 		pub sources: SourceMap<'db>,
 
+		/// Origin of this declaration's documentation comment
+		pub documentation: Option<Origin>,
+
 		/// The origin of this item
 		pub origin: Origin,
 	}
@@ -380,6 +395,9 @@ mod annotation_item {
 		#[returns(ref)]
 		pub sources: SourceMap<'db>,
 
+		/// Origin of this annotation's documentation comment
+		pub documentation: Option<Origin>,
+
 		/// The origin of this item
 		pub origin: Origin,
 	}
@@ -412,6 +430,9 @@ mod enumeration_item {
 		#[tracked]
 		#[returns(ref)]
 		pub sources: SourceMap<'db>,
+
+		/// Origin of this enumeration's documentation comment
+		pub documentation: Option<Origin>,
 
 		/// The origin of this item
 		pub origin: Origin,
@@ -517,6 +538,9 @@ mod function_item {
 		#[tracked]
 		#[returns(ref)]
 		pub sources: SourceMap<'db>,
+
+		/// Origin of this function's documentation comment
+		pub documentation: Option<Origin>,
 
 		/// The origin of this item
 		pub origin: Origin,
@@ -659,6 +683,9 @@ mod type_alias_item {
 		#[tracked]
 		#[returns(ref)]
 		pub sources: SourceMap<'db>,
+
+		/// Origin of this type alias's documentation comment
+		pub documentation: Option<Origin>,
 
 		/// The origin of this item
 		pub origin: Origin,

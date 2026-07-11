@@ -24,6 +24,7 @@ shackle-utils = {path = "../shackle-utils"}
 
 [dev-dependencies]
 expect-test = {workspace = true}
+tempfile = "3.5.0"
 
 [lints]
 workspace = true

@@ -6,7 +6,7 @@ use lsp_types::{TextDocumentIdentifier, Uri};
 use shackle_hir::{
 	CompilerDatabase,
 	db::Setter,
-	input::{InputFiles, ModelFile, NamedModelFile, invalidate_file},
+	input::{CompilerSettings, InputFiles, ModelFile, NamedModelFile, invalidate_file},
 };
 
 use crate::{diagnostics, utils::uri_to_path, vfs::Vfs};
@@ -24,6 +24,9 @@ pub(crate) trait LanguageServerContext: Deref<Target = CompilerDatabase> {
 		&mut self,
 		doc: &TextDocumentIdentifier,
 	) -> Result<ModelFile, ResponseError>;
+
+	/// Create an independent compiler database with the same file handler and settings.
+	fn new_scratch_database(&self) -> CompilerDatabase;
 
 	/// Get the language server options
 	fn get_options(&self) -> &LanguageServerOptions;
@@ -109,6 +112,12 @@ impl LanguageServerContext for LanguageServerDatabase {
 	) -> Result<ModelFile, ResponseError> {
 		let requested_path = uri_to_path(&doc.uri);
 		Ok(self.set_active_file(&requested_path))
+	}
+
+	fn new_scratch_database(&self) -> CompilerDatabase {
+		let mut db = CompilerDatabase::with_file_handler(Arc::clone(&self.vfs));
+		CompilerSettings::copy_to(&self.db, &mut db);
+		db
 	}
 
 	fn get_options(&self) -> &LanguageServerOptions {

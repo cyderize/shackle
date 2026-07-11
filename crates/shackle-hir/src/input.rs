@@ -128,6 +128,11 @@ mod model_file {
 		/// Name of the file for error messaging
 		#[default]
 		pub name: Option<String>,
+
+		/// Directory used to resolve relative includes
+		#[default]
+		#[returns(ref)]
+		pub base_directory: Option<PathBuf>,
 	}
 
 	impl std::fmt::Debug for InlineModelFile {
@@ -135,6 +140,7 @@ mod model_file {
 			crate::db::with_attached_database(|db| {
 				f.debug_struct("InlineModelFile")
 					.field("name", &self.name(db))
+					.field("base_directory", self.base_directory(db))
 					.finish()
 			})
 			.unwrap_or_else(|| f.debug_struct("InlineModelFile").finish())
@@ -160,6 +166,14 @@ impl ModelFile {
 		match self {
 			ModelFile::Named(n) => n.language(db),
 			ModelFile::Inline(i) => i.language(db),
+		}
+	}
+
+	/// Get the directory used to resolve relative includes from this model.
+	pub fn base_directory(&self, db: &dyn Db) -> Option<PathBuf> {
+		match self {
+			ModelFile::Named(n) => n.path(db).parent().map(Path::to_owned),
+			ModelFile::Inline(i) => i.base_directory(db).clone(),
 		}
 	}
 
@@ -273,6 +287,26 @@ impl CompilerSettings {
 	pub(crate) fn default(db: &dyn Db) -> Self {
 		let mzn_stdlib_dir = std::env::var("MZN_STDLIB_DIR").ok().map(PathBuf::from);
 		Self::new(db, vec![], mzn_stdlib_dir, None, false)
+	}
+
+	/// Copy the compiler settings from one database to another.
+	pub fn copy_to(source: &dyn Db, target: &mut dyn Db) {
+		let source_settings = Self::get(source);
+		let search_directories = source_settings.search_directories(source).clone();
+		let stdlib_directory = source_settings.stdlib_directory(source).clone();
+		let globals_directory = source_settings.globals_directory(source).clone();
+		let ignore_stdlib = source_settings.ignore_stdlib(source);
+		let target_settings = Self::get(target);
+		let _ = target_settings
+			.set_search_directories(target)
+			.to(search_directories);
+		let _ = target_settings
+			.set_stdlib_directory(target)
+			.to(stdlib_directory);
+		let _ = target_settings
+			.set_globals_directory(target)
+			.to(globals_directory);
+		let _ = target_settings.set_ignore_stdlib(target).to(ignore_stdlib);
 	}
 }
 
@@ -412,10 +446,7 @@ fn includes_for_file(db: &dyn Db, model_file: ModelFile) -> Vec<(Origin, ModelFi
 						included.to_owned()
 					} else {
 						// Resolve relative to search directories, then current file
-						let file_dir = model_file
-							.try_unwrap_named()
-							.ok()
-							.and_then(|n| n.path(db).parent().map(|p| p.to_owned()));
+						let file_dir = model_file.base_directory(db);
 						let resolved = if included.starts_with("./") {
 							file_dir.map(|p| p.join(included)).filter(|p| p.exists())
 						} else {
@@ -508,15 +539,13 @@ pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 	let mut seen = Set::from_iter(result.iter().map(|i| i.unwrap_named().path(db).clone()));
 	let mut todo = inputs.files(db).iter().rev().copied().collect::<Vec<_>>();
 	while let Some(model) = todo.pop() {
-		if let ModelFile::Named(n) = model {
-			if seen.insert(n.path(db).to_owned()) {
-				result.push(model);
-				todo.extend(includes_for_file(db, model).iter().map(|(_, f)| *f).rev());
-			}
-		} else {
-			// Always include inline files
-			result.push(model);
+		if let ModelFile::Named(n) = model
+			&& !seen.insert(n.path(db).to_owned())
+		{
+			continue;
 		}
+		result.push(model);
+		todo.extend(includes_for_file(db, model).iter().map(|(_, f)| *f).rev());
 	}
 	db.file_handler().on_resolved_includes(db, &result);
 	result
@@ -619,5 +648,77 @@ impl Deref for CachedValue<'_, String> {
 
 	fn deref(&self) -> &Self::Target {
 		self.0.as_ref().expect("Cached value not set")
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{fs, path::PathBuf};
+
+	use shackle_syntax::InputLang;
+
+	use super::{CompilerSettings, InlineModelFile, InputFiles, ModelFile, resolve_includes};
+	use crate::{CompilerDatabase, db::Setter};
+
+	#[test]
+	fn copy_compiler_settings_to_another_database() {
+		let mut source = CompilerDatabase::default();
+		let source_settings = CompilerSettings::get(&source);
+		let _ = source_settings
+			.set_search_directories(&mut source)
+			.to(vec![PathBuf::from("search")]);
+		let _ = source_settings
+			.set_stdlib_directory(&mut source)
+			.to(Some(PathBuf::from("stdlib")));
+		let _ = source_settings
+			.set_globals_directory(&mut source)
+			.to(Some(PathBuf::from("globals")));
+		let _ = source_settings.set_ignore_stdlib(&mut source).to(true);
+
+		let mut target = CompilerDatabase::default();
+		CompilerSettings::copy_to(&source, &mut target);
+
+		let target_settings = CompilerSettings::get(&target);
+		assert_eq!(
+			target_settings.search_directories(&target),
+			&[PathBuf::from("search")]
+		);
+		assert_eq!(
+			target_settings.stdlib_directory(&target),
+			&Some(PathBuf::from("stdlib"))
+		);
+		assert_eq!(
+			target_settings.globals_directory(&target),
+			&Some(PathBuf::from("globals"))
+		);
+		assert!(target_settings.ignore_stdlib(&target));
+	}
+
+	#[test]
+	fn inline_model_resolves_includes_from_its_base_directory() {
+		let directory = tempfile::tempdir().unwrap();
+		let included_path = directory.path().join("included.mzn");
+		fs::write(&included_path, "int: included;").unwrap();
+
+		let mut db = CompilerDatabase::default();
+		let settings = CompilerSettings::get(&db);
+		let _ = settings.set_ignore_stdlib(&mut db).to(true);
+		let model = InlineModelFile::new(
+			&db,
+			"include \"./included.mzn\";".to_owned(),
+			InputLang::MiniZinc,
+		);
+		let _ = model
+			.set_base_directory(&mut db)
+			.to(Some(directory.path().to_owned()));
+		let model: ModelFile = model.into();
+		assert_eq!(model.base_directory(&db).as_deref(), Some(directory.path()));
+		assert_eq!(model.include_items(&db).len(), 1);
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model]);
+
+		let included_path = included_path.canonicalize().unwrap();
+		assert!(resolve_includes(&db).iter().any(|file| {
+			matches!(file, ModelFile::Named(file) if file.path(&db).canonicalize().ok().as_ref() == Some(&included_path))
+		}));
 	}
 }

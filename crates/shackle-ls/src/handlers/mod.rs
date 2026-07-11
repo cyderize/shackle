@@ -86,6 +86,12 @@ pub(crate) mod tests {
 			Ok(file)
 		}
 
+		fn new_scratch_database(&self) -> CompilerDatabase {
+			let mut db = CompilerDatabase::default();
+			CompilerSettings::copy_to(&self.db, &mut db);
+			db
+		}
+
 		fn get_options(&self) -> &LanguageServerOptions {
 			&self.options
 		}

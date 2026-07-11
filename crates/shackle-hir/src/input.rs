@@ -18,7 +18,7 @@ use shackle_syntax::{
 };
 use shackle_utils::hash::{Map, Set};
 
-use crate::{Db, Identifier, diagnostics::Errors};
+use crate::{Db, Identifier, diagnostics::Errors, source::Origin};
 
 #[allow(missing_docs, reason = "Salsa generates code with missing docs")]
 mod input_files {
@@ -161,6 +161,38 @@ impl ModelFile {
 			ModelFile::Named(n) => n.language(db),
 			ModelFile::Inline(i) => i.language(db),
 		}
+	}
+
+	/// Get the resolved include items for this model
+	pub fn include_items<'db>(&self, db: &'db dyn Db) -> Vec<IncludeItem<'db>> {
+		includes_for_file(db, *self)
+			.iter()
+			.map(|(origin, model)| IncludeItem {
+				origin,
+				included_file: *model,
+			})
+			.collect()
+	}
+}
+
+/// An include item in a model
+///
+/// Not part of HIR, but used to track the origin of included files.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IncludeItem<'db> {
+	origin: &'db Origin,
+	included_file: ModelFile,
+}
+
+impl<'db> IncludeItem<'db> {
+	/// Get the origin of the string literal for the included file
+	pub fn origin(&self) -> &'db Origin {
+		self.origin
+	}
+
+	/// Get the included file path
+	pub fn file(&self, db: &'db dyn Db) -> &'db PathBuf {
+		self.included_file.unwrap_named().path(db)
 	}
 }
 
@@ -363,7 +395,7 @@ fn model_source_file(db: &dyn Db, model_file: ModelFile) -> SourceFile {
 ///
 /// Query creates fresh model files, so duplicates have to be filtered out by caller
 #[salsa::tracked(returns(ref))]
-fn includes_for_file(db: &dyn Db, model_file: ModelFile) -> Vec<ModelFile> {
+fn includes_for_file(db: &dyn Db, model_file: ModelFile) -> Vec<(Origin, ModelFile)> {
 	log::debug!("Resolving includes for {}", model_file);
 	let mut result = Vec::new();
 	let model = model_file.ast(db);
@@ -411,7 +443,10 @@ fn includes_for_file(db: &dyn Db, model_file: ModelFile) -> Vec<ModelFile> {
 							}
 						}
 					};
-					result.push(NamedModelFile::new(db, resolved_file.clone()).into());
+					result.push((
+						Origin::new(model_file, i.file().span()),
+						NamedModelFile::new(db, resolved_file.clone()).into(),
+					));
 				}
 			}
 		}
@@ -476,7 +511,7 @@ pub fn resolve_includes(db: &dyn Db) -> Vec<ModelFile> {
 		if let ModelFile::Named(n) = model {
 			if seen.insert(n.path(db).to_owned()) {
 				result.push(model);
-				todo.extend(includes_for_file(db, model).iter().copied().rev());
+				todo.extend(includes_for_file(db, model).iter().map(|(_, f)| *f).rev());
 			}
 		} else {
 			// Always include inline files
@@ -497,7 +532,7 @@ pub fn resolve_auto_includes(db: &dyn Db) -> Vec<ModelFile> {
 		let n = model.unwrap_named();
 		if seen.insert(n.path(db).to_owned()) {
 			result.push(model);
-			todo.extend(includes_for_file(db, model).iter().copied().rev());
+			todo.extend(includes_for_file(db, model).iter().map(|(_, f)| *f).rev());
 		}
 	}
 	result

@@ -1,11 +1,14 @@
 use lsp_server::ResponseError;
-use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Position, request::GotoDefinition};
+use lsp_types::{
+	GotoDefinitionParams, GotoDefinitionResponse, Location, Position, Range,
+	request::GotoDefinition,
+};
 use shackle_hir::{db::CompilerDatabase, input::ModelFile, source::find_leaf};
 
 use crate::{
 	db::LanguageServerContext,
 	dispatch::RequestHandler,
-	utils::{node_ref_to_location, position_to_byte_offset},
+	utils::{node_ref_to_location, path_to_uri, position_to_byte_offset},
 };
 
 #[derive(Debug)]
@@ -35,6 +38,17 @@ impl RequestHandler<GotoDefinition, (ModelFile, Position)> for GotoDefinitionHan
 			})?;
 
 		let Some(entity) = find_leaf(db, model_ref, byte_offset) else {
+			// Could not find anything, so check if it's an include item
+			if let Some(include) = model_ref.include_items(db).into_iter().find(|include| {
+				let span = include.origin().span;
+				span.offset() <= byte_offset && byte_offset < span.offset() + span.len()
+			}) {
+				return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+					uri: path_to_uri(include.file(db)),
+					range: Range::default(),
+				})));
+			}
+
 			return Ok(None);
 		};
 		let Some(declaration) = entity.declaration(db) else {
@@ -48,13 +62,52 @@ impl RequestHandler<GotoDefinition, (ModelFile, Position)> for GotoDefinitionHan
 
 #[cfg(test)]
 mod tests {
-	use std::str::FromStr;
+	use std::{path::Path, str::FromStr};
 
 	use expect_test::expect;
-	use lsp_types::Uri;
+	use lsp_types::{GotoDefinitionResponse, Location, Range, Uri, request::GotoDefinition};
 
 	use super::GotoDefinitionHandler;
-	use crate::handlers::tests::test_handler;
+	use crate::{
+		handlers::tests::{run_handler, test_handler},
+		utils::path_to_uri,
+	};
+
+	#[test]
+	fn test_goto_definition_include() {
+		let included = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+		let model = format!("include \"{}\";", included.display());
+		let response = run_handler::<GotoDefinitionHandler, GotoDefinition, _>(
+			&model,
+			true,
+			lsp_types::GotoDefinitionParams {
+				partial_result_params: lsp_types::PartialResultParams {
+					partial_result_token: None,
+				},
+				work_done_progress_params: lsp_types::WorkDoneProgressParams {
+					work_done_token: None,
+				},
+				text_document_position_params: lsp_types::TextDocumentPositionParams {
+					text_document: lsp_types::TextDocumentIdentifier {
+						uri: Uri::from_str("file:///test.mzn").unwrap(),
+					},
+					position: lsp_types::Position {
+						line: 0,
+						character: 10,
+					},
+				},
+			},
+		)
+		.unwrap();
+
+		assert_eq!(
+			response,
+			Some(GotoDefinitionResponse::Scalar(Location {
+				uri: path_to_uri(&included),
+				range: Range::default(),
+			}))
+		);
+	}
 
 	#[test]
 	fn test_goto_definition_1() {

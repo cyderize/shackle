@@ -64,6 +64,9 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_annotation(&mut self, a: &minizinc::Annotation) {
+		let documentation = a
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -111,7 +114,14 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			});
 		}
 		self.items.push(
-			AnnotationItem::new(self.db, data, source_map, Origin::new(self.file, a.span())).into(),
+			AnnotationItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, a.span()),
+			)
+			.into(),
 		);
 	}
 
@@ -239,6 +249,9 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_declaration(&mut self, d: &minizinc::Declaration) {
+		let documentation = d
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -259,12 +272,21 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			definition,
 		});
 		self.items.push(
-			DeclarationItem::new(self.db, data, source_map, Origin::new(self.file, d.span()))
-				.into(),
+			DeclarationItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, d.span()),
+			)
+			.into(),
 		);
 	}
 
 	fn collect_enumeration(&mut self, e: &minizinc::Enumeration) {
+		let documentation = e
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -334,12 +356,21 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			},
 		});
 		self.items.push(
-			EnumerationItem::new(self.db, data, source_map, Origin::new(self.file, e.span()))
-				.into(),
+			EnumerationItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, e.span()),
+			)
+			.into(),
 		);
 	}
 
 	fn collect_function(&mut self, f: &minizinc::Function) {
+		let documentation = f
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -380,7 +411,14 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			parameters,
 		});
 		self.items.push(
-			FunctionItem::new(self.db, data, source_map, Origin::new(self.file, f.span())).into(),
+			FunctionItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, f.span()),
+			)
+			.into(),
 		);
 	}
 
@@ -403,6 +441,9 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_predicate(&mut self, f: &minizinc::Predicate) {
+		let documentation = f
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -454,7 +495,14 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			return_type,
 		});
 		self.items.push(
-			FunctionItem::new(self.db, data, source_map, Origin::new(self.file, f.span())).into(),
+			FunctionItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, f.span()),
+			)
+			.into(),
 		);
 	}
 
@@ -494,6 +542,9 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 	}
 
 	fn collect_type_alias(&mut self, t: &minizinc::TypeAlias) {
+		let documentation = t
+			.doc_comment()
+			.map(|comment| Origin::new(self.file, comment.span()));
 		let mut ctx = ExpressionCollector::new(
 			self.db,
 			self.file,
@@ -512,7 +563,14 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			annotations,
 		});
 		self.items.push(
-			TypeAliasItem::new(self.db, data, source_map, Origin::new(self.file, t.span())).into(),
+			TypeAliasItem::new(
+				self.db,
+				data,
+				source_map,
+				documentation,
+				Origin::new(self.file, t.span()),
+			)
+			.into(),
 		);
 	}
 }

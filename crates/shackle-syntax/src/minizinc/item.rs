@@ -64,6 +64,14 @@ impl<'tree> Declaration<'tree> {
 	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
+	}
 }
 
 ast_node!(
@@ -88,6 +96,14 @@ impl<'tree> Enumeration<'tree> {
 	/// The annotations
 	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
+	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
 	}
 }
 
@@ -306,6 +322,14 @@ impl<'tree> Function<'tree> {
 	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
 	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
+	}
 }
 
 ast_node!(
@@ -346,6 +370,14 @@ impl<'tree> Predicate<'tree> {
 	/// The annotations
 	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
+	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
 	}
 }
 
@@ -392,6 +424,14 @@ impl<'tree> Annotation<'tree> {
 	/// Body of annotation item (not supported, rejected during lowering)
 	pub fn body(&self) -> Option<Expression<'tree>> {
 		optional_child_with_field_name(self, "body")
+	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
 	}
 }
 
@@ -455,6 +495,26 @@ impl<'tree> TypeAlias<'tree> {
 	/// The annotations
 	pub fn annotations(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "annotation")
+	}
+
+	/// Get the documentation comment
+	pub fn doc_comment(&self) -> Option<DocComment<'tree>> {
+		self.cst_node()
+			.previous_named_sibling()
+			.filter(|node| node.kind() == "doc_comment")
+			.map(DocComment::from)
+	}
+}
+
+ast_node!(
+	/// Documentation comment
+	DocComment,
+);
+
+impl<'tree> DocComment<'tree> {
+	/// Get the text of this documentation comment
+	pub fn text<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 

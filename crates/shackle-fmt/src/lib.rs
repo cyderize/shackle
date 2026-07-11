@@ -301,6 +301,28 @@ mod tests {
 	}
 
 	#[test]
+	fn test_format_documentation_comments() {
+		let actual = format_str(
+			r#"/*** @groupdef stdlib.test Test */
+/** Documentation for x. */
+int:x;
+/** Documentation for foo. */
+function int:foo(int:x)=x;"#,
+			&Default::default(),
+		)
+		.unwrap();
+		assert_eq!(
+			actual,
+			r#"/*** @groupdef stdlib.test Test */
+/** Documentation for x. */
+int: x;
+/** Documentation for foo. */
+function int: foo(int: x) = x;
+"#
+		);
+	}
+
+	#[test]
 	fn test_format_comprehension() {
 		let actual = format_str(
 			"constraint [a_really_long_word_here_which_overflows_a_really_long_word_here_which_overflows | j in 1..max(country)];",

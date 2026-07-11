@@ -47,7 +47,13 @@ const MULTIPLICATIVE_OPERATORS = ["*", "/", "div", "mod", "~*", "~div", "~/"]
 module.exports = grammar({
 	name: "minizinc",
 
-	extras: ($) => [/\s/, $.line_comment, $.block_comment],
+	extras: ($) => [
+		/\s/,
+		$.line_comment,
+		$.doc_comment,
+		$.file_doc_comment,
+		$.block_comment,
+	],
 
 	word: ($) => $.identifier,
 
@@ -702,6 +708,10 @@ module.exports = grammar({
 			seq(field("name", $._identifier), ":", field("value", $._pattern)),
 
 		line_comment: ($) => token(seq("%", /.*/)),
+		doc_comment: ($) =>
+			token(prec(1, seq("/**", /([^*]|\*[^\/]|\n)*?\*?/, "*/"))),
+		file_doc_comment: ($) =>
+			token(prec(2, seq("/***", /([^*]|\*[^\/]|\n)*?\*?/, "*/"))),
 		block_comment: ($) => token(seq("/*", /([^*]|\*[^\/]|\n)*?\*?/, "*/")),
 	},
 })

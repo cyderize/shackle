@@ -246,7 +246,8 @@ impl<'db: 'a, 'tree, 'a> ItemCollector<'db, 'tree, 'a> {
 				annotations: Box::new([]),
 			});
 			self.items.push(
-				DeclarationItem::new(self.db, data, sm, Origin::new(self.file, name.span())).into(),
+				DeclarationItem::new(self.db, data, sm, None, Origin::new(self.file, name.span()))
+					.into(),
 			);
 		}
 	}

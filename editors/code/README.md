@@ -14,5 +14,6 @@ Currently experimental, and targets the next major MiniZinc language version, wh
 - Goto definition
 - Find references
 - Code completion
+- Signature help
 - Code formatting
 - Basic snippets

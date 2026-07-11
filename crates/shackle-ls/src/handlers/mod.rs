@@ -6,6 +6,7 @@ mod inlay_hints;
 mod references;
 mod rename_symbol;
 mod semantic_tokens;
+mod signature_help;
 mod vfs;
 mod view_ast;
 mod view_cst;
@@ -17,8 +18,8 @@ mod view_scope;
 
 pub(crate) use self::{
 	completions::*, format::*, goto_definition::*, hover::*, inlay_hints::*, references::*,
-	rename_symbol::*, semantic_tokens::*, vfs::*, view_ast::*, view_cst::*, view_format_ir::*,
-	view_hir::*, view_mir::*, view_pretty_print::*, view_scope::*,
+	rename_symbol::*, semantic_tokens::*, signature_help::*, vfs::*, view_ast::*, view_cst::*,
+	view_format_ir::*, view_hir::*, view_mir::*, view_pretty_print::*, view_scope::*,
 };
 
 #[cfg(test)]

@@ -23,7 +23,7 @@ const buildOptions = {
 	external: ["vscode"],
 	format: "cjs",
 	platform: "node",
-	target: "node16",
+	target: "node22",
 	outfile: "out/main.js",
 	minify: production,
 	sourcemap: true,

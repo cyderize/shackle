@@ -26,6 +26,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Keep the runtime and API typings aligned with editors/code/package.json.
+      - dependency-name: "@types/node"
+      - dependency-name: "@types/vscode"
     groups:
       production:
         dependency-type: "production"

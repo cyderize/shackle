@@ -109,7 +109,7 @@ jobs:
           merge-multiple: true
       - name: Publish release on Open VSX
         run: |
-          npx ovsx publish editors/code/*.vsix
+          npx ovsx publish --skip-duplicate --packagePath editors/code/*.vsix
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_ACCESS }}
       - name: Authenticate with Azure
@@ -120,4 +120,4 @@ jobs:
           allow-no-subscriptions: true
       - name: Publish release on VS Code Marketplace
         run: |
-          npx vsce publish --azure-credential --packagePath editors/code/*.vsix
+          npx @vscode/vsce publish --azure-credential --skip-duplicate --packagePath editors/code/*.vsix

@@ -4,6 +4,7 @@ on:
   push:
     branches-ignore:
       - "dependabot/**"
+      - "release-plz-*"
   pull_request:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages

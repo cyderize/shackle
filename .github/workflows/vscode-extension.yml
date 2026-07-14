@@ -4,6 +4,7 @@ on:
   push:
     branches-ignore:
       - "dependabot/**"
+      - "release-plz-*"
     tags:
       - "code-extension-v*"
   pull_request:

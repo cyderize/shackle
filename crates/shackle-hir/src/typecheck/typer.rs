@@ -2019,19 +2019,38 @@ impl<'ctx, 'db, T: TypeContext<'db>> Typer<'ctx, 'db, T> {
 			}
 			Err(FunctionResolutionError::AmbiguousOverloading(ps)) => {
 				let mut msg = format!(
-					"Call with argument types {} is ambiguous.\n",
+					"Call {}({}) is ambiguous.\n",
+					i.pretty_print(db),
 					args.iter()
-						.map(|t| format!("'{}'", t.pretty_print(db)))
+						.enumerate()
+						.map(|(idx, t)| if idx < n_positional {
+							t.pretty_print(db)
+						} else {
+							format!(
+								"{}: {}",
+								t.pretty_print(db),
+								arg_names[idx - n_positional].pretty_print(db)
+							)
+						})
 						.collect::<Vec<_>>()
 						.join(", ")
 				);
+
 				writeln!(
 					&mut msg,
 					"Could not choose an overload from the candidate functions:"
 				)
 				.unwrap();
-				for (_, entry) in ps.iter() {
-					writeln!(&mut msg, "  {}", entry.overload.pretty_print_item(db, i)).unwrap();
+				for (pattern, entry) in ps.iter() {
+					writeln!(
+						&mut msg,
+						"  {}",
+						self.ctx
+							.type_pattern(db, *pattern)
+							.pretty_print(db, pattern.identifier(db))
+							.unwrap_or_else(|| entry.overload.pretty_print_item(db, i))
+					)
+					.unwrap();
 				}
 				let (src, span) = ExpressionRef::new(db, self.item, expr).source_span(db);
 				self.ctx

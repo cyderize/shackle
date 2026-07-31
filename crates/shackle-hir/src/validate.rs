@@ -15,19 +15,17 @@ use shackle_diagnostics::{
 use shackle_utils::hash::Map;
 
 use crate::{
-	Db, GlobalScope, Item,
+	Db, Item,
 	diagnostics::Errors,
 	ids::{ExpressionRef, NodeRef},
 	lower::lower_models,
-	overloading::validate_overloading,
+	overloading::validate_all_overloading,
 };
 
 /// Validate HIR
 pub fn validate_hir<'db>(db: &'db dyn Db) {
 	log::info!("Validating HIR");
-	for (name, _) in GlobalScope::functions(db) {
-		validate_overloading(db, name);
-	}
+	validate_all_overloading(db);
 
 	// Check for multiple assignments to variables
 	let mut assignments: Map<_, Vec<NodeRef<'db>>> = Map::default();

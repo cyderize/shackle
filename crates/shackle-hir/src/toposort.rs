@@ -200,33 +200,46 @@ impl<'db> TopoSorter<'db> {
 				let name = function[function.pattern].identifier().unwrap();
 				let mut overloads = Vec::new();
 				let ps = GlobalScope::find_function(self.db, name);
+				let PatternTy::Function(fe) = &item.signature(self.db).patterns[&function.pattern]
+				else {
+					unreachable!()
+				};
 				for p in ps.iter() {
 					let signature = p.item(self.db).signature(self.db);
 					match &signature.patterns[&p.pattern(self.db)] {
 						PatternTy::Function(f)
 						| PatternTy::AnnotationConstructor(f)
 						| PatternTy::AnnotationDestructure(f) => {
-							overloads.push((p.item(self.db) == item, *f.clone()));
+							if f.kinds == fe.kinds {
+								overloads.push((p.item(self.db) == item, *f.clone()));
+							}
 						}
-						PatternTy::EnumConstructor(ec) => {
-							overloads.extend(
-								ec.iter()
-									.map(|f| (p.item(self.db) == item, f.constructor.clone())),
-							);
+						PatternTy::EnumConstructor(ecs) => {
+							for ec in ecs {
+								if ec.constructor.kinds == fe.kinds {
+									overloads
+										.push((p.item(self.db) == item, ec.constructor.clone()));
+								}
+							}
 						}
 						PatternTy::EnumDestructure(fs) => {
-							overloads
-								.extend(fs.iter().map(|f| (p.item(self.db) == item, f.clone())));
+							for f in fs {
+								if f.kinds == fe.kinds {
+									overloads.push((p.item(self.db) == item, f.clone()));
+								}
+							}
 						}
-						_ => unreachable!(),
+						x => unreachable!("Unexpected {:?}", x),
 					}
 				}
 				let p = PatternRef::new(self.db, item, function.pattern);
 				let types = item.signature(self.db);
 				match &types.patterns[&p.pattern(self.db)] {
 					PatternTy::Function(f) => {
-						let res = match_fn(self.db, overloads, f.overload.params())
-							.unwrap_or_else(|e| unreachable!("Unexpected error: {:#?}", e));
+						let Ok(res) = match_fn(self.db, overloads, f.overload.params()) else {
+							// Overloads will be rejected during overload validation, so just ignore this function
+							return;
+						};
 						if !res.function.0 {
 							// Ignore this function since it has been subsumed by another
 							return;

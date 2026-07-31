@@ -202,7 +202,7 @@ fn test_function_resolution() {
         function bool: foo(int);
         "#,
 		"foo(1)",
-		expect!("int"),
+		expect!("error"),
 	);
 	tester.check_expression_preamble(
 		r#"

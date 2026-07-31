@@ -27,7 +27,7 @@
 use std::ops::{Deref, Index};
 
 use shackle_diagnostics::{Error, Warning};
-use shackle_ty::{Ty, TyData, TyVar, registry::TypeRegistry};
+use shackle_ty::{Ty, TyData, TyVar};
 use shackle_utils::arena::ArenaMap;
 
 mod body;
@@ -39,7 +39,7 @@ use crate::{
 	Db, Expression, ExpressionId, Identifier, Item, ItemData, Model, PatternId, TypeId,
 	ids::{EntityId, PatternRef},
 	input::resolve_includes,
-	overloading::{FunctionEntry, ParamKind},
+	overloading::FunctionEntry,
 };
 
 /// Typecheck the entire program
@@ -514,38 +514,12 @@ impl<'db> PatternTy<'db> {
 				ty.pretty_print(db),
 				name?.pretty_print(db)
 			)),
-			PatternTy::Function(f) => {
-				let tys = TypeRegistry::lookup(db);
-				let ret = if f.overload.return_type() == tys.par_bool {
-					"test".to_owned()
-				} else if f.overload.return_type() == tys.var_bool {
-					"predicate".to_owned()
-				} else {
-					format!("function {}:", f.overload.return_type().pretty_print(db))
-				};
-				let args = f
-					.overload
-					.params()
-					.iter()
-					.zip(f.kinds.iter())
-					.map(|(ty, kind)| match kind {
-						ParamKind::Unnamed => ty.pretty_print(db),
-						ParamKind::Named { name, has_default } if *has_default => format!(
-							"{}: {} = <default>",
-							ty.pretty_print(db),
-							name.pretty_print(db)
-						),
-						ParamKind::Named { name, .. } => {
-							format!("{}: {}", ty.pretty_print(db), name.pretty_print(db))
-						}
-					})
-					.collect::<Vec<_>>()
-					.join(", ");
-				Some(format!("{} {}({})", ret, name?.pretty_print(db), args))
-			}
-			PatternTy::EnumConstructor(ec) => {
-				Some(ec.first()?.overload.pretty_print_item(db, name?))
-			}
+			PatternTy::Function(f)
+			| PatternTy::AnonymousEnumConstructor(f)
+			| PatternTy::AnnotationConstructor(f)
+			| PatternTy::AnnotationDestructure(f) => Some(f.pretty_print(db, name?)),
+			PatternTy::EnumDestructure(_) => None,
+			PatternTy::EnumConstructor(ec) => Some(ec.first()?.pretty_print(db, name?)),
 			PatternTy::TyVar(t) => Some(t.ty_var.pretty_print(db).to_owned()),
 			PatternTy::TypeAlias { ty, .. } => Some(format!(
 				"type {} = {}",
@@ -558,7 +532,9 @@ impl<'db> PatternTy<'db> {
 				ty.pretty_print(db),
 				name?.pretty_print(db),
 			)),
-			_ => None,
+			PatternTy::AnnotationAtom => Some(format!("ann: {}", name?.pretty_print(db))),
+			PatternTy::ClassDecl { .. } => Some(format!("class {}", name?.pretty_print(db))),
+			PatternTy::Computing => None,
 		}
 	}
 }

@@ -3,7 +3,7 @@
 use shackle_diagnostics::{
 	DuplicateFunction, FunctionAlreadyDefined, IllegalOverload, IllegalOverloading,
 };
-use shackle_ty::{Overload, OverloadedFunction};
+use shackle_ty::{Overload, OverloadedFunction, registry::TypeRegistry};
 use shackle_utils::{InternedString, hash::Map};
 
 use crate::{Db, GlobalScope, Identifier, PatternTy, diagnostics::Diagnostics, ids::PatternRef};
@@ -34,6 +34,69 @@ pub struct FunctionEntry<'db> {
 	pub overload: OverloadedFunction<'db>,
 }
 
+impl<'db> FunctionEntry<'db> {
+	/// Get the names of the parameters
+	pub fn param_names(&self) -> Vec<Option<Identifier<'db>>> {
+		self.kinds
+			.iter()
+			.map(|k| match k {
+				ParamKind::Unnamed => None,
+				ParamKind::Named { name, .. } => Some(*name),
+			})
+			.collect()
+	}
+
+	/// Check if this function can be called using named arguments
+	pub fn can_call_using_names(&self) -> bool {
+		if self.kinds.is_empty() {
+			return false;
+		}
+
+		let mut found_named = false;
+		for k in self.kinds.iter() {
+			if let ParamKind::Named { .. } = k {
+				found_named = true;
+			} else if found_named {
+				// Unnamed parameter after named parameter cannot be called using names
+				return false;
+			}
+		}
+
+		found_named
+	}
+
+	/// Pretty print as a signature using the given name
+	pub fn pretty_print(&self, db: &'db dyn Db, name: Identifier<'db>) -> String {
+		let tys = TypeRegistry::lookup(db);
+		let ret = if self.overload.return_type() == tys.par_bool {
+			"test".to_owned()
+		} else if self.overload.return_type() == tys.var_bool {
+			"predicate".to_owned()
+		} else {
+			format!("function {}:", self.overload.return_type().pretty_print(db))
+		};
+		let args = self
+			.overload
+			.params()
+			.iter()
+			.zip(self.kinds.iter())
+			.map(|(ty, kind)| match kind {
+				ParamKind::Unnamed => ty.pretty_print(db),
+				ParamKind::Named { name, has_default } if *has_default => format!(
+					"{}: {} = <default>",
+					ty.pretty_print(db),
+					name.pretty_print(db)
+				),
+				ParamKind::Named { name, .. } => {
+					format!("{}: {}", ty.pretty_print(db), name.pretty_print(db))
+				}
+			})
+			.collect::<Vec<_>>()
+			.join(", ");
+		format!("{} {}({})", ret, name.pretty_print(db), args)
+	}
+}
+
 impl<'db> Overload<'db> for FunctionEntry<'db> {
 	fn overload(&self) -> &OverloadedFunction<'db> {
 		&self.overload
@@ -45,8 +108,7 @@ impl<'db> Overload<'db> for FunctionEntry<'db> {
 		} else if !self.has_body && other.has_body {
 			Some(false)
 		} else {
-			// Just choose the first one, since the ambiguous overload will be reported during overload validation
-			Some(true)
+			None
 		}
 	}
 }
@@ -206,6 +268,14 @@ impl<'db> NamedArgumentResoler<'db> {
 	}
 }
 
+/// Validate all function overloading
+#[salsa::tracked(returns(copy))]
+pub fn validate_all_overloading(db: &dyn Db) {
+	for (name, _) in GlobalScope::functions(db) {
+		validate_overloading(db, name);
+	}
+}
+
 /// Validate that all function overloads for the given name are legal
 ///
 /// Accumulates diagnostics into the database
@@ -252,17 +322,59 @@ pub fn check_overloading<'db>(db: &'db dyn Db, overloads: &[PatternRef<'db>]) ->
 					.is_ok() && (a.has_body && b.has_body
 					|| fta.return_type != b.overload.return_type())
 				{
-					// Same function with multiple definitions
-					same_fns[i + j + 1] = same_fns[i].or(Some(i));
+					// Cannot tell apart via positional call, so names must be able to disambiguate
+					if !a.can_call_using_names() || !b.can_call_using_names() {
+						incompat_fns[i + j + 1] = incompat_fns[i].or(Some(i));
+						continue;
+					}
+
+					let mut name_positions = a
+						.param_names()
+						.iter()
+						.enumerate()
+						.filter_map(|(i, n)| n.map(|n| (n, i)))
+						.collect::<Map<_, _>>();
+
+					let a_name_count = name_positions.len();
+					let mut reordered_params = b.overload.params().to_vec();
+					let mut count = 0_usize;
+					for (b_param, b_name) in b.overload.params().iter().zip(b.param_names()) {
+						let Some(name) = b_name else {
+							continue;
+						};
+						let Some(pos) = name_positions.remove(&name) else {
+							break;
+						};
+						reordered_params[pos] = *b_param;
+						count += 1;
+					}
+
+					if count != a_name_count {
+						continue;
+					}
+
+					let mut b_overload = b.overload.clone();
+					b_overload.set_params(reordered_params.into_boxed_slice());
+
+					if b_overload
+						.instantiate_ty_params(db, a.overload.params())
+						.is_ok()
+					{
+						// Same function with multiple definitions
+						same_fns[i + j + 1] = same_fns[i].or(Some(i));
+					}
 				}
-				if !b.overload.return_type().is_subtype_of(db, fta.return_type) {
-					// Functions have incompatible return types
+				if a.param_names() == b.param_names()
+					&& !b.overload.return_type().is_subtype_of(db, fta.return_type)
+				{
+					// a should be able to dispatch to b, but cannot due to incompatible return types
 					incompat_fns[i + j + 1] = incompat_fns[i].or(Some(i));
 				}
 			} else if let Ok((_, ftb)) = b.overload.instantiate_ty_params(db, a.overload.params())
+				&& a.param_names() == b.param_names()
 				&& !a.overload.return_type().is_subtype_of(db, ftb.return_type)
 			{
-				// Functions have incompatible return types
+				// b should be able to dispatch to a, but cannot due to incompatible return types
 				incompat_fns[i + j + 1] = incompat_fns[i].or(Some(i));
 			}
 		}
@@ -289,9 +401,7 @@ pub fn check_overloading<'db>(db: &'db dyn Db, overloads: &[PatternRef<'db>]) ->
 			diagnostics.add_error(FunctionAlreadyDefined {
 				src,
 				span,
-				signature: first_fn
-					.overload
-					.pretty_print_item(db, first_pattern.identifier(db).unwrap()),
+				signature: first_fn.pretty_print(db, first_pattern.identifier(db).unwrap()),
 				others,
 			});
 		}
@@ -321,4 +431,48 @@ pub fn check_overloading<'db>(db: &'db dyn Db, overloads: &[PatternRef<'db>]) ->
 	}
 
 	diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+	use expect_test::{Expect, expect};
+	use salsa::Setter;
+	use shackle_syntax::InputLang;
+
+	use crate::{
+		CompilerDatabase,
+		diagnostics::Errors,
+		input::{CompilerSettings, InlineModelFile, InputFiles},
+		overloading::validate_all_overloading,
+	};
+
+	fn test_overloading(model: &str, expected: Expect) {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let model = InlineModelFile::new(&db, model.to_owned(), InputLang::MiniZinc);
+		let _ = InputFiles::get(&db)
+			.set_files(&mut db)
+			.to(vec![model.into()]);
+		validate_all_overloading(&db);
+		let errors = validate_all_overloading::accumulated::<Errors>(&db);
+		let result = errors
+			.iter()
+			.map(|e| e.to_string())
+			.collect::<Vec<_>>()
+			.join("\n");
+		expected.assert_eq(&result);
+	}
+
+	#[test]
+	fn test_overloading_validation() {
+		test_overloading(
+			r#"
+			test foo(int: a, int: b) = true;
+			function int: foo(int: b, int: a) = 10;
+		"#,
+			expect!["Function with the signature 'test foo(int: a, int: b)' already defined"],
+		);
+	}
 }

@@ -1,8 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <sum>
-      <list> eq(x1,1) gt(x2,2) eq(x3,1) </list>
-      <condition> (le,2) </condition>
-    </sum>
-  </constraints>
-</instance>

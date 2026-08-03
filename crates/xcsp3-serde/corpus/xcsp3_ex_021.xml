@@ -1,8 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <variables>
-    <array id="z" size="[10]">
-      <domain for="z[0..4]"> 1..10 </domain>
-      <domain for="z[6..9]"> 1..20 </domain>
-    </array>
-  </variables>
-</instance>

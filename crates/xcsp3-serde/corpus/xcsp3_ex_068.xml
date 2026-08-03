@@ -1,8 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <channel id="c1">
-      <list> x0 x1 x2 x3 x4 </list>
-      <list> y0 y1 y2 y3 y4 </list>
-    </channel>
-  </constraints>
-</instance>

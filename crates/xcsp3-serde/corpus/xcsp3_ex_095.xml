@@ -1,9 +1,0 @@
-<ordered id="c1"> 
-  <list> s1 s2 s3 </list>
-  <operator> subseq </operator>
-</ordered>
-<ordered id="c2"> 
-  <list> t1 t2 t3 t4 t5 </list>
-  <operator> supseq </operator>
-</ordered>
- 

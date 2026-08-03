@@ -1,9 +1,0 @@
-<allIntersecting id="c1">
-   <list> s1 s2 s3 </list>
-   <condition> (eq,k) </condition>
-</allIntersecting>
-<allIntersecting id="c2">
-   <list> t1 t2 t3 </list>
-   <condition> (le,1) </condition>
-</allIntersecting>
- 

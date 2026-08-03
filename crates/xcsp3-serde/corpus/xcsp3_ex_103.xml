@@ -1,6 +1,0 @@
-<sum>
-   <list> x0 x1 x2 </list>
-   <coeffs> 1.5 2 3.2 </coeffs>
-   <condition> (gt,y) </condition>
-</sum>
- 

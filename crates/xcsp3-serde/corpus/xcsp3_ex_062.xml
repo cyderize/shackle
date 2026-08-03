@@ -1,9 +1,0 @@
-<sumCosts id="c1">
-   <list> y1 y2 y3 </list> 
-   <costMatrix> 
-     (10,0,5,0)   // costs for y1
-     (0,5,0,0)    // costs for y2
-     (5,10,0,0)   // costs for y3
-   </costMatrix>
-   <condition> (le,12) </condition>
-</sumCosts>

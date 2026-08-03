@@ -1,9 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <binPacking id="c2">
-      <list>  y1 y2 y3 y4 y5 y6 y7 </list>
-      <sizes> 12 7 21 36 19 22 30 </sizes>
-      <loads> l1 l2 l3 </loads>
-    </binPacking>
-  </constraints>
-</instance>

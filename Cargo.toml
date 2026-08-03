@@ -11,7 +11,6 @@ members = [
   "crates/shackle-ty",
   "crates/shackle-utils",
   "crates/shackle-utils-derive",
-  "crates/xcsp3-serde",
   "parsers/tree-sitter-datazinc",
   "parsers/tree-sitter-eprime",
   "parsers/tree-sitter-minizinc",

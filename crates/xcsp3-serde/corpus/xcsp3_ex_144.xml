@@ -1,6 +1,0 @@
-<intension id="c1" type="soft">
-   dist(x,y) 
-</intension>
-<intension id="c2" type="soft">
-   if(le(v,w),0,sqr(sub(v,w))) 
-</intension>

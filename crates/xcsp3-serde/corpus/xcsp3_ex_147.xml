@@ -1,6 +1,0 @@
-<slide id="c2" type="soft">
-  <list> y1 y2 y3 y4 </list>
-  <intension> gt(dist(%0,%1),2) </intension>
-  <cost> w </cost>
-</slide>
- 

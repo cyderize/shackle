@@ -1,8 +1,0 @@
-<allIntersecting id="c3">
-   <list> s1 s2 s3 </list>
-   <condition> (gt,0) </condition>
-</allIntersecting>
-<allIntersecting id="c4">
-   <list> t1 t2 t3 t4 </list>
-   <condition> (eq,0) </condition>
-</allIntersecting>

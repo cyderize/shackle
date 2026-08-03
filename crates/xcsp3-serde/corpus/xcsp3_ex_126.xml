@@ -1,9 +1,0 @@
-<sumCosts id="c">
-   <list restriction="allDifferent"> y1 y2 y3 </list> 
-   <costMatrix> 
-     (10,0,5)   // costs for y1
-     (0,5,0)    // costs for y2
-     (5,10,0)   // costs for y3
-   </costMatrix>
-   <condition> (eq,z) </condition>
-</sumCosts>

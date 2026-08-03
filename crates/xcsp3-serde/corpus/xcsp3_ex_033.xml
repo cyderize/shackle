@@ -1,7 +1,0 @@
-<instance format="XCSP3" type="COP">
-  <objectives>
-    <minimize type="maximum">
-      add(s[0],61) add(s[1],9) add(s[2],87)
-    </minimize>
-  </objectives>
-</instance>

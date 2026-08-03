@@ -1,7 +1,0 @@
-<element>
-  <matrix> 
-    x[][]
-  </matrix>
-  <index> i j </index>
-  <condition> (eq,5) </condition>
-</element>

@@ -1,9 +1,0 @@
-<array id="x" size="[10]"> 1..100 </array> 
-<array id="y" size="[5][8]"> 0 1 </array> 
-<array id="diceYathzee" size="[5]" type="stochastic"> 
-  1..6:1/6 
-</array>
-<array id="z" size="[12]" type="symbolic set"> 
-  <required> a b </required> 
-  <possible> c d </possible> 
-</array> 

@@ -1,6 +1,0 @@
-<sum>
-   <index> s </index>
-   <coeffs> 4 2 3 2 7 </coeffs>
-   <condition> (gt,v) </condition>
-</sum>
- 

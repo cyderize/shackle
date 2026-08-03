@@ -1,5 +1,0 @@
-<instance format="XCSP3" type="COP">
-  <objectives>
-    <minimize id="obj2" type="maximum"> y1 y2 y3 y4 </minimize>
-  </objectives>
-</instance>

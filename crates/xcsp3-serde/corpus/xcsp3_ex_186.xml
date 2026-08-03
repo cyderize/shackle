@@ -1,5 +1,0 @@
-<valHeuristic>
-  <static order = "4 5 3 6 2 1"> x </static>
-  <min type="conflicts"> y z </min>
-  <max type="value"/>
-</valHeuristic>

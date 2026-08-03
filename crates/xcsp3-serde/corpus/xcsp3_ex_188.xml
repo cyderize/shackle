@@ -1,5 +1,0 @@
-<annotations>
-  <prepro consistency="SAC"/>
-  <search consistency="AC" branching="2-way" />
-  <restarts type="geometric" cutoff="10" factor="1.1"/>
-</annotations>

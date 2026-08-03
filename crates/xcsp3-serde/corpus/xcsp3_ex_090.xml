@@ -1,7 +1,0 @@
-<allDifferent id="c1"> 
-  s1 s2 s3 
-</allDifferent> 
-<allDifferent id="c2"> 
-  <list> t1 t2 t3 t4 </list>
-  <except> {} </except>
-</allDifferent>

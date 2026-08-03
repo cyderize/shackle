@@ -1,8 +1,0 @@
-<intension id="c1" type="soft">
-   <function> dist(x,y) </function>
-   <cost> z </cost>
-</intension>
-<intension id="c2" type="soft">
-   <function> if(le(v,w),0,sqr(sub(v,w))) </function>
-   <cost> (le,u) </cost>
-</intension>

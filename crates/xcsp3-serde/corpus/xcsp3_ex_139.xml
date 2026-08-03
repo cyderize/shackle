@@ -1,4 +1,0 @@
-<ifThen>
-  <intension> eq(x,10) </intension>
-  <allDifferent> y[] </allDifferent>
-</ifThen>

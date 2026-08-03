@@ -1,9 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <element>
-      <list> 10 4 7 2 3 </list>
-      <index> i </index>
-      <condition> (eq,v) </condition>
-    </element>
-  </constraints>
-</instance>

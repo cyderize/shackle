@@ -1,7 +1,0 @@
-<instance format="XCSP3" type="COP">
-  <objectives>
-    <minimize id="obj1"> z </minimize>
-    <maximize id="obj2"> add(x,mul(y,2)) </maximize>
-  </objectives>
-</instance>
-</instance>

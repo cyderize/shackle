@@ -1,8 +1,0 @@
-<constraints>  
-    <intension threshold="0.7"> 
-      ge(x1,y1) 
-    </intension> 
-    <intension threshold="0.9"> 
-      ge(x2,add(y2,sub(y1,x1)) 
-    </intension> 
-  </constraints> 

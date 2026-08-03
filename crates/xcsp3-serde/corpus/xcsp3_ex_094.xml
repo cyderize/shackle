@@ -1,6 +1,0 @@
-<allIntersecting id="c3" case="disjoint">
-   s1 s2 s3 
-</allIntersecting>
-<allIntersecting id="c4" case="overlapping">
-   t1 t2 t3 t4 
-</allIntersecting>

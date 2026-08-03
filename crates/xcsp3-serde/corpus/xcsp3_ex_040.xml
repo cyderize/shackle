@@ -1,5 +1,0 @@
-<extension id="c5">
-  <list> w1 w2 w3 w4 </list>
-  <supports> (0,{1,2},0,{0,2})(1,0,1,2)(2,{0,2},0,2) </supports>
-</extension>
- 

@@ -1,6 +1,0 @@
-<extension id="c1" type="fuzzy" defaultDegree="0">
-  <list> w x y z </list>
-  <tuples degree="0.1"> (1,2,3,4)(2,1,2,3)(3,1,3,4) </tuples>
-  <tuples degree="0.6"> (1,1,3,4)(2,2,2,2) </tuples>
-</extension>
- 

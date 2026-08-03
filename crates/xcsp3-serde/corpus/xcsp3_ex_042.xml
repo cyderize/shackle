@@ -1,7 +1,0 @@
-<grammar>
-  <list> x1 x2 x3 </list>
-  <terminal> 0 1 2 </terminal>
-  <rules> (S,0 S)(S,1 S)(A,)(A,2 A) </rules>    
-  <start> S </start>
-</grammar>
- 

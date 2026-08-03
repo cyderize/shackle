@@ -1,9 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <cardinality id="c3">
-      <list> w1 w2 w3 w4 </list>
-      <values> v1 v2 </values>
-      <occurs> n1 n2 </occurs>
-    </cardinality>
-  </constraints>
-</instance>

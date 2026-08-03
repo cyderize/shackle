@@ -1,5 +1,0 @@
-<varHeuristic lc="2">
-  <static> x0 x7 x12 </static>
-  <min type="dom"> x10 x20 </min>
-  <max type="wdeg"/> 
-</varHeuristic>

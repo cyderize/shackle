@@ -1,7 +1,0 @@
-<instance format="XCSP3" type="CSP">
-  <constraints>
-    <allEqual>
-      add(x1,1) add(x2,2) add(x3,3)
-    </allEqual>
-  </constraints>
-</instance>

@@ -1,8 +1,0 @@
-<slide id="c3" type="soft">
-  <list> x1 x2 x3 x4 x5 </list>
-  <sum> 
-    <list> %0 %1 %2 </list>
-    <condition> (le,3) </condition>
-  </sum>
-  <cost> (in,0..1) </cost>
-</slide>

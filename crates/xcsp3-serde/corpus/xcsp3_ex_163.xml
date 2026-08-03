@@ -1,6 +1,0 @@
-<variables>
-  <var id="x0"> a b c </var>
-  <var id="x1"> a b c d e </var>
-  <var id="x2" as="x0" />
-  <var id="x3" as="x1" /> 
-</variables>

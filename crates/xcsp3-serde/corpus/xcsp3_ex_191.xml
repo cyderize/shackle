@@ -1,5 +1,0 @@
-<smart id="c4">
-  <list> z1 z2 z3 z4 </list>
-  <row> * : eq(z1,2) eq(z3,4) eq(z2,z4) </row>
-  <row> * : eq(z1,3) eq(z2,1) eq(z4,2) le(z3,5) </row>
-</smart>

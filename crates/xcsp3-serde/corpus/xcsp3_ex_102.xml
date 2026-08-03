@@ -1,6 +1,0 @@
-<intension id="c1"> 
-  eq(v,sqrt(w))
-</intension> 
-<intension id="c2"> 
-  ge(x,add(mul(3,ln(y)),pow(z,4)))
-</intension> 

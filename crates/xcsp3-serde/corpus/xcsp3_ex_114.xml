@@ -1,6 +1,0 @@
-<nValues id="c">
-   <list> x1 x2 x3 </list> 
-   <list> y1 y2 y3 </list> 
-   <list> z1 z2 z3 </list>
-   <condition> (eq,2) </condition>
-</nValues>

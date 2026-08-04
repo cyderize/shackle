@@ -10,17 +10,14 @@ use std::collections::hash_map::Entry;
 use rustc_hash::{FxHashMap, FxHashSet};
 use shackle_diagnostics::{Result, TypeSpecialisationRecursionLimit};
 use shackle_hir::constants::IdentifierRegistry;
-use shackle_ty::{
-	FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations,
-	registry::TypeRegistry,
-};
+use shackle_ty::{FunctionType, PolymorphicFunctionType, Ty, TyData, TyParamInstantiations};
 use shackle_utils::maybe_grow_stack;
 
 use crate::{
 	ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Db, Declaration, DeclarationId,
-	Domain, DomainData, Expression, ExpressionBuilder, Function, FunctionId, FunctionName,
-	Generator, Identifier, IfThenElse, IntegerLiteral, Item, ItemId, LookupCall, Marker, Model,
-	OptType, OverloadMap, RecordAccess, RecordLiteral, StringLiteral, TupleAccess, TupleLiteral,
+	Domain, DomainData, Expression, ExpressionBuilder, Function, FunctionId, Generator, Identifier,
+	IfThenElse, IntegerLiteral, Item, ItemId, LookupCall, Marker, Model, OptType, OverloadMap,
+	RecordAccess, RecordLiteral, StringLiteral, TupleAccess, TupleLiteral,
 	pretty_print::PrettyPrinter,
 	source::Origin,
 	traverse::{Folder, ReplacementMap, add_function, fold_call, fold_declaration_id, fold_domain},
@@ -40,7 +37,6 @@ struct TypeSpecialiser<'a, 'db, Dst: Marker> {
 	specialised: Vec<(FunctionId<'db, Dst>, SpecialisedFunction<'db, Dst>)>,
 	todo: Vec<SpecialisedFunction<'db, Dst>>,
 	ids: &'db IdentifierRegistry<'db>,
-	tys: &'db TypeRegistry<'db>,
 	position: FxHashMap<FunctionId<'db>, ItemId<'db, Dst>>,
 	count: usize,
 	reached_recursion_limit: Option<FunctionId<'db>>,
@@ -179,12 +175,7 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for TypeSpecialiser<'a, 'db, Dst
 			// Match the new argument types in the old model to find the most specific overload
 			let arg_tys = arguments.iter().map(|e| e.ty()).collect::<Vec<_>>();
 			return Call {
-				function: Callable::Function(self.instantiate(
-					db,
-					model,
-					model[*f].name(),
-					&arg_tys,
-				)),
+				function: Callable::Function(self.instantiate(db, model, *f, &arg_tys)),
 				arguments,
 			};
 		}
@@ -219,50 +210,15 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 		&mut self,
 		db: &'db dyn Db,
 		model: &Model<'db>,
-		name: FunctionName<'db>,
+		function: FunctionId<'db>,
 		args: &[Ty<'db>],
 	) -> FunctionId<'db, Dst> {
+		let name = model[function].name();
 		let lookup = self
 			.original_functions
-			.lookup_function(db, name, args)
+			.rematch_fn(db, function, args)
 			.unwrap_or_else(|e| panic!("{}", e.pretty_print(db)));
 		let f = lookup.function;
-
-		// Also instantiate reif version of function
-		if model[f].return_type() == self.tys.var_bool {
-			if !name.is_reif(db)
-				&& let Ok(lookup) = self
-					.original_functions
-					.lookup_function(db, name.reif(db), args)
-			{
-				let mut new_args = args.to_vec();
-				new_args.push(self.tys.var_bool);
-				let f = lookup.function;
-				if model[f].is_polymorphic()
-					&& !model[f]
-						.annotations()
-						.has(model, self.ids.annotations.mzn_unreachable)
-				{
-					let _ = self.instantiate(db, model, name.reif(db), args);
-				}
-			}
-			if !name.is_imp(db)
-				&& let Ok(lookup) = self
-					.original_functions
-					.lookup_function(db, name.imp(db), args)
-			{
-				let mut new_args = args.to_vec();
-				new_args.push(self.tys.var_bool);
-				let f = lookup.function;
-				if model[f].is_polymorphic()
-					&& !model[f]
-						.annotations()
-						.has(model, self.ids.annotations.mzn_unreachable)
-				{
-					let _ = self.instantiate(db, model, name.imp(db), args);
-				}
-			}
-		}
 
 		// Also instantiate subtyped polymorphic functions so we can dispatch to them
 		let fns = self.original_functions.get(&name).unwrap().clone();
@@ -313,7 +269,7 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 				{
 					let matched = ts
 						.original_functions
-						.lookup_function(db, name, &ft.params)
+						.rematch_fn(db, f, &ft.params)
 						.unwrap()
 						.function;
 					if matched == idx {
@@ -396,7 +352,7 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 		}
 
 		let fn_match = model
-			.lookup_function(db, model[f].name(), args)
+			.rematch_fn(db, f, args)
 			.unwrap_or_else(|e| panic!("{}", e.pretty_print(db)));
 		if !fn_match.fn_entry.is_polymorphic() {
 			// Already have existing concrete version, no need to create
@@ -496,7 +452,11 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 		let origin = self.specialised_model[arg].origin();
 		let call = |ts: &mut Self, name: Identifier<'db>, args: Vec<Expression<'db, Dst>>| {
 			let arg_tys = args.iter().map(|arg| arg.ty()).collect::<Vec<_>>();
-			let idx = ts.instantiate(db, model, name.into(), &arg_tys);
+			let function = model
+				.lookup_function(db, name.into(), &arg_tys)
+				.unwrap()
+				.function;
+			let idx = ts.instantiate(db, model, function, &arg_tys);
 			Call {
 				function: Callable::Function(idx),
 				arguments: args,
@@ -733,7 +693,11 @@ impl<'a, 'db, Dst: Marker> TypeSpecialiser<'a, 'db, Dst> {
 				let call =
 					|ts: &mut Self, name: Identifier<'db>, args: Vec<Expression<'db, Dst>>| {
 						let arg_tys = args.iter().map(|arg| arg.ty()).collect::<Vec<_>>();
-						let idx = ts.instantiate(db, model, name.into(), &arg_tys);
+						let function = model
+							.lookup_function(db, name.into(), &arg_tys)
+							.unwrap()
+							.function;
+						let idx = ts.instantiate(db, model, function, &arg_tys);
 						Call {
 							function: Callable::Function(idx),
 							arguments: args,
@@ -897,7 +861,6 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for RemoveUnreachableFunctions<'db, 
 pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<'db>> {
 	log::info!("Performing type specialisation");
 	let ids = IdentifierRegistry::lookup(db);
-	let tys = TypeRegistry::lookup(db);
 	let mut ts = TypeSpecialiser {
 		replacement_map: ReplacementMap::default(),
 		specialised_model: Model::with_capacities(&model.item_counts()),
@@ -905,7 +868,6 @@ pub fn type_specialise<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Model<
 		specialised: Vec::new(),
 		todo: Vec::new(),
 		ids,
-		tys,
 		position: FxHashMap::default(),
 		count: 0,
 		reached_recursion_limit: None,

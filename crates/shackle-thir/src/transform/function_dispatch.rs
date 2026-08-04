@@ -576,6 +576,11 @@ pub fn function_dispatch<'db>(db: &'db dyn Db, model: Model<'db>) -> Result<Mode
 			for b in overloads.iter().copied() {
 				if a != b
 					&& model[a].parameters().len() == model[b].parameters().len()
+					&& model[a]
+						.parameters()
+						.iter()
+						.zip(model[b].parameters().iter())
+						.all(|(pa, pb)| model[*pa].name() == model[*pb].name())
 					&& (model[a].specialised_from().is_none()
 						|| model[a].specialised_from().is_none()
 						|| model[a].specialised_from() != model[b].specialised_from())
@@ -707,6 +712,23 @@ mod tests {
     constraint foo(x);
     constraint foo(y);
     constraint foo(1.5);
+"#]),
+		);
+	}
+
+	#[test]
+	fn test_function_dispatch_names() {
+		check(
+			function_dispatch,
+			r#"
+            function int: foo(int: x) = 3;
+			function int: foo(int: y) = 4;
+			function var int: foo(var int: x) = 5;
+            "#,
+			expect!([r#"
+    function int: foo(int: x) = 3;
+    function int: foo(int: y) = 4;
+    function var int: foo(var int: x) = if is_fixed(x) then foo(fix(x)) else 5 endif;
 "#]),
 		);
 	}

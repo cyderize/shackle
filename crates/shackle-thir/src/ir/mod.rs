@@ -457,6 +457,61 @@ impl<'db, T: Marker> Model<'db, T> {
 		})
 	}
 
+	/// Rematch an old call to `orig` using the new `args`.
+	///
+	/// Ensures that the new match has the same argument names as the old one.
+	pub fn rematch_fn(
+		&self,
+		db: &'db dyn Db,
+		orig: FunctionId<'db, T>,
+		args: &[Ty<'db>],
+	) -> Result<FunctionLookup<'db, T>, FunctionLookupError<'db, T>> {
+		let name = self[orig].name();
+		let arg_names = self[orig]
+			.parameters()
+			.iter()
+			.map(|p| self[*p].name())
+			.collect::<Vec<_>>();
+
+		let (specialised, overloads) = self
+			.top_level_functions()
+			.filter_map(|(i, f)| {
+				if f.name() == name
+					&& self[orig]
+						.parameters()
+						.iter()
+						.zip(arg_names.iter())
+						.all(|(p, n)| self[*p].name() == *n)
+				{
+					Some((i, f.function_entry(self)))
+				} else {
+					None
+				}
+			})
+			.partition::<Vec<_>, _>(|(f, _)| self[*f].specialised_from().is_some());
+
+		let res = match_fn(db, overloads, args)?;
+		let (function, fn_entry) = res.function;
+
+		if fn_entry.is_polymorphic() {
+			let overload = OverloadedFunction::Function(fn_entry.instantiate(db, &res.ty_params));
+			let concrete = specialised.into_iter().find(|(_, fe)| *fe == overload);
+			if let Some((function, fn_entry)) = concrete {
+				return Ok(FunctionLookup {
+					function,
+					fn_entry,
+					ty_vars: TyParamInstantiations::default(),
+				});
+			}
+		}
+
+		Ok(FunctionLookup {
+			function,
+			fn_entry,
+			ty_vars: res.ty_params,
+		})
+	}
+
 	/// Lookup a top-level top-level variable or atom
 	///
 	/// Prefer using `LookupIdentifier` to create an identifier expression.
@@ -527,6 +582,63 @@ impl<'a, 'db, T: Marker> OverloadMap<'a, 'db, T> {
 		for overloads in self.overloads.values_mut() {
 			overloads.retain(|f| p(&self.model[*f]));
 		}
+	}
+
+	/// Rematch an old call to `orig` using the new `args`.
+	///
+	/// Ensures that the new match has the same argument names as the old one.
+	pub fn rematch_fn(
+		&self,
+		db: &'db dyn Db,
+		orig: FunctionId<'db, T>,
+		args: &[Ty<'db>],
+	) -> Result<FunctionLookup<'db, T>, FunctionLookupError<'db, T>> {
+		let name = self.model[orig].name();
+		let arg_names = self.model[orig]
+			.parameters()
+			.iter()
+			.map(|p| self.model[*p].name())
+			.collect::<Vec<_>>();
+
+		let (specialised, overloads) = self
+			.overloads
+			.get(&name)
+			.ok_or_else(|| FunctionLookupError::NoMatchingFunction(Vec::new()))?
+			.iter()
+			.filter_map(|f| {
+				if self.model[*f]
+					.parameters()
+					.iter()
+					.zip(arg_names.iter())
+					.all(|(p, n)| self.model[*p].name() == *n)
+				{
+					Some((*f, self.model[*f].function_entry(self.model)))
+				} else {
+					None
+				}
+			})
+			.partition::<Vec<_>, _>(|(f, _)| self.model[*f].specialised_from().is_some());
+
+		let res = match_fn(db, overloads, args)?;
+		let (function, fn_entry) = res.function;
+
+		if fn_entry.is_polymorphic() {
+			let overload = OverloadedFunction::Function(fn_entry.instantiate(db, &res.ty_params));
+			let concrete = specialised.into_iter().find(|(_, fe)| *fe == overload);
+			if let Some((function, fn_entry)) = concrete {
+				return Ok(FunctionLookup {
+					function,
+					fn_entry,
+					ty_vars: TyParamInstantiations::default(),
+				});
+			}
+		}
+
+		Ok(FunctionLookup {
+			function,
+			fn_entry,
+			ty_vars: res.ty_params,
+		})
 	}
 
 	/// Lookup a function

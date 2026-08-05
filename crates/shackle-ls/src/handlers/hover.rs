@@ -46,6 +46,14 @@ impl RequestHandler<HoverRequest, (ModelFile, Position)> for HoverHandler {
 		let types = item.types(db);
 		let range = node_ref_to_location(db, found).map(|loc| loc.range);
 		let value = match found.entity(db) {
+			EntityId::Expression(e) if let Some(r) = types.name_resolution(e) => {
+				let res_item = r.item(db);
+				let res_data = res_item.data(db);
+				let res_types = res_item.types(db);
+				res_types
+					.pretty_print_pattern_ty(res_data, r.pattern(db))
+					.or_else(|| types.pretty_print_expression_ty(data, e))
+			}
 			EntityId::Expression(e) => types.pretty_print_expression_ty(data, e),
 			EntityId::Pattern(p) => types.pretty_print_pattern_ty(data, p),
 			_ => None,
@@ -116,7 +124,7 @@ any: y = x.1;
       "Ok": {
         "contents": {
           "language": "minizinc",
-          "value": "tuple(int, int)"
+          "value": "tuple(int, int): x"
         },
         "range": {
           "start": {
@@ -161,7 +169,7 @@ solve minimize foo + bar;
       "Ok": {
         "contents": {
           "language": "minizinc",
-          "value": "int"
+          "value": "int: foo"
         },
         "range": {
           "start": {
@@ -293,7 +301,7 @@ int: y = foo(1);
       "Ok": {
         "contents": {
           "kind": "markdown",
-          "value": "```minizinc\nfunction int: foo(int)\n```\n\nAdd one to `x`.\n\n**Parameters**\n\n- `x`: The `input` value."
+          "value": "```minizinc\nfunction int: foo(int: x)\n```\n\nAdd one to `x`.\n\n**Parameters**\n\n- `x`: The `input` value."
         },
         "range": {
           "start": {
@@ -338,7 +346,7 @@ int: copy = widgets;
       "Ok": {
         "contents": {
           "kind": "markdown",
-          "value": "```minizinc\nint\n```\n\nThe number of widgets."
+          "value": "```minizinc\nint: widgets\n```\n\nThe number of widgets."
         },
         "range": {
           "start": {

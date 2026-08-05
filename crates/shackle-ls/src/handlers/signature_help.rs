@@ -125,7 +125,7 @@ fn signature<'db>(
 		}))
 	});
 	SignatureInformation {
-		label: function.overload.pretty_print_item(db, identifier),
+		label: function.pretty_print(db, identifier),
 		documentation,
 		parameters: None,
 		active_parameter: None,
@@ -189,14 +189,14 @@ int: result = twice(1, );
       "Ok": {
         "signatures": [
           {
-            "label": "function int: twice(int)",
+            "label": "function int: twice(int: value)",
             "documentation": {
               "kind": "markdown",
               "value": "Add an integer to itself."
             }
           },
           {
-            "label": "function string: twice(string)",
+            "label": "function string: twice(string: value)",
             "documentation": {
               "kind": "markdown",
               "value": "Repeat a string."
@@ -223,7 +223,7 @@ int: result = foo([1, 2][1], );
       "Ok": {
         "signatures": [
           {
-            "label": "function int: foo(int, int)"
+            "label": "function int: foo(int: first, int: second)"
           }
         ],
         "activeParameter": 1

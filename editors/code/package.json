@@ -2,7 +2,7 @@
 	"name": "minizinc",
 	"displayName": "MiniZinc",
 	"description": "Language support for the MiniZinc modelling language",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"icon": "minizinc_icon.png",
 	"license": "MPL-2.0",
 	"publisher": "DekkerOne",

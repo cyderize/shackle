@@ -4,6 +4,11 @@ All notable changes to the MiniZinc Visual Studio Code Extension will be documen
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-05
+
+- Support named argument calls and default parameter values
+- Improve printing of function signatures on hover/function help
+
 ## [0.1.2] - 2026-07-14
 
 - Use the newly developed language server to provide richer information, with the caveat that

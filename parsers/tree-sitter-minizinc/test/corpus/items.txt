@@ -37,13 +37,23 @@ Assignment
 ==========
 
 this = that;
+anon_enum = _(1..1);
 
 ---
 
 (source_file
   (assignment
     (identifier)
-    (identifier)))
+    (identifier))
+  (assignment
+    (identifier)
+    (call
+      (anonymous)
+      (arg_or_param
+        (type_base
+          (infix_operator
+            (integer_literal)
+            (integer_literal)))))))
 
 ==========
 Constraint
@@ -196,6 +206,7 @@ function X: with_named_args(X: x, bool: b) = something(b, x);
 function X: with_annotation(int, float) ::func_ann;
 function X: with_annotated_param(int, bool: x :: foo);
 function X: with_pattern(T: (x, y));
+function int: noargs() = 10;
 
 ---
 
@@ -272,7 +283,12 @@ function X: with_pattern(T: (x, y));
         domain: (identifier))
       name: (pattern_tuple
         field: (identifier)
-        field: (identifier)))))
+        field: (identifier))))
+  item: (function_item
+    type: (type_base
+      domain: (primitive_type))
+    name: (identifier)
+    body: (integer_literal)))
 
 ====
 Goal
@@ -316,16 +332,14 @@ output :: "section" ["something"];
 (source_file
   (output
     (array_literal
-      (array_literal_member
-        (string_literal
-          (string_characters)))))
+      (string_literal
+        (string_characters))))
   (output
     (string_literal
       (string_characters))
     (array_literal
-      (array_literal_member
-        (string_literal
-          (string_characters))))))
+      (string_literal
+        (string_characters)))))
 
 =========
 Predicate
@@ -334,6 +348,7 @@ Predicate
 test pred();
 predicate redirecht() = pred();
 predicate with_args(1..10: x, var bool: b) = pred();
+predicate with_ann_param(var int: x) ann: preds = pred() :: preds;
 
 ---
 
@@ -357,6 +372,17 @@ predicate with_args(1..10: x, var bool: b) = pred();
         (primitive_type))
       (identifier))
     (call
+      (identifier)))
+  (predicate
+    (identifier)
+    (parameter
+      (type_base
+        (primitive_type))
+      (identifier))
+    (identifier)
+    (annotated_expression
+      (call
+        (identifier))
       (identifier))))
 
 ==========
@@ -366,6 +392,7 @@ Type alias
 type foo = set of int;
 type bar = array [int] of int;
 type qux = foo;
+type annotated :: output = tuple(int, bool);
 
 ---
 
@@ -386,7 +413,15 @@ type qux = foo;
   (type_alias
     (identifier)
     (type_base
-      (identifier))))
+      (identifier)))
+  (type_alias
+    (identifier)
+    (identifier)
+    (tuple_type
+      (type_base
+        (primitive_type))
+      (type_base
+        (primitive_type)))))
 
 ==========
 Class

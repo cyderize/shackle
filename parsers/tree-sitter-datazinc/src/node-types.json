@@ -8,11 +8,19 @@
         "named": true
       },
       {
+        "type": "anonymous",
+        "named": true
+      },
+      {
         "type": "array_literal",
         "named": true
       },
       {
         "type": "array_literal_2d",
+        "named": true
+      },
+      {
+        "type": "array_literal_3d",
         "named": true
       },
       {
@@ -74,6 +82,10 @@
         "required": false,
         "types": [
           {
+            "type": "_expression",
+            "named": true
+          },
+          {
             "type": "array_literal_member",
             "named": true
           }
@@ -134,12 +146,60 @@
     }
   },
   {
+    "type": "array_literal_3d",
+    "named": true,
+    "fields": {
+      "slice": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "array_literal_3d_slice",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "array_literal_3d_row",
+    "named": true,
+    "fields": {
+      "member": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "array_literal_3d_slice",
+    "named": true,
+    "fields": {
+      "row": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "array_literal_3d_row",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "array_literal_member",
     "named": true,
     "fields": {
       "index": {
         "multiple": false,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "_expression",
@@ -203,27 +263,7 @@
         "required": false,
         "types": [
           {
-            "type": "call",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "infix_operator",
-            "named": true
-          },
-          {
-            "type": "integer_literal",
-            "named": true
-          },
-          {
-            "type": "quoted_identifier",
-            "named": true
-          },
-          {
-            "type": "set_literal",
+            "type": "_expression",
             "named": true
           }
         ]
@@ -232,6 +272,10 @@
         "multiple": false,
         "required": true,
         "types": [
+          {
+            "type": "anonymous",
+            "named": true
+          },
           {
             "type": "identifier",
             "named": true
@@ -533,6 +577,10 @@
   },
   {
     "type": "absent",
+    "named": true
+  },
+  {
+    "type": "anonymous",
     "named": true
   },
   {

@@ -282,9 +282,13 @@ impl<'tree> Output<'tree> {
 		child_with_field_name(self, "expression")
 	}
 
-	/// The output section (from the annotation)
-	pub fn section(&self) -> Option<StringLiteral<'tree>> {
-		optional_child_with_field_name(self, "section")
+	/// The output section, written as an annotation on the item
+	///
+	/// This is not a general expression: the annotation is followed directly by
+	/// the output expression, so the grammar only admits forms it cannot
+	/// continue (a string, an interpolation, or a call).
+	pub fn section(&self) -> Option<Expression<'tree>> {
+		optional_child_with_field_name(self, "annotation")
 	}
 }
 
@@ -818,15 +822,13 @@ mod tests {
                             ArrayLiteral {
                                 cst_kind: "array_literal",
                                 members: [
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: None,
-                                        value: StringLiteral(
+                                    Value(
+                                        StringLiteral(
                                             StringLiteral {
                                                 cst_kind: "string_literal",
                                             },
                                         ),
-                                    },
+                                    ),
                                 ],
                             },
                         ),

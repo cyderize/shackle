@@ -4,7 +4,10 @@
 const PREC_ORDER = /** @type {const} */ ([
 	"call",
 	"annotation",
+	"quoted_operator",
 	"default",
+	"concatenation",
+	"negation",
 	"exponent",
 	"unary",
 	"multiplicative",
@@ -12,6 +15,7 @@ const PREC_ORDER = /** @type {const} */ ([
 	"range",
 	"intersect",
 	"union_or_diff",
+	"membership",
 	"comparative",
 	"conjunction",
 	"disjunction",
@@ -34,15 +38,17 @@ const DISJUNCTION_OPERATORS = ["\\/", "∨", "xor", "⊻"]
 const CONJUNCTION_OPERATORS = ["/\\", "∧"]
 // prettier-ignore
 const COMPARISON_OPERATORS = [
-	"=", "==", "!=", "≠", "<", "<=", "≤", ">", ">=",
-	"≥", "in", "∈", "subset", "⊆", "superset", "⊇",
+	"=", "==", "!=", "≠", "<", "<=", "≤", ">", ">=", "≥",
 	"~=", "~!=",
 ]
+const MEMBERSHIP_OPERATORS = ["in", "∈", "subset", "⊆", "superset", "⊇"]
 const UNION_DIFF_OPERATORS = ["union", "∪", "diff", "∖", "symdiff"]
 const INTERSECTION_OPERATORS = ["intersect", "∩"]
 const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]
-const ADDITIVE_OPERATORS = ["+", "-", "++", "~+", "~-"]
+const ADDITIVE_OPERATORS = ["+", "-", "~+", "~-"]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "div", "mod", "~*", "~div", "~/"]
+const NEGATION_OPERATORS = ["not", "¬"]
+const INVERSE_OPERATORS = ["^-1", "⁻¹"]
 
 export default grammar({
 	name: "minizinc",
@@ -62,11 +68,14 @@ export default grammar({
 		[$._callable, $._pattern],
 		[$._callable, $.pattern_call],
 		[$._callable, $.record_member],
+		[$._callable, $.inversed_identifier],
+		[$._callable, $._literal],
+		[$._callable, $._literal, $._pattern],
 		[$._literal, $._pattern],
 		[$._literal, $.pattern_numeric_literal],
 		[$.array_literal_2d, $.array_literal_2d_row],
-		[$.type_base, $.tuple_literal],
-		[$.type_base, $.parenthesised_expression],
+		[$._unannotated_expression, $.type_base],
+		[$._expression, $.type_base],
 	],
 
 	supertypes: ($) => [$._expression, $._item, $._type],
@@ -111,7 +120,7 @@ export default grammar({
 		constraint: ($) =>
 			seq(
 				"constraint",
-				optional($._annotation_list),
+				optional(seq("::", field("annotation", $._adjacent_annotation))),
 				field("expression", $._expression)
 			),
 
@@ -137,11 +146,16 @@ export default grammar({
 				"function",
 				field("type", $._type),
 				":",
-				field("name", $._identifier),
+				field("name", choice($._identifier, $.inversed_identifier)),
 				$._parameters,
+				optional($._ann_parameter),
 				optional($._annotation_list),
 				optional(seq("=", field("body", $._expression)))
 			),
+
+		// `ann: name` after the parameter list captures the item's own annotations
+		_ann_parameter: ($) =>
+			seq("ann", ":", field("annotation_parameter", $._identifier)),
 
 		goal: ($) =>
 			seq(
@@ -161,15 +175,34 @@ export default grammar({
 		output: ($) =>
 			seq(
 				"output",
-				optional(seq("::", field("section", $.string_literal))),
+				optional(seq("::", field("annotation", $._adjacent_annotation))),
 				field("expression", $._expression)
+			),
+
+		// An annotation written immediately before an expression. It must be a form
+		// that cannot continue. Otherwise, `output :: "a" ["b"]` would parse as the
+		// indexed access `"a"["b"]`.
+		_adjacent_annotation: ($) =>
+			choice(
+				$.string_literal,
+				$.string_interpolation,
+				alias($._adjacent_annotation_call, $.call),
+				$.parenthesised_expression
+			),
+		_adjacent_annotation_call: ($) =>
+			seq(
+				field("function", $._identifier),
+				"(",
+				sepBy(",", field("argument", $.arg_or_param)),
+				")"
 			),
 
 		predicate: ($) =>
 			seq(
 				field("type", choice("predicate", "test")),
-				field("name", $._identifier),
+				field("name", choice($._identifier, $.inversed_identifier)),
 				$._parameters,
+				optional($._ann_parameter),
 				optional($._annotation_list),
 				optional(seq("=", field("body", $._expression)))
 			),
@@ -203,7 +236,8 @@ export default grammar({
 			choice(
 				$.enumeration_members,
 				$.anonymous_enumeration,
-				$.enumeration_constructor
+				$.enumeration_constructor,
+				$.array_literal
 			),
 
 		enumeration_members: ($) =>
@@ -224,7 +258,13 @@ export default grammar({
 			),
 
 		type_alias: ($) =>
-			seq("type", field("name", $._identifier), "=", field("type", $._type)),
+			seq(
+				"type",
+				field("name", $._identifier),
+				optional($._annotation_list),
+				"=",
+				field("type", $._type)
+			),
 
 		class_decl: ($) =>
 			seq(
@@ -241,6 +281,11 @@ export default grammar({
 			choice($._unannotated_expression, $.annotated_expression),
 		_unannotated_expression: ($) =>
 			choice(
+				$._non_concat_expression,
+				alias($._concatenation, $.infix_operator)
+			),
+		_non_concat_expression: ($) =>
+			choice(
 				$._literal,
 
 				$.array_comprehension,
@@ -255,8 +300,22 @@ export default grammar({
 				$.string_interpolation,
 				$._callable
 			),
+		// A `++` expression standing in for a type, so that a call argument keeps
+		// the same shape as any other expression argument.
+		_concatenated_domain: ($) =>
+			field("domain", alias($._concatenation, $.infix_operator)),
+		_concatenation: ($) =>
+			prec.left(
+				PREC.concatenation,
+				seq(
+					field("left", $._expression),
+					field("operator", "++"),
+					field("right", $._expression)
+				)
+			),
 		_callable: ($) =>
 			choice(
+				$.anonymous,
 				$.inversed_identifier,
 				$._identifier,
 				$.call,
@@ -293,7 +352,10 @@ export default grammar({
 
 		arg_or_param: ($) =>
 			seq(
-				field("type", $._type),
+				field(
+					"type",
+					choice($._non_concat_type, alias($._concatenated_domain, $.type_base))
+				),
 				optional(
 					seq(
 						":",
@@ -304,8 +366,8 @@ export default grammar({
 			),
 
 		generator_call: ($) =>
-			prec(
-				PREC.call,
+			prec.dynamic(
+				PREC.call + 1,
 				seq(
 					field("function", $._callable),
 					"(",
@@ -371,7 +433,7 @@ export default grammar({
 				seq(
 					field("tuple", $._unannotated_expression),
 					".",
-					field("field", alias(/[1-9][0-9]*/, $.integer_literal))
+					field("field", alias(/[0-9]+/, $.integer_literal))
 				)
 			),
 
@@ -392,13 +454,15 @@ export default grammar({
 				[prec.left, PREC.disjunction, choice(...DISJUNCTION_OPERATORS)],
 				[prec.left, PREC.conjunction, choice(...CONJUNCTION_OPERATORS)],
 				[nonAssoc, PREC.comparative, choice(...COMPARISON_OPERATORS)],
+				[nonAssoc, PREC.membership, choice(...MEMBERSHIP_OPERATORS)],
 				[prec.left, PREC.union_or_diff, choice(...UNION_DIFF_OPERATORS)],
 				[prec.left, PREC.intersect, choice(...INTERSECTION_OPERATORS)],
 				[nonAssoc, PREC.range, choice(...RANGE_OPERATORS)],
 				[prec.left, PREC.additive, choice(...ADDITIVE_OPERATORS)],
 				[prec.left, PREC.multiplicative, choice(...MULTIPLICATIVE_OPERATORS)],
-				[prec.right, PREC.exponent, "^"],
+				[prec.left, PREC.exponent, "^"],
 				[prec.left, PREC.default, "default"],
+				[prec.left, PREC.quoted_operator, $.backtick_identifier],
 			])
 
 			return choice(
@@ -468,9 +532,16 @@ export default grammar({
 		prefix_operator: ($) =>
 			choice(
 				prec(
+					PREC.negation,
+					seq(
+						field("operator", choice(...NEGATION_OPERATORS)),
+						field("operand", $._expression)
+					)
+				),
+				prec(
 					PREC.unary,
 					seq(
-						field("operator", choice("-", "not", "¬")),
+						field("operator", choice("-", "+")),
 						field("operand", $._expression)
 					)
 				),
@@ -485,12 +556,21 @@ export default grammar({
 			),
 
 		postfix_operator: ($) =>
-			// TODO: Could be nonassoc, will always give type error
-			prec.right(
-				PREC.range,
-				seq(
-					field("operand", $._expression),
-					field("operator", choice(...RANGE_OPERATORS))
+			choice(
+				// TODO: Could be nonassoc, will always give type error
+				prec.right(
+					PREC.range,
+					seq(
+						field("operand", $._expression),
+						field("operator", choice(...RANGE_OPERATORS))
+					)
+				),
+				prec(
+					PREC.exponent,
+					seq(
+						field("operand", $._expression),
+						field("operator", choice(...INVERSE_OPERATORS))
+					)
 				)
 			),
 
@@ -519,7 +599,10 @@ export default grammar({
 				'"'
 			),
 
-		_type: ($) =>
+		_type: ($) => choice($._non_concat_type, $.type_concatenation),
+		// Every type except a concatenation. Call arguments use this: `a ++ b`
+		// there is an expression, never a type concatenation.
+		_non_concat_type: ($) =>
 			choice(
 				$.array_type,
 				$.set_type,
@@ -530,14 +613,22 @@ export default grammar({
 				$.any_type,
 				$.list_type
 			),
+		type_concatenation: ($) =>
+			prec.left(
+				PREC.concatenation,
+				seq(field("left", $._type), "++", field("right", $._type))
+			),
 		array_type: ($) =>
-			seq(
-				"array",
-				"[",
-				sepBy1(",", field("dimension", $.array_dimension)),
-				"]",
-				"of",
-				field("type", $._type)
+			prec(
+				PREC.concatenation + 1,
+				seq(
+					"array",
+					"[",
+					sepBy1(",", field("dimension", $.array_dimension)),
+					"]",
+					"of",
+					field("type", $._type)
+				)
 			),
 		array_dimension: ($) =>
 			prec(
@@ -547,18 +638,23 @@ export default grammar({
 					field("type", $._type)
 				)
 			),
+		// Binds tighter than `++`, so `set of A ++ B` is `(set of A) ++ B`
 		set_type: ($) =>
-			seq(
-				optional(field("var_par", choice("var", "par"))),
-				optional(field("opt", "opt")),
-				"set",
-				optional(seq("(", field("cardinality", $._expression), ")")),
-				"of",
-				field("type", $._type)
+			prec(
+				PREC.concatenation + 1,
+				seq(
+					optional(field("var_par", choice("var", "par"))),
+					optional(field("opt", "opt")),
+					"set",
+					optional(seq("(", field("cardinality", $._expression), ")")),
+					"of",
+					field("type", $._type)
+				)
 			),
 		tuple_type: ($) =>
 			seq(
 				optional(field("var_par", choice("var", "par"))),
+				optional(field("opt", "opt")),
 				"tuple",
 				"(",
 				sepBy1(",", field("field", $._type)),
@@ -567,6 +663,7 @@ export default grammar({
 		record_type: ($) =>
 			seq(
 				optional(field("var_par", choice("var", "par"))),
+				optional(field("opt", "opt")),
 				"record",
 				"(",
 				sepBy1(",", field("field", $.record_type_field)),
@@ -597,7 +694,8 @@ export default grammar({
 							$.new_type,
 							$.type_inst_id,
 							$.type_inst_enum_id,
-							$._expression
+							$._non_concat_expression,
+							$.annotated_expression
 						)
 					)
 				),
@@ -608,13 +706,15 @@ export default grammar({
 		type_inst_enum_id: ($) => /\$\$[A-Za-z][A-Za-z0-9_]*/,
 		new_type: ($) => seq("new", field("type", $._identifier)),
 		any_type: ($) => "any",
-		list_type: ($) => seq("list", "of", field("type", $._type)),
+		list_type: ($) =>
+			prec(PREC.concatenation + 1, seq("list", "of", field("type", $._type))),
 
 		_literal: ($) =>
 			choice(
 				$.absent,
 				$.anonymous,
 				$.array_literal_2d,
+				$.array_literal_3d,
 				$.array_literal,
 				$.boolean_literal,
 				$.float_literal,
@@ -628,13 +728,21 @@ export default grammar({
 
 		absent: ($) => "<>",
 		anonymous: ($) => "_",
+		// Only an indexed member needs the wrapper; a plain one stands for itself,
+		// as in `array_literal_2d_row`. Wrapping every member costs a subtree
+		// each, which is a quarter of the tree for a data file that is one long
+		// array.
 		array_literal: ($) =>
-			seq("[", sepBy(",", field("member", $.array_literal_member)), "]"),
-		array_literal_member: ($) =>
 			seq(
-				optional(seq(field("index", $._expression), ":")),
-				field("value", $._expression)
+				"[",
+				sepBy(
+					",",
+					field("member", choice($._expression, $.array_literal_member))
+				),
+				"]"
 			),
+		array_literal_member: ($) =>
+			seq(field("index", $._expression), ":", field("value", $._expression)),
 		array_literal_2d: ($) =>
 			seq(
 				"[|",
@@ -655,6 +763,18 @@ export default grammar({
 				optional(seq(field("index", $._expression), ":")),
 				sepBy1(",", field("member", $._expression))
 			),
+		array_literal_3d: ($) =>
+			seq(
+				"[|",
+				choice(
+					seq("|", "|"),
+					sepBy1(",", field("slice", $.array_literal_3d_slice))
+				),
+				"|]"
+			),
+		array_literal_3d_slice: ($) =>
+			seq("|", sepBy1("|", field("row", $.array_literal_3d_row)), "|"),
+		array_literal_3d_row: ($) => sepBy1(",", field("member", $._expression)),
 		boolean_literal: ($) => choice("true", "false"),
 		float_literal: ($) =>
 			token(
@@ -665,7 +785,7 @@ export default grammar({
 				)
 			),
 		integer_literal: ($) =>
-			token(choice(/[0-9]+/, /0x[0-9a-fA-F]+/, /0b[01]+/, /0o[0-7]+/)),
+			token(choice(/[0-9]+/, /0[xX][0-9a-fA-F]+/, /0b[01]+/, /0o[0-7]+/)),
 		infinity: ($) => choice("infinity", "∞"),
 		set_literal: ($) =>
 			choice("∅", seq("{", sepBy(",", field("member", $._expression)), "}")),
@@ -686,7 +806,7 @@ export default grammar({
 			return choice(
 				field("escape", choice(...simpleEscape.map(([e, v]) => alias(e, v)))),
 				seq("\\", field("escape", alias(/[0-7]{1,3}/, "octal"))),
-				seq("\\x", field("escape", alias(/[0-9a-fA-F]{2}/, "hexadecimal"))),
+				seq("\\x", field("escape", alias(/[0-9a-fA-F]{1,2}/, "hexadecimal"))),
 				seq("\\u", field("escape", alias(/[0-9a-fA-F]{4}/, "hexadecimal"))),
 				seq("\\U", field("escape", alias(/[0-9a-fA-F]{8}/, "hexadecimal")))
 			)
@@ -707,7 +827,9 @@ export default grammar({
 
 		identifier: ($) => /[\p{L}_][\p{L}\p{N}_]*/u,
 		quoted_identifier: ($) => /'[^']*'/,
-		inversed_identifier: ($) => seq(field("identifier", $._identifier), "^-1"),
+		inversed_identifier: ($) =>
+			seq(field("identifier", $._identifier), choice(...INVERSE_OPERATORS)),
+		backtick_identifier: ($) => /`[^`\n]*`/,
 		_identifier: ($) => choice($.identifier, $.quoted_identifier),
 
 		_pattern: ($) =>
@@ -748,11 +870,9 @@ export default grammar({
 			seq(field("name", $._identifier), ":", field("value", $._pattern)),
 
 		line_comment: ($) => token(seq("%", /.*/)),
-		doc_comment: ($) =>
-			token(prec(1, seq("/**", /([^*]|\*[^\/]|\n)*?\*?/, "*/"))),
-		file_doc_comment: ($) =>
-			token(prec(2, seq("/***", /([^*]|\*[^\/]|\n)*?\*?/, "*/"))),
-		block_comment: ($) => token(seq("/*", /([^*]|\*[^\/]|\n)*?\*?/, "*/")),
+		doc_comment: ($) => token(prec(1, /\/\*\*([^*]|\*+[^*\/])*\*+\//)),
+		file_doc_comment: ($) => token(prec(2, /\/\*\*\*([^*]|\*+[^*\/])*\*+\//)),
+		block_comment: ($) => token(/\/\*([^*]|\*+[^*\/])*\*+\//),
 	},
 })
 
@@ -762,10 +882,6 @@ function sepBy(sep, rule) {
 
 function sepBy1(sep, rule) {
 	return seq(rule, repeat(seq(sep, rule)), optional(sep))
-}
-
-function getOpChars(list) {
-	return list.join("").replace(/[A-Za-z0-9\-\\\/]/g, "")
 }
 
 function nonAssoc(p, rule) {

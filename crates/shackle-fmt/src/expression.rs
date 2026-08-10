@@ -25,6 +25,7 @@ impl<'tree> Format for minizinc::Expression<'tree> {
 			minizinc::Expression::Anonymous(a) => a.format(formatter),
 			minizinc::Expression::ArrayLiteral(a) => a.format(formatter),
 			minizinc::Expression::ArrayLiteral2D(a) => a.format(formatter),
+			minizinc::Expression::ArrayLiteral3D(a) => a.format(formatter),
 			minizinc::Expression::ArrayAccess(a) => a.format(formatter),
 			minizinc::Expression::ArrayComprehension(c) => c.format(formatter),
 			minizinc::Expression::SetComprehension(c) => c.format(formatter),
@@ -62,6 +63,7 @@ impl<'tree> Format for minizinc::Expression<'tree> {
 			self,
 			minizinc::Expression::ArrayLiteral(_)
 				| minizinc::Expression::ArrayLiteral2D(_)
+				| minizinc::Expression::ArrayLiteral3D(_)
 				| minizinc::Expression::SetLiteral(_)
 				| minizinc::Expression::TupleLiteral(_)
 				| minizinc::Expression::RecordLiteral(_)
@@ -210,7 +212,7 @@ impl<'tree> Format for minizinc::PrefixOperator<'tree> {
 			if self.operator().name() == "not" {
 				Element::text("not ")
 			} else {
-				Element::text(self.operator().name())
+				Element::text(self.operator().text(formatter.source()).to_owned())
 			},
 			if needs_parentheses {
 				formatter.parenthesise(self.operand())
@@ -267,13 +269,14 @@ impl<'tree> Format for minizinc::InfixOperator<'tree> {
 					}
 				}
 				InfixOperatorPart::Operator(op) => {
+					let text = op.text(formatter.source()).to_owned();
 					if matches!(op.name(), ".." | "<.." | "<..<" | "..<") {
 						elements.push(Element::if_broken(vec![Element::text(" ")]));
-						elements.push(Element::text(op.name()));
+						elements.push(Element::text(text));
 						elements.push(Element::line_break_or_empty());
 					} else {
 						elements.push(Element::text(" "));
-						elements.push(Element::text(op.name()));
+						elements.push(Element::text(text));
 						elements.push(Element::line_break_or_space());
 					}
 				}
@@ -324,7 +327,7 @@ impl<'tree> Format for minizinc::PostfixOperator<'tree> {
 			} else {
 				self.operand().format(formatter)
 			},
-			Element::text(self.operator().name()),
+			Element::text(self.operator().text(formatter.source()).to_owned()),
 		])
 	}
 }

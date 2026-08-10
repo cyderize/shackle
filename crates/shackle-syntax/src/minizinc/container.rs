@@ -72,13 +72,39 @@ ast_node!(
 
 impl<'tree> ArrayLiteral<'tree> {
 	/// Get the members of this array literal
-	pub fn members(&self) -> Children<'tree, ArrayLiteralMember<'tree>> {
+	pub fn members(&self) -> Children<'tree, ArrayMember<'tree>> {
 		children_with_field_name(self, "member")
 	}
 }
 
+ast_enum!(
+	/// A member of an array literal. Only a member written with an index
+	/// (`[3: x, y]`) gets a node of its own; a plain one is its value.
+	ArrayMember,
+	"array_literal_member" => Indexed(ArrayLiteralMember),
+	_ => Value(Expression)
+);
+
+impl<'tree> ArrayMember<'tree> {
+	/// Get the indices for this member, if it was written with any
+	pub fn indices(&self) -> Option<Expression<'tree>> {
+		match self {
+			ArrayMember::Indexed(m) => Some(m.indices()),
+			ArrayMember::Value(_) => None,
+		}
+	}
+
+	/// Get the value of this member
+	pub fn value(&self) -> Expression<'tree> {
+		match self {
+			ArrayMember::Indexed(m) => m.value(),
+			ArrayMember::Value(v) => v.clone(),
+		}
+	}
+}
+
 ast_node!(
-	/// Array literal member (indices if present and value)
+	/// Array literal member written with an index (indices and value)
 	ArrayLiteralMember,
 	indices,
 	value
@@ -86,8 +112,8 @@ ast_node!(
 
 impl<'tree> ArrayLiteralMember<'tree> {
 	/// Get the indices for this member
-	pub fn indices(&self) -> Option<Expression<'tree>> {
-		optional_child_with_field_name(self, "index")
+	pub fn indices(&self) -> Expression<'tree> {
+		child_with_field_name(self, "index")
 	}
 
 	/// Get the value of this member
@@ -129,6 +155,45 @@ impl<'tree> ArrayLiteral2DRow<'tree> {
 	}
 
 	/// Get the values in this 2D array literal row
+	pub fn members(&self) -> Children<'tree, Expression<'tree>> {
+		children_with_field_name(self, "member")
+	}
+}
+
+ast_node!(
+	/// 3D array literal
+	ArrayLiteral3D,
+	slices
+);
+
+impl<'tree> ArrayLiteral3D<'tree> {
+	/// Get the slices in this 3D array literal
+	pub fn slices(&self) -> Children<'tree, ArrayLiteral3DSlice<'tree>> {
+		children_with_field_name(self, "slice")
+	}
+}
+
+ast_node!(
+	/// 3D array literal slice
+	ArrayLiteral3DSlice,
+	rows
+);
+
+impl<'tree> ArrayLiteral3DSlice<'tree> {
+	/// Get the rows in this slice
+	pub fn rows(&self) -> Children<'tree, ArrayLiteral3DRow<'tree>> {
+		children_with_field_name(self, "row")
+	}
+}
+
+ast_node!(
+	/// 3D array literal row
+	ArrayLiteral3DRow,
+	members
+);
+
+impl<'tree> ArrayLiteral3DRow<'tree> {
+	/// Get the values in this row
 	pub fn members(&self) -> Children<'tree, Expression<'tree>> {
 		children_with_field_name(self, "member")
 	}
@@ -575,24 +640,20 @@ mod tests {
                             ArrayLiteral {
                                 cst_kind: "array_literal",
                                 members: [
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: None,
-                                        value: IntegerLiteral(
+                                    Value(
+                                        IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
                                             },
                                         ),
-                                    },
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: None,
-                                        value: IntegerLiteral(
+                                    ),
+                                    Value(
+                                        IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
                                             },
                                         ),
-                                    },
+                                    ),
                                 ],
                             },
                         ),
@@ -612,30 +673,28 @@ mod tests {
                             ArrayLiteral {
                                 cst_kind: "array_literal",
                                 members: [
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: Some(
-                                            IntegerLiteral(
+                                    Indexed(
+                                        ArrayLiteralMember {
+                                            cst_kind: "array_literal_member",
+                                            indices: IntegerLiteral(
                                                 IntegerLiteral {
                                                     cst_kind: "integer_literal",
                                                 },
                                             ),
-                                        ),
-                                        value: IntegerLiteral(
+                                            value: IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        },
+                                    ),
+                                    Value(
+                                        IntegerLiteral(
                                             IntegerLiteral {
                                                 cst_kind: "integer_literal",
                                             },
                                         ),
-                                    },
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: None,
-                                        value: IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                            },
-                                        ),
-                                    },
+                                    ),
                                 ],
                             },
                         ),
@@ -655,36 +714,36 @@ mod tests {
                             ArrayLiteral {
                                 cst_kind: "array_literal",
                                 members: [
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: Some(
-                                            IntegerLiteral(
+                                    Indexed(
+                                        ArrayLiteralMember {
+                                            cst_kind: "array_literal_member",
+                                            indices: IntegerLiteral(
                                                 IntegerLiteral {
                                                     cst_kind: "integer_literal",
                                                 },
                                             ),
-                                        ),
-                                        value: IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                            },
-                                        ),
-                                    },
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: Some(
-                                            IntegerLiteral(
+                                            value: IntegerLiteral(
                                                 IntegerLiteral {
                                                     cst_kind: "integer_literal",
                                                 },
                                             ),
-                                        ),
-                                        value: IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                            },
-                                        ),
-                                    },
+                                        },
+                                    ),
+                                    Indexed(
+                                        ArrayLiteralMember {
+                                            cst_kind: "array_literal_member",
+                                            indices: IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                            value: IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        },
+                                    ),
                                 ],
                             },
                         ),
@@ -704,10 +763,10 @@ mod tests {
                             ArrayLiteral {
                                 cst_kind: "array_literal",
                                 members: [
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: Some(
-                                            TupleLiteral(
+                                    Indexed(
+                                        ArrayLiteralMember {
+                                            cst_kind: "array_literal_member",
+                                            indices: TupleLiteral(
                                                 TupleLiteral {
                                                     cst_kind: "tuple_literal",
                                                     members: [
@@ -724,17 +783,17 @@ mod tests {
                                                     ],
                                                 },
                                             ),
-                                        ),
-                                        value: IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                            },
-                                        ),
-                                    },
-                                    ArrayLiteralMember {
-                                        cst_kind: "array_literal_member",
-                                        indices: Some(
-                                            TupleLiteral(
+                                            value: IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        },
+                                    ),
+                                    Indexed(
+                                        ArrayLiteralMember {
+                                            cst_kind: "array_literal_member",
+                                            indices: TupleLiteral(
                                                 TupleLiteral {
                                                     cst_kind: "tuple_literal",
                                                     members: [
@@ -751,13 +810,13 @@ mod tests {
                                                     ],
                                                 },
                                             ),
-                                        ),
-                                        value: IntegerLiteral(
-                                            IntegerLiteral {
-                                                cst_kind: "integer_literal",
-                                            },
-                                        ),
-                                    },
+                                            value: IntegerLiteral(
+                                                IntegerLiteral {
+                                                    cst_kind: "integer_literal",
+                                                },
+                                            ),
+                                        },
+                                    ),
                                 ],
                             },
                         ),

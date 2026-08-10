@@ -17,6 +17,7 @@ impl<'tree> Format for minizinc::Type<'tree> {
 				minizinc::Type::TupleType(t) => t.format(formatter),
 				minizinc::Type::RecordType(r) => r.format(formatter),
 				minizinc::Type::OperationType(o) => o.format(formatter),
+				minizinc::Type::TypeConcatenation(c) => c.format(formatter),
 			};
 			formatter.attach_comments(self, vec![t])
 		})
@@ -151,6 +152,16 @@ impl<'tree> Format for minizinc::TupleType<'tree> {
 		}
 		elements.push(formatter.format_list("tuple(", ")", self.fields()));
 		Element::sequence(elements)
+	}
+}
+
+impl<'tree> Format for minizinc::TypeConcatenation<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		Element::sequence(vec![
+			self.left().format(formatter),
+			Element::text(" ++ "),
+			self.right().format(formatter),
+		])
 	}
 }
 

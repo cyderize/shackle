@@ -12,17 +12,22 @@ impl<'tree> Format for minizinc::ArrayLiteral<'tree> {
 	}
 }
 
+impl<'tree> Format for minizinc::ArrayMember<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		match self {
+			minizinc::ArrayMember::Indexed(m) => m.format(formatter),
+			minizinc::ArrayMember::Value(v) => v.format(formatter),
+		}
+	}
+}
+
 impl<'tree> Format for minizinc::ArrayLiteralMember<'tree> {
 	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
-		if let Some(idx) = self.indices() {
-			Element::sequence(vec![
-				idx.format(formatter),
-				Element::text(": "),
-				self.value().format(formatter),
-			])
-		} else {
-			self.value().format(formatter)
-		}
+		Element::sequence(vec![
+			self.indices().format(formatter),
+			Element::text(": "),
+			self.value().format(formatter),
+		])
 	}
 }
 
@@ -66,6 +71,46 @@ impl<'tree> Format for minizinc::ArrayLiteral2DRow<'tree> {
 			vec![Element::text(","), Element::line_break_or_space()],
 		));
 		Element::group(elements)
+	}
+}
+
+impl<'tree> Format for minizinc::ArrayLiteral3D<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		let slices = self
+			.slices()
+			.map(|s| s.format(formatter))
+			.collect::<Vec<_>>();
+		Element::sequence(vec![
+			Element::text("[|"),
+			Element::group(vec![
+				Element::indent(vec![
+					Element::line_break_or_space(),
+					Element::join(slices, vec![Element::text(","), Element::line_break()]),
+				]),
+				Element::line_break_or_space(),
+			]),
+			Element::text("|]"),
+		])
+	}
+}
+
+impl<'tree> Format for minizinc::ArrayLiteral3DSlice<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		let rows = self.rows().map(|r| r.format(formatter)).collect::<Vec<_>>();
+		Element::group(vec![
+			Element::text("|"),
+			Element::join(rows, vec![Element::text(" |"), Element::line_break()]),
+			Element::text("|"),
+		])
+	}
+}
+
+impl<'tree> Format for minizinc::ArrayLiteral3DRow<'tree> {
+	fn format(&self, formatter: &mut MiniZincFormatter) -> Element {
+		Element::group(vec![Element::join(
+			self.members().map(|e| e.format(formatter)),
+			vec![Element::text(","), Element::line_break_or_space()],
+		)])
 	}
 }
 

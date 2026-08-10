@@ -3,10 +3,10 @@
 use std::borrow::Cow;
 
 use super::{
-	Absent, ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, BooleanLiteral,
-	Children, Constraint, Declaration, FloatLiteral, Generator, Infinity, IntegerLiteral,
-	Parameter, Pattern, RecordLiteral, SetComprehension, SetLiteral, StringLiteral, TupleLiteral,
-	Type,
+	Absent, ArrayAccess, ArrayComprehension, ArrayLiteral, ArrayLiteral2D, ArrayLiteral3D,
+	BooleanLiteral, Children, Constraint, Declaration, FloatLiteral, Generator, Infinity,
+	IntegerLiteral, Parameter, Pattern, RecordLiteral, SetComprehension, SetLiteral, StringLiteral,
+	TupleLiteral, Type,
 };
 use crate::{
 	ast::{
@@ -26,12 +26,13 @@ ast_enum!(
 	"set_literal" => SetLiteral,
 	"boolean_literal" => BooleanLiteral,
 	"string_literal" => StringLiteral,
-	"identifier" | "quoted_identifier" | "inversed_identifier" => Identifier,
+	"identifier" | "quoted_identifier" | "inversed_identifier" | "backtick_identifier" => Identifier,
 	"absent" => Absent,
 	"infinity" => Infinity,
 	"anonymous" => Anonymous,
 	"array_literal" => ArrayLiteral,
 	"array_literal_2d" => ArrayLiteral2D,
+	"array_literal_3d" => ArrayLiteral3D,
 	"indexed_access" => ArrayAccess,
 	"array_comprehension" => ArrayComprehension,
 	"set_comprehension" => SetComprehension,
@@ -258,8 +259,20 @@ ast_node!(
 
 impl<'tree> Operator<'tree> {
 	/// The name of the operator
+	///
+	/// For the backtick operators this is the rule name rather than the
+	/// operator itself, since those are a named node; use `text` to print one.
 	pub fn name(&self) -> &str {
 		self.cst_kind()
+	}
+
+	/// The operator as written in the source
+	///
+	/// For anonymous tokens this is the same as `name`; for the backtick
+	/// operators, which are a named node, it is the operator rather than the
+	/// rule name.
+	pub fn text<'a>(&self, source: &'a str) -> &'a str {
+		self.cst_text(source)
 	}
 }
 ast_node!(

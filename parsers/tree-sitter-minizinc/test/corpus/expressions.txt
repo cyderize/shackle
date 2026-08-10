@@ -228,6 +228,7 @@ Generator Call
 
 simple_sum = sum(i in N)(i);
 selective_sum = sum(i in N where i in X)(i);
+call_collection = exists(z in array1d(y))(z = x);
 
 ---
 
@@ -250,7 +251,21 @@ selective_sum = sum(i in N where i in X)(i);
         (infix_operator
           (identifier)
           (identifier)))
-      (identifier))))
+      (identifier)))
+  (assignment
+    (identifier)
+    (generator_call
+      (identifier)
+      (generator
+        (identifier)
+        (call
+          (identifier)
+          (arg_or_param
+            (type_base
+              (identifier)))))
+      (infix_operator
+        (identifier)
+        (identifier)))))
 
 ============
 If-Then-Else
@@ -326,12 +341,9 @@ infinite_slice = my_collection[..];
     (identifier)
     (indexed_access
       (array_literal
-        (array_literal_member
-          (integer_literal))
-        (array_literal_member
-          (integer_literal))
-        (array_literal_member
-          (integer_literal)))
+        (integer_literal)
+        (integer_literal)
+        (integer_literal))
       (identifier)))
   (assignment
     (identifier)
@@ -717,6 +729,11 @@ given_precedence = (1 + 1) * 1;
 mult_first = 1 + 1 * 1;
 exp_first = 1 * 1 ^ 1;
 annotation_bind = 1 ^ 1::some_ann;
+exp_left_assoc = 2^3^2;
+membership_below_comparison = a == b in c;
+unary_minus_below_exp = -2^2;
+default_above_additive = x default 2 + 3;
+backtick_above_additive = a `max` b + c;
 
 ---
 
@@ -749,7 +766,42 @@ annotation_bind = 1 ^ 1::some_ann;
       (integer_literal)
       (annotated_expression
         (integer_literal)
-        (identifier)))))
+        (identifier))))
+  (assignment
+    (identifier)
+    (infix_operator
+      (infix_operator
+        (integer_literal)
+        (integer_literal))
+      (integer_literal)))
+  (assignment
+    (identifier)
+    (infix_operator
+      (identifier)
+      (infix_operator
+        (identifier)
+        (identifier))))
+  (assignment
+    (identifier)
+    (prefix_operator
+      (infix_operator
+        (integer_literal)
+        (integer_literal))))
+  (assignment
+    (identifier)
+    (infix_operator
+      (infix_operator
+        (identifier)
+        (integer_literal))
+      (integer_literal)))
+  (assignment
+    (identifier)
+    (infix_operator
+      (infix_operator
+        (identifier)
+        (backtick_identifier)
+        (identifier))
+      (identifier))))
 
 ===============
 Prefix Operator
@@ -813,6 +865,11 @@ Postfix Operator
 left_dot_dot = x..;
 left_le_dot_dot = x<..;
 left_le_dot_dot_le = x<..<;
+inverse_literal = 2^-1;
+inverse_call = f^-1(x);
+inverse_name = f^-1;
+inverse_parenthesised = (x+1)^-1;
+inverse_unicode = g⁻¹(y);
 
 ---
 
@@ -828,7 +885,38 @@ left_le_dot_dot_le = x<..<;
   (assignment
     (identifier)
     (postfix_operator
-      (identifier))))
+      (identifier)))
+  (assignment
+    (identifier)
+    (postfix_operator
+      (integer_literal)))
+  (assignment
+    (identifier)
+    (call
+      (inversed_identifier
+        (identifier))
+      (arg_or_param
+        (type_base
+          (identifier)))))
+  (assignment
+    (identifier)
+    (inversed_identifier
+      (identifier)))
+  (assignment
+    (identifier)
+    (postfix_operator
+      (parenthesised_expression
+        (infix_operator
+          (identifier)
+          (integer_literal)))))
+  (assignment
+    (identifier)
+    (call
+      (inversed_identifier
+        (identifier))
+      (arg_or_param
+        (type_base
+          (identifier))))))
 
 =================
 Set Comprehension

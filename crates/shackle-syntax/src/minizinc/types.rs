@@ -17,6 +17,7 @@ ast_enum!(
 	"operation_type" => OperationType,
 	"type_base" => TypeBase,
 	"any_type" => AnyType,
+	"type_concatenation" => TypeConcatenation,
 );
 
 impl<'tree> Type<'tree> {
@@ -156,6 +157,25 @@ impl<'tree> TupleType<'tree> {
 	/// The types of the tuple fields
 	pub fn fields(&self) -> Children<'tree, Type<'tree>> {
 		children_with_field_name(self, "field")
+	}
+}
+
+ast_node!(
+	/// Concatenation of two tuple or record types
+	TypeConcatenation,
+	left,
+	right
+);
+
+impl<'tree> TypeConcatenation<'tree> {
+	/// The type on the left of the `++`
+	pub fn left(&self) -> Type<'tree> {
+		child_with_field_name(self, "left")
+	}
+
+	/// The type on the right of the `++`
+	pub fn right(&self) -> Type<'tree> {
+		child_with_field_name(self, "right")
 	}
 }
 

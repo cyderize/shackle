@@ -383,6 +383,23 @@ record(array [int] of record(string: a, float: b): c, tuple(bool, record(ann: e)
         (identifier)))
     (identifier)))
 
+=============
+Concatenation
+=============
+
+var MyT ++ var MyT: z;
+
+---
+
+(source_file
+  (declaration
+    (type_concatenation
+      (type_base
+        (identifier))
+      (type_base
+        (identifier)))
+    (identifier)))
+
 =========
 Operation
 =========

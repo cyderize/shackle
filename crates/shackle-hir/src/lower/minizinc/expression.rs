@@ -102,6 +102,18 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 			minizinc::Expression::SetLiteral(sl) => self.collect_set_literal(sl).into(),
 			minizinc::Expression::ArrayLiteral(al) => return self.collect_array_literal(al),
 			minizinc::Expression::ArrayLiteral2D(al) => return self.collect_2d_array_literal(al),
+			minizinc::Expression::ArrayLiteral3D(al) => {
+				// Accepted by the grammar for the reference implementation; not
+				// implemented here.
+				let src = self.file.source_file(self.db);
+				let span = al.span();
+				self.diagnostics.add_error(SyntaxError {
+					src,
+					span,
+					msg: "3D array literals are not supported".to_owned(),
+				});
+				Expression::Missing
+			}
 			minizinc::Expression::ArrayAccess(aa) => self.collect_array_access(aa).into(),
 			minizinc::Expression::ArrayComprehension(c) => {
 				self.collect_array_comprehension(c).into()
@@ -173,6 +185,18 @@ impl<'db, 'a> ExpressionCollector<'db, 'a> {
 			return self.alloc_type(t, Type::Missing);
 		}
 		let ty = match t {
+			minizinc::Type::TypeConcatenation(c) => {
+				// Accepted by the grammar for the reference implementation, which
+				// concatenates tuple and record types; not implemented here.
+				let src = self.file.source_file(self.db);
+				let span = c.span();
+				self.diagnostics.add_error(SyntaxError {
+					src,
+					span,
+					msg: "Type concatenation is not supported".to_owned(),
+				});
+				Type::Missing
+			}
 			minizinc::Type::ArrayType(a) => Type::Array {
 				opt: OptType::NonOpt,
 				dimension_pattern: {

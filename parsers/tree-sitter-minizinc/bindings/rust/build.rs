@@ -54,6 +54,23 @@ enum Prec {
 	Right(i64),
 }
 
+/// `nonAssoc` in grammar.js encodes non-associativity by adding this to the
+/// level, because tree-sitter's DSL has no non-associative precedence. Testing
+/// for the exact offset rather than "not a multiple of ten" keeps a deliberate
+/// `prec.left(PREC.x + 1)` from being read as non-associative.
+const NON_ASSOC_OFFSET: i64 = 5;
+
+fn render_prec(prec: &Prec) -> String {
+	match prec {
+		Prec::Left(i) if i % 10 == NON_ASSOC_OFFSET => {
+			format!("Precedence::NonAssoc({})", i - NON_ASSOC_OFFSET)
+		}
+		Prec::Left(i) => format!("Precedence::Left({})", i),
+		Prec::Prec(i) => format!("Precedence::Prec({})", i),
+		Prec::Right(i) => format!("Precedence::Right({})", i),
+	}
+}
+
 fn get_precendences(
 	grammar_path: impl AsRef<std::path::Path>,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -62,13 +79,31 @@ fn get_precendences(
 	let grammar = serde_json::from_reader::<_, serde_json::Value>(reader)?;
 	let mut precedences = HashMap::new();
 	let mut operator_precedences: HashMap<_, HashMap<_, _>> = HashMap::new();
+	// Operators that are a rule reference rather than a literal string (the
+	// backtick operators) have no fixed text to match on, so their precedence
+	// becomes the fallback arm of the generated lookup.
+	let mut operator_fallbacks: HashMap<String, Prec> = HashMap::new();
+	// `_concatenation` is a separate rule so that type domains can exclude a
+	// top-level `++`, but it is aliased to `infix_operator` in the tree, so its
+	// operator has to end up in that rule's table.
+	let infix = "infix_operator".to_owned();
 	let mut todo = grammar["rules"]
 		.as_object()
 		.unwrap()
 		.into_iter()
-		.map(|(k, v)| (k, v, Prec::Prec(0)))
+		.map(|(k, v)| {
+			(
+				if k == "_concatenation" { &infix } else { k },
+				v,
+				Prec::Prec(0),
+				false,
+			)
+		})
 		.collect::<Vec<_>>();
-	while let Some((name, rule, mut prec)) = todo.pop() {
+	while let Some((name, rule, mut prec, mut is_operator)) = todo.pop() {
+		if rule["type"] == "FIELD" {
+			is_operator = rule["name"] == "operator";
+		}
 		match rule["type"].as_str().unwrap() {
 			"PREC" => {
 				prec = Prec::Prec(rule["value"].as_i64().unwrap());
@@ -79,11 +114,18 @@ fn get_precendences(
 			"PREC_RIGHT" => {
 				prec = Prec::Right(rule["value"].as_i64().unwrap());
 			}
+			"PREC_DYNAMIC" => {
+				prec = Prec::Prec(rule["value"].as_i64().unwrap());
+			}
 			"STRING" => {
 				operator_precedences
 					.entry(name.clone())
 					.or_default()
 					.insert(rule["value"].as_str().unwrap().to_owned(), prec);
+				continue;
+			}
+			"SYMBOL" if is_operator => {
+				operator_fallbacks.insert(name.clone(), prec);
 				continue;
 			}
 			_ => (),
@@ -93,14 +135,14 @@ fn get_precendences(
 			"infix_operator" | "prefix_operator" | "postfix_operator"
 		) {
 			if let Some(c) = rule.get("content") {
-				todo.push((name, c, prec.clone()));
+				todo.push((name, c, prec.clone(), is_operator));
 			}
 			if let Some(m) = rule.get("members") {
 				todo.extend(
 					m.as_array()
 						.unwrap()
 						.iter()
-						.map(|v| (name, v, prec.clone())),
+						.map(|v| (name, v, prec.clone(), is_operator)),
 				);
 			}
 		} else {
@@ -110,21 +152,7 @@ fn get_precendences(
 
 	let mut buf = "impl Precedence {".to_owned();
 	for (k, v) in precedences {
-		let prec = match v {
-			Prec::Left(i) => {
-				if i % 10 == 0 {
-					format!("Precedence::Left({})", i)
-				} else {
-					format!("Precedence::NonAssoc({})", i - 5)
-				}
-			}
-			Prec::Prec(i) => {
-				format!("Precedence::Prec({})", i)
-			}
-			Prec::Right(i) => {
-				format!("Precedence::Right({})", i)
-			}
-		};
+		let prec = render_prec(&v);
 		writeln!(&mut buf, "\t/// Get precedence for `{}`", k)?;
 		writeln!(&mut buf, "\tpub fn {}() -> Precedence {{ {} }}", k, prec)?;
 	}
@@ -134,24 +162,18 @@ fn get_precendences(
 		writeln!(&mut buf, "\tpub fn {}(operator: &str) -> Precedence {{", k)?;
 		writeln!(&mut buf, "\t\tmatch operator {{")?;
 		for (op, prec) in v {
-			let prec = match prec {
-				Prec::Left(i) => {
-					if i % 10 == 0 {
-						format!("Precedence::Left({})", i)
-					} else {
-						format!("Precedence::NonAssoc({})", i - 5)
-					}
-				}
-				Prec::Prec(i) => {
-					format!("Precedence::Prec({})", i)
-				}
-				Prec::Right(i) => {
-					format!("Precedence::Right({})", i)
-				}
-			};
+			let prec = render_prec(prec);
 			writeln!(&mut buf, "\t\t\t{:?} => {},", op, prec)?;
 		}
-		writeln!(&mut buf, "\t\t\tx => panic!(\"Unknown operator {{}}\", x),")?;
+		match operator_fallbacks.get(k) {
+			Some(prec) => {
+				let prec = render_prec(prec);
+				writeln!(&mut buf, "\t\t\t_ => {},", prec)?;
+			}
+			None => {
+				writeln!(&mut buf, "\t\t\tx => panic!(\"Unknown operator {{}}\", x),")?;
+			}
+		}
 		writeln!(&mut buf, "\t\t}}")?;
 		writeln!(&mut buf, "\t}}")?;
 	}

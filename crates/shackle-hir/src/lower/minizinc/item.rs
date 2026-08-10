@@ -526,7 +526,7 @@ impl<'db: 'a, 'a> ItemCollector<'db, 'a> {
 			self.text.as_ref(),
 			&mut self.diagnostics,
 		);
-		let section = o.section().map(|s| ctx.collect_expression(&s.into()));
+		let section = o.section().map(|s| ctx.collect_expression(&s));
 		let expression = ctx.collect_expression(&o.expression());
 		let (data, source_map) = ctx.finish(Output {
 			section,

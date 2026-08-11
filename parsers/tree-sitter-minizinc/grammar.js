@@ -44,7 +44,7 @@ const RANGE_OPERATORS = ["..", "<..", "..<", "<..<"]
 const ADDITIVE_OPERATORS = ["+", "-", "++", "~+", "~-"]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "div", "mod", "~*", "~div", "~/"]
 
-module.exports = grammar({
+export default grammar({
 	name: "minizinc",
 
 	extras: ($) => [

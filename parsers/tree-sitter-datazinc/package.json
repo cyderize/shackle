@@ -2,6 +2,7 @@
 	"name": "tree-sitter-datazinc",
 	"version": "0.1.0",
 	"description": "DataZinc grammar for tree-sitter",
+	"type": "module",
 	"repository": "git+https://github.com/shackle-rs/shackle.git",
 	"license": "MPL-2.0",
 	"author": {
@@ -33,7 +34,7 @@
 	},
 	"devDependencies": {
 		"prebuildify": "^6.0.1",
-		"tree-sitter-cli": "^0.26.11",
+		"tree-sitter-cli": "^0.26.12",
 		"tree-sitter-minizinc": "file:../tree-sitter-minizinc"
 	},
 	"peerDependencies": {

@@ -1,6 +1,6 @@
-const mzn = require("tree-sitter-minizinc/grammar")
+import mzn from "tree-sitter-minizinc/grammar.js"
 
-module.exports = grammar(mzn, {
+export default grammar(mzn, {
 	name: "datazinc",
 
 	rules: {

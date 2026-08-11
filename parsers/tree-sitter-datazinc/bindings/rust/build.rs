@@ -1,6 +1,21 @@
 fn main() {
 	let src_dir = std::path::Path::new("src");
 
+	// `lib.rs` gates the query constants on these, so they have to be declared
+	// here whether or not the corresponding query file exists.
+	let queries_dir = std::path::Path::new("queries");
+	for (file, cfg) in [
+		("highlights.scm", "with_highlights_query"),
+		("injections.scm", "with_injections_query"),
+		("locals.scm", "with_locals_query"),
+		("tags.scm", "with_tags_query"),
+	] {
+		println!("cargo::rustc-check-cfg=cfg({cfg})");
+		if queries_dir.join(file).exists() {
+			println!("cargo::rustc-cfg={cfg}");
+		}
+	}
+
 	let mut c_config = cc::Build::new();
 	c_config.std("c11").include(src_dir);
 

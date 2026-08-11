@@ -33,7 +33,7 @@ const COMPARISON_OPERATORS = [
 ]
 const MULTIPLICATIVE_OPERATORS = ["*", "/", "%"]
 
-module.exports = grammar({
+export default grammar({
 	name: "eprime",
 
 	extras: ($) => [/\s/, $.line_comment],

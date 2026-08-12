@@ -411,8 +411,13 @@ pub fn match_fn<'db, T: Overload<'db>>(
 							// They accept our args, but we don't accept theirs, so we're more specific
 							c2.is_candidate = false;
 						} else {
-							// Prefer earlier candidate if both equivalent
-							c2.is_candidate = false;
+							if let Some(prefer_c1) = c1.entry.tie_break(&c2.entry) {
+								if prefer_c1 {
+									c2.is_candidate = false;
+								} else {
+									c1.is_candidate = false;
+								}
+							}
 						}
 					}
 					_ => {

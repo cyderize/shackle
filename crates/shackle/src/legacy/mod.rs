@@ -91,6 +91,7 @@ impl Program {
 		if self.enable_stats {
 			cmd.arg("--statistics");
 		}
+		cmd.args(&self.minizinc_args);
 
 		let mut child = cmd.spawn().unwrap(); // TODO: fix unwrap
 		child.wait().unwrap(); // TODO: fix unwrap

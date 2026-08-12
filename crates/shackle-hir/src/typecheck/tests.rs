@@ -320,6 +320,38 @@ fn test_function_resolution() {
 		r#"id(x: 1.5)"#,
 		expect!("float"),
 	);
+	tester.check_expression_preamble(
+		r#"
+        function bool: foo(int: x);
+        function int: foo(int: x) = 5;
+		"#,
+		r#"foo(1)"#,
+		expect!("int"),
+	);
+	tester.check_expression_preamble(
+		r#"
+        function int: foo(int: x) = 5;
+        function bool: foo(int: x);
+		"#,
+		r#"foo(1)"#,
+		expect!("int"),
+	);
+	tester.check_expression_preamble(
+		r#"
+        function bool: foo($T: x);
+        function int: foo($T: x) = 5;
+		"#,
+		r#"foo(1)"#,
+		expect!("int"),
+	);
+	tester.check_expression_preamble(
+		r#"
+        function int: foo($T: x) = 5;
+        function bool: foo($T: x);
+		"#,
+		r#"foo(1)"#,
+		expect!("int"),
+	);
 }
 
 #[test]

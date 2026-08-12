@@ -47,16 +47,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Checkout MiniZinc repo
-        uses: actions/checkout@v7
-        with:
-          repository: MiniZinc/libminizinc
-          path: minizinc
-          ref: develop
+      - name: Set up MiniZinc Edge
+        uses: ./.github/actions/setup-minizinc-edge
       - name: Generate code coverage
         run: cargo llvm-cov --all-features --workspace --codecov --output-path codecov.json
-        env:
-          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc
       - uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -74,16 +68,10 @@ jobs:
           channel: ${{ env.RUST_TEST_CHANNEL }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout MiniZinc repo
-        uses: actions/checkout@v7
-        with:
-          repository: MiniZinc/libminizinc
-          path: minizinc
-          ref: develop
+      - name: Set up MiniZinc Edge
+        uses: ./.github/actions/setup-minizinc-edge
       - name: Run cargo test
         run: cargo test --all-features
-        env:
-          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc
 
   clippy:
     runs-on: ubuntu-latest
@@ -96,13 +84,5 @@ jobs:
           components: clippy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout MiniZinc repo
-        uses: actions/checkout@v7
-        with:
-          repository: MiniZinc/libminizinc
-          path: minizinc
-          ref: develop
       - name: Run clippy
         run: cargo clippy --tests --all-features -- -D warnings
-        env:
-          MZN_STDLIB_DIR: ${{ github.workspace }}/minizinc/share/minizinc

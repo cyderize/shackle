@@ -9,7 +9,7 @@ mod legacy;
 mod value;
 
 use std::{
-	ffi::OsStr,
+	ffi::{OsStr, OsString},
 	fmt::Display,
 	io::Write,
 	ops::Deref,
@@ -127,6 +127,7 @@ impl Model {
 			output_types: output,
 			enable_stats: false,
 			time_limit: None,
+			minizinc_args: Vec::new(),
 		})
 	}
 }
@@ -166,6 +167,7 @@ pub struct Program {
 	// run() options
 	enable_stats: bool,
 	time_limit: Option<Duration>,
+	minizinc_args: Vec<OsString>,
 }
 
 /// Status of running and solving a [`Program`]
@@ -419,6 +421,12 @@ impl Program {
 	/// Add the maximum duration that the run method is allowed to take before it will be canceled
 	pub fn with_time_limit(mut self, dur: Duration) -> Self {
 		self.time_limit = Some(dur);
+		self
+	}
+
+	/// Add arguments to be passed directly to the MiniZinc command.
+	pub fn with_minizinc_args(mut self, args: Vec<OsString>) -> Self {
+		self.minizinc_args = args;
 		self
 	}
 

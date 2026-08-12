@@ -4,10 +4,19 @@
 #![warn(unused_crate_dependencies, unused_extern_crates)]
 #![warn(variant_size_differences)]
 
-use std::{ffi::OsStr, fs::File, io::BufReader, ops::Deref, panic, path::PathBuf};
+use std::{
+	ffi::{OsStr, OsString},
+	fs::File,
+	io::BufReader,
+	ops::Deref,
+	panic,
+	path::PathBuf,
+};
 
 use clap::{Args, Parser, Subcommand, ValueEnum, crate_version};
 use env_logger::{Builder, fmt::TimestampPrecision};
+#[cfg(test)]
+use expect_test as _;
 use humantime::Duration;
 use log::warn;
 use miette::{IntoDiagnostic, Report, Result};
@@ -103,6 +112,9 @@ struct Solve {
 	time_limit: Option<Duration>,
 	#[command(flatten)]
 	base: Compile,
+	/// Additional arguments passed to MiniZinc (must follow `--`)
+	#[arg(last = true)]
+	minizinc_args: Vec<OsString>,
 }
 
 impl Solve {
@@ -122,7 +134,9 @@ impl Solve {
 		if let Some(time_limit) = self.time_limit {
 			program = program.with_time_limit(time_limit.into());
 		}
-		program = program.with_statistics(self.statistics);
+		program = program
+			.with_statistics(self.statistics)
+			.with_minizinc_args(self.minizinc_args.clone());
 
 		// Run resulting program and show results
 		let display_fn = |x: &Message| {
@@ -220,6 +234,28 @@ mod tests {
 	fn boolean_flags_convert_to_bool() {
 		assert!(bool::from(BooleanFlag::On));
 		assert!(!bool::from(BooleanFlag::Off));
+	}
+
+	#[test]
+	fn solve_forwards_arguments_after_double_dash() {
+		let cli = Cli::try_parse_from([
+			"shackle",
+			"solve",
+			"model.mzn",
+			"--",
+			"--all-solutions",
+			"--num-solutions",
+			"0",
+		])
+		.unwrap();
+
+		let SubCommand::Solve(solve) = cli.subcmd else {
+			panic!("expected solve subcommand");
+		};
+		assert_eq!(
+			solve.minizinc_args,
+			["--all-solutions", "--num-solutions", "0"].map(OsString::from)
+		);
 	}
 }
 

@@ -612,6 +612,10 @@ impl ModelIoInterface {
 			// Determine whether declaration is part of input
 			if decl.top_level() && decl.domain().ty().known_par(db) && decl.definition().is_none() {
 				let name = resolve_name(decl.name().unwrap().0);
+				if name.starts_with("mzn_") {
+					// TODO: Don't add these since compat.mzn maps these to the old compiler parameters
+					continue;
+				}
 				let ty = crate::Type::from_compiler(
 					db,
 					&mut resolve_name,

@@ -129,19 +129,43 @@ function array [$$E] of any $T: mzn_indexed_array(array [int] of tuple($$E, any 
 	arrayNd(x.1, x.2);
 function array [$$E, $$F] of any $T: mzn_indexed_array(
 	array [int] of tuple(tuple($$E, $$F), any $T): x,
-) = arrayNd(x.1.1, x.1.2, x.2);
+) = arrayNd([x_i.1.1 | x_i in x], [x_i.1.2 | x_i in x], [x_i.2 | x_i in x]);
 function array [$$E, $$F, $$G] of any $T: mzn_indexed_array(
 	array [int] of tuple(tuple($$E, $$F, $$G), any $T): x,
-) = arrayNd(x.1.1, x.1.2, x.1.3, x.2);
+) = arrayNd([x_i.1.1 | x_i in x], [x_i.1.2 | x_i in x], [x_i.1.3 | x_i in x], [x_i.2 | x_i in x]);
 function array [$$E, $$F, $$G, $$H] of any $T: mzn_indexed_array(
 	array [int] of tuple(tuple($$E, $$F, $$G, $$H), any $T): x,
-) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.2);
+) =
+	arrayNd(
+		[x_i.1.1 | x_i in x],
+		[x_i.1.2 | x_i in x],
+		[x_i.1.3 | x_i in x],
+		[x_i.1.4 | x_i in x],
+		[x_i.2 | x_i in x],
+	);
 function array [$$E, $$F, $$G, $$H, $$I] of any $T: mzn_indexed_array(
 	array [int] of tuple(tuple($$E, $$F, $$G, $$H, $$I), any $T): x,
-) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.1.5, x.2);
+) =
+	arrayNd(
+		[x_i.1.1 | x_i in x],
+		[x_i.1.2 | x_i in x],
+		[x_i.1.3 | x_i in x],
+		[x_i.1.4 | x_i in x],
+		[x_i.1.5 | x_i in x],
+		[x_i.2 | x_i in x],
+	);
 function array [$$E, $$F, $$G, $$H, $$I, $$J] of any $T: mzn_indexed_array(
 	array [int] of tuple(tuple($$E, $$F, $$G, $$H, $$I, $$J), any $T): x,
-) = arrayNd(x.1.1, x.1.2, x.1.3, x.1.4, x.1.5, x.1.6, x.2);
+) =
+	arrayNd(
+		[x_i.1.1 | x_i in x],
+		[x_i.1.2 | x_i in x],
+		[x_i.1.3 | x_i in x],
+		[x_i.1.4 | x_i in x],
+		[x_i.1.5 | x_i in x],
+		[x_i.1.6 | x_i in x],
+		[x_i.2 | x_i in x],
+	);
 
 function set of int: mzn_array2set(array [int] of int: x) = array2set(x);
 function set of float: mzn_array2set(array [int] of float: x) = array2set(x);
@@ -151,8 +175,13 @@ function bool: mzn_add_warning(string: msg) = trace("WARNING: " ++ msg);
 function int: shackle_div(int: x, int: y) = x div y;
 function $$E: shackle_min(set of $$E: x) = min(x);
 function $$E: shackle_max(set of $$E: x) = max(x);
-function $$E: shackle_arg_min(array [$$E] of $T: x) = arg_min(x);
-function $$E: shackle_arg_max(array [$$E] of $T: x) = arg_max(x);
+function $$E: shackle_arg_min(array [$$E] of bool: x) = arg_min(x);
+function $$E: shackle_arg_min(array [$$E] of $$T: x) = arg_min(x);
+function $$E: shackle_arg_min(array [$$E] of float: x) = arg_min(x);
+function $$E: shackle_arg_max(array [$$E] of bool: x) = arg_max(x);
+function $$E: shackle_arg_max(array [$$E] of $$T: x) = arg_max(x);
+function $$E: shackle_arg_max(array [$$E] of float: x) = arg_max(x);
 function int: shackle_pow(int: x, int: y) = pow(x, y);
+function array [$$E] of $$F: inverse(array [$$F] of $$E: f);
 function array [$$E] of $$F: shackle_inverse(array [$$F] of $$E: f) = inverse(f);
 function set of $U: shackle_array_intersect(array [$T] of set of $U: x) = array_intersect(x);

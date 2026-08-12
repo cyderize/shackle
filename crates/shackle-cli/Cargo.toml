@@ -20,4 +20,5 @@ shackle = {path = "../shackle"}
 shackle-fmt = {path = "../shackle-fmt", features = ["fancy"]}
 
 [dev-dependencies]
+expect-test = {workspace = true}
 tempfile = "3.5.0"

@@ -103,12 +103,11 @@ impl<'db> Overload<'db> for FunctionEntry<'db> {
 	}
 
 	fn tie_break(&self, other: &Self) -> Option<bool> {
-		if self.has_body && !other.has_body {
-			Some(true)
-		} else if !self.has_body && other.has_body {
-			Some(false)
-		} else {
-			None
+		match (self.has_body, other.has_body) {
+			(true, false) => Some(true),
+			(false, true) => Some(false),
+			(false, false) => Some(true), // Both don't have bodies, so arbitrarily pick the first one
+			(true, true) => None,         // Both have bodies, so ambiguous
 		}
 	}
 }
@@ -466,13 +465,25 @@ mod tests {
 	}
 
 	#[test]
-	fn test_overloading_validation() {
+	fn test_overloading_named_incompat_return() {
 		test_overloading(
 			r#"
 			test foo(int: a, int: b) = true;
 			function int: foo(int: b, int: a) = 10;
 		"#,
 			expect!["Function with the signature 'test foo(int: a, int: b)' already defined"],
+		);
+	}
+
+	#[test]
+	fn test_overloading_unnamed_incompat_return() {
+		test_overloading(
+			r#"
+			function int: foo(int);
+			function bool: foo(int);
+
+		"#,
+			expect!["Return type conflicts with return type of other overloads"],
 		);
 	}
 }

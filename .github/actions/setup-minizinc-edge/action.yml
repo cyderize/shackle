@@ -9,14 +9,39 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: echo "id=$(gh api repos/MiniZinc/MiniZincIDE/releases/tags/edge --jq .id)" >> "$GITHUB_OUTPUT"
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS/$RUNNER_ARCH" in
+          Linux/X64) asset_pattern='MiniZinc-build*-x86_64-linux-gnu.tar.gz' ;;
+          Linux/ARM64) asset_pattern='MiniZinc-build*-aarch64-linux-gnu.tar.gz' ;;
+          macOS/ARM64) asset_pattern='MiniZinc-build*-aarch64-apple-darwin.tar.gz' ;;
+          Windows/X64) asset_pattern='MiniZinc-build*-x86_64-windows.zip' ;;
+          *)
+            echo "MiniZinc Edge setup is not implemented for $RUNNER_OS/$RUNNER_ARCH" >&2
+            exit 1
+            ;;
+        esac
+
+        release_json="$(gh api repos/MiniZinc/libminizinc/releases/tags/edge)"
+        asset_name="$(jq -r --arg pattern "$asset_pattern" \
+          '[.assets[] | select(.name | test($pattern | gsub("\\*"; ".*")))] | first | .name // empty' \
+          <<<"$release_json")"
+        asset_id="$(jq -r --arg name "$asset_name" \
+          '.assets[] | select(.name == $name) | .id' <<<"$release_json")"
+        test -n "$asset_name"
+        test -n "$asset_id"
+        echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+        echo "asset_id=$asset_id" >> "$GITHUB_OUTPUT"
 
     - name: Cache MiniZinc Edge archive
       id: cache
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/minizinc/downloads
-        key: minizinc-edge-${{ runner.os }}-${{ steps.release.outputs.id }}
+        key: minizinc-edge-${{ runner.os }}-${{ runner.arch }}-${{ steps.release.outputs.asset_id }}
 
     - name: Download MiniZinc Edge
       shell: bash
@@ -28,42 +53,25 @@ runs:
         download_dir="$install_dir/downloads"
         mkdir -p "$download_dir"
 
-        case "$RUNNER_OS" in
-          Linux)
-            sudo apt-get update
-            sudo apt-get install --yes libegl1
-            if [[ "${{ steps.cache.outputs.cache-hit }}" != "true" ]]; then
-              gh release download edge \
-                --repo MiniZinc/MiniZincIDE \
-                --pattern 'MiniZincIDE-build*-bundle-linux-x86_64.tgz' \
-                --dir "$download_dir"
-            fi
-            tar -xzf "$download_dir"/MiniZincIDE-build*-bundle-linux-x86_64.tgz -C "$install_dir"
-            bundle_dir="$(find "$install_dir" -maxdepth 1 -type d -name 'MiniZincIDE-*-bundle-linux-x86_64' -print -quit)"
-            ;;
-          macOS)
-            if [[ "${{ steps.cache.outputs.cache-hit }}" != "true" ]]; then
-              gh release download edge \
-                --repo MiniZinc/MiniZincIDE \
-                --pattern 'MiniZincIDE-build*-bundled.dmg' \
-                --dir "$download_dir"
-            fi
-            mount_dir="$install_dir/mount"
-            mkdir "$mount_dir"
-            hdiutil attach "$download_dir"/MiniZincIDE-build*-bundled.dmg -nobrowse -mountpoint "$mount_dir"
-            bundle_dir="$mount_dir/MiniZincIDE.app/Contents/Resources"
-            ;;
-          *)
-            echo "MiniZinc Edge setup is not implemented for $RUNNER_OS" >&2
-            exit 1
-            ;;
-        esac
+        if [[ "${{ steps.cache.outputs.cache-hit }}" != "true" ]]; then
+          gh release download edge \
+            --repo MiniZinc/libminizinc \
+            --pattern '${{ steps.release.outputs.asset_name }}' \
+            --dir "$download_dir"
+        fi
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          tar -xf "$download_dir/${{ steps.release.outputs.asset_name }}" -C "$install_dir"
+        else
+          tar -xzf "$download_dir/${{ steps.release.outputs.asset_name }}" -C "$install_dir"
+        fi
 
-        minizinc="$(find "$bundle_dir" -type f -name minizinc -perm -u+x -print -quit)"
-        stdlib="$(find "$bundle_dir" -path '*/share/minizinc/std/stdlib.mzn' -print -quit)"
-        test -n "$minizinc"
-        test -n "$stdlib"
+        bin_dir="$(find "$install_dir" -type d -name bin -print -quit)"
+        test -n "$bin_dir"
+        echo "$bin_dir" >> "$GITHUB_PATH"
+        export PATH="$bin_dir:$PATH"
 
-        echo "$(dirname "$minizinc")" >> "$GITHUB_PATH"
-        echo "MZN_STDLIB_DIR=$(dirname "$(dirname "$stdlib")")" >> "$GITHUB_ENV"
-        "$minizinc" --version
+        config_dirs="$(minizinc --config-dirs)"
+        stdlib_dir="$(jq -r '.mznStdlibDir // empty' <<<"$config_dirs")"
+        test -n "$stdlib_dir"
+        echo "MZN_STDLIB_DIR=$stdlib_dir" >> "$GITHUB_ENV"
+        minizinc --version

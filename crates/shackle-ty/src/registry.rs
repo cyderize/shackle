@@ -53,6 +53,8 @@ type_registry!(
 	opt_bottom: bottom.make_opt(db),
 	set_of_bottom: Ty::par_set(db, bottom).unwrap(),
 	set_of_int: Ty::par_set(db, par_int).unwrap(),
+	var_set_of_int: set_of_int.make_var(db).unwrap(),
+	set_of_float: Ty::par_set(db, par_float).unwrap(),
 	array_of_string: Ty::array(db, par_int, string).unwrap(),
 	array_of_bottom: Ty::array(db, bottom, bottom).unwrap(),
 	array_of_opt_bottom: Ty::array(db, par_int, opt_bottom).unwrap(),

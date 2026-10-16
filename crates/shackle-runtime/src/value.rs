@@ -15,24 +15,26 @@ use std::{
 	ptr::NonNull,
 	str::{from_utf8, from_utf8_unchecked},
 	sync::{
-		Mutex,
 		atomic::{
-			self, AtomicU8, AtomicU16,
+			self, AtomicU16, AtomicU8,
 			Ordering::{Acquire, Relaxed, Release},
 		},
+		Mutex,
 	},
 };
 
 use bilge::{
-	Bitsized, TryFromBits, bitsize,
-	prelude::{Integer, u2, u61},
+	bitsize,
+	prelude::{u2, u61, Integer},
+	Bitsized, TryFromBits,
 };
 pub use num::{FloatVal, IntVal};
 use once_cell::sync::Lazy;
 pub use set::{FLOAT_SET_INF, INT_SET_INF};
 use varlen::{
-	Initializer, Layout, VarLen, define_varlen,
+	define_varlen,
 	prelude::{ArrayInitializer, FromIterPrefix},
+	Initializer, Layout, VarLen,
 };
 
 use crate::value::{
@@ -59,8 +61,8 @@ pub struct Value {
 impl Clone for Value {
 	fn clone(&self) -> Self {
 		if matches!(self.ref_ty(), RefType::Boxed) {
-			let mut x = self.get_pin();
-			debug_assert!(x.refs().ref_count.load(Relaxed) > 0);
+			let slf = self.get_pin();
+			debug_assert!(slf.refs().ref_count.load(Relaxed) > 0);
 			// Using a relaxed ordering is alright here, as knowledge of the
 			// original reference prevents other threads from erroneously deleting
 			// the object.
@@ -72,7 +74,7 @@ impl Clone for Value {
 			// another must already provide any required synchronization.
 			//
 			// [1]: (www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-			x.as_mut().muts().ref_count.fetch_add(1, Relaxed);
+			increment_strong_count(&slf.refs().ref_count);
 		}
 		Self { raw: self.raw }
 	}
@@ -86,9 +88,10 @@ impl Drop for Value {
 			if slf.as_mut().muts().ref_count.fetch_sub(1, Release) == 1 {
 				atomic::fence(Acquire);
 				unsafe { ValueStorage::deinit(self.get_pin()) };
-				if slf.refs().weak_count.load(Relaxed) == 0 {
-					unsafe { ValueStorage::drop(slf) }
-				}
+				// Each allocation has an implicit weak reference while it has at
+				// least one strong reference. Releasing it here makes exactly one
+				// of the final strong or weak drops responsible for deallocation.
+				unsafe { ValueStorage::release_weak(slf) };
 			}
 		}
 	}
@@ -266,6 +269,10 @@ impl Value {
 			let p = std::alloc::alloc(alloc_layout) as *mut ValueStorage;
 			let layout_size = layout.size();
 			init.initialize(NonNull::new_unchecked(p), layout);
+			// Retain one implicit weak reference for the lifetime of the strong
+			// references. This prevents a weak drop from racing the last strong
+			// drop to free the allocation.
+			(*p).weak_count.store(1, Relaxed);
 			debug_assert_eq!((*p).calculate_layout().size(), layout_size);
 			let p = p as u64;
 			debug_assert!(p & (0b11 << 62) == 0 && p != 0);
@@ -320,6 +327,14 @@ impl Value {
 			int_set_var: InitEmpty,
 			bytes: InitEmpty,
 		})
+	}
+
+	/// Downgrade to a weak reference. The value must be boxed.
+	pub fn downgrade(&self) -> WeakValue {
+		assert_eq!(self.ref_ty(), RefType::Boxed);
+		let slf = self.get_pin();
+		increment_weak_count(&slf.refs().weak_count);
+		WeakValue { raw: self.raw }
 	}
 
 	unsafe fn get_ptr(&self) -> *mut ValueStorage {
@@ -470,7 +485,8 @@ struct ValueStorage {
 	len: u32,
 	// Number of values referencing this value
 	ref_count: AtomicU16,
-	// Number of weak references (e.g., CSE)
+	// Number of weak references, including one implicit reference while there
+	// are any strong references.
 	weak_count: AtomicU8,
 	#[varlen_array]
 	idents: [NonZeroU32; match *ty {
@@ -556,12 +572,94 @@ impl ValueStorage {
 		ValueStorage::vdrop(slf, layout);
 		std::alloc::dealloc(ptr as *mut u8, alloc_layout);
 	}
+
+	unsafe fn release_weak(mut slf: Pin<&mut ValueStorage>) {
+		if slf.as_mut().muts().weak_count.fetch_sub(1, Release) == 1 {
+			atomic::fence(Acquire);
+			unsafe { ValueStorage::drop(slf) };
+		}
+	}
 }
 
 struct InitEmpty;
 unsafe impl<T> ArrayInitializer<T> for InitEmpty {
 	fn initialize(self, dst: &mut [MaybeUninit<T>]) {
 		assert_eq!(dst.len(), 0);
+	}
+}
+
+fn increment_strong_count(counter: &AtomicU16) {
+	let _ = counter
+		.fetch_update(Relaxed, Relaxed, |count| count.checked_add(1))
+		.expect("strong reference count overflow");
+}
+
+fn increment_weak_count(counter: &AtomicU8) {
+	let _ = counter
+		.fetch_update(Relaxed, Relaxed, |count| count.checked_add(1))
+		.expect("weak reference count overflow");
+}
+
+fn increment_strong_count_if_nonzero(counter: &AtomicU16) -> bool {
+	let mut count = counter.load(Relaxed);
+	loop {
+		if count == 0 {
+			return false;
+		}
+		let next = count
+			.checked_add(1)
+			.expect("strong reference count overflow");
+		match counter.compare_exchange_weak(count, next, Acquire, Relaxed) {
+			Ok(_) => return true,
+			Err(actual) => count = actual,
+		}
+	}
+}
+
+/// Weak reference to a boxed value
+pub struct WeakValue {
+	raw: NonZeroU64,
+}
+
+impl WeakValue {
+	/// Upgrade to a strong reference, if the value is still alive.
+	pub fn upgrade(&self) -> Option<Value> {
+		let slf = self.get_pin();
+		if increment_strong_count_if_nonzero(&slf.refs().ref_count) {
+			Some(Value { raw: self.raw })
+		} else {
+			None
+		}
+	}
+
+	unsafe fn get_ptr(&self) -> *mut ValueStorage {
+		(self.raw.get() >> 2) as *mut ValueStorage
+	}
+
+	fn get_pin(&self) -> Pin<&mut ValueStorage> {
+		unsafe { Pin::new_unchecked(&mut (*self.get_ptr())) }
+	}
+}
+
+impl Clone for WeakValue {
+	fn clone(&self) -> Self {
+		let slf = self.get_pin();
+		debug_assert!(slf.refs().weak_count.load(Relaxed) > 0);
+		increment_weak_count(&slf.refs().weak_count);
+		Self { raw: self.raw }
+	}
+}
+
+impl Drop for WeakValue {
+	fn drop(&mut self) {
+		let slf = self.get_pin();
+		unsafe { ValueStorage::release_weak(slf) };
+	}
+}
+
+impl Debug for WeakValue {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_tuple("WeakValue").field(&self.upgrade()).finish()
 	}
 }
 
@@ -589,6 +687,44 @@ mod tests {
 			tup2.get_pin().calculate_layout().size(),
 			BOX_BASE_BYTES + std::mem::size_of_val(t)
 		);
+	}
+
+	#[test]
+	fn weak_value_upgrades_while_strong_value_exists() {
+		let value = Value::from("weak");
+		let weak = value.downgrade();
+		assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 1);
+
+		let upgraded = weak.upgrade().expect("value should still be alive");
+		assert_eq!(upgraded.deref(), DataView::Str("weak"));
+		assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 2);
+	}
+
+	#[test]
+	fn weak_value_expires_and_releases_references() {
+		let inner = Value::from("inner");
+		let value: Value = [inner.clone()].into_iter().collect();
+		let weak = value.downgrade();
+		assert_eq!(inner.get_pin().refs().ref_count.load(Relaxed), 2);
+
+		drop(value);
+		assert!(weak.upgrade().is_none());
+		// Dropping the final strong reference deinitializes contained Values even
+		// though the allocation remains alive for `weak`.
+		assert_eq!(inner.get_pin().refs().ref_count.load(Relaxed), 1);
+	}
+
+	#[test]
+	fn weak_value_clone_and_drop_track_weak_references() {
+		let value = Value::from("weak");
+		let weak = value.downgrade();
+		let weak_clone = weak.clone();
+		assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 3);
+
+		drop(value);
+		assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
+		drop(weak_clone);
+		assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
 	}
 
 	#[test]

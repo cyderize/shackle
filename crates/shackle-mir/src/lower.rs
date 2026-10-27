@@ -12,7 +12,7 @@ use crate::{
 	Annotation, AnnotationCall, AnnotationId, Array, Builtin, Call, Comprehension, Constraint,
 	Declaration, Expression, ExpressionData, Function, FunctionData, FunctionId, Generator,
 	GlobalAssignment, GlobalVar, Identifier, IfThenElse, Let, LetItem, LetResult, Literal,
-	LiteralData, Model, Parameter, Set, Solve, Tuple, TupleAccess, Value, ValueData,
+	LiteralData, Model, Parameter, Set, SetType, Solve, Tuple, TupleAccess, Value, ValueData,
 };
 
 struct LoweringContext<'db> {
@@ -427,6 +427,13 @@ impl<'a, 'db> Collector<'a, 'db> {
 			.into(),
 			shackle_thir::ExpressionData::SetLiteral(sl) => Value::new(
 				Set {
+					kind: if ty == self.tys.set_of_int {
+						SetType::Integer
+					} else if ty == self.tys.set_of_float {
+						SetType::Float
+					} else {
+						SetType::Discrete
+					},
 					members: sl
 						.iter()
 						.map(|e| {

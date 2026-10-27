@@ -38,6 +38,7 @@ pub fn lower_model<'db>(model: &shackle_mir::Model<'db>) -> Program<'db> {
 		ctx.annotation_map.insert(i, idx);
 	}
 
+	let global_slot_count = model.global_vars.len();
 	for (i, _) in model.global_vars.iter() {
 		ctx.global_slots
 			.insert(i, SlotId::Absolute(NonZeroU32::new(i.into()).unwrap()));
@@ -47,11 +48,11 @@ pub fn lower_model<'db>(model: &shackle_mir::Model<'db>) -> Program<'db> {
 		if let Some(body) = function.body.as_ref() {
 			let interferences = Liveness::new(function).analyse();
 			let slot_assignments = SlotAllocator::new(function, &interferences).allocate_slots();
-			let mut slot_count = 0;
+			let mut slot_count = function.parameters.len() as u32;
 			let slots = slot_assignments
 				.into_iter()
 				.map(|(d, s)| {
-					slot_count = slot_count.max(s.into_raw() - 1);
+					slot_count = slot_count.max(s.into_raw());
 					(d, SlotId::Relative(NonZeroU32::new(s.into_raw()).unwrap()))
 				})
 				.collect();
@@ -77,6 +78,7 @@ pub fn lower_model<'db>(model: &shackle_mir::Model<'db>) -> Program<'db> {
 	}
 
 	Program {
+		global_slot_count: global_slot_count as usize,
 		functions: ctx.functions,
 		annotations: ctx.annotations,
 		main_entry_point: ctx.function_map[model.main_entrypoint],
@@ -128,6 +130,8 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 		}
 		if let shackle_mir::LetResult::Expression(e) = &l.result {
 			self.lower_expression(destination, e);
+		} else if destination == Destination::Return {
+			let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
 		}
 	}
 
@@ -285,6 +289,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 					.collect(),
 			}),
 			shackle_mir::ValueData::Set(set) => Value::Set(Set {
+				kind: set.kind,
 				members: set
 					.members
 					.iter()

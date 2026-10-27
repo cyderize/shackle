@@ -12,7 +12,7 @@ miette = {workspace = true}
 once_cell = "1.21.4"
 rand = "0.10.3"
 rand_distr = "0.6.0"
-rangelist = "0.5.0"
+rangelist = "0.6.0"
 rustc-hash = {workspace = true}
 shackle-hir = {workspace = true}
 shackle-ir = {workspace = true}

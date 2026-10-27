@@ -162,6 +162,7 @@ impl Value {
 	}
 }
 
+/// A view of an integer set
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntSetView<'a> {
 	/// Whether the set has a defined lower bound
@@ -177,7 +178,8 @@ pub struct IntSetView<'a> {
 }
 
 impl<'a> IntervalIterator<IntVal> for IntSetView<'a> {
-	type IntervalIter = FilterMap<
+	type IntervalIter<'b>
+		= FilterMap<
 		Tuples<
 			Chain<
 				Chain<Once<IntVal>, MapInto<Copied<std::slice::Iter<'a, i64>>, IntVal>>,
@@ -186,9 +188,11 @@ impl<'a> IntervalIterator<IntVal> for IntSetView<'a> {
 			(IntVal, IntVal),
 		>,
 		fn((IntVal, IntVal)) -> Option<RangeInclusive<IntVal>>,
-	>;
+	>
+	where
+		Self: 'b;
 
-	fn intervals(&self) -> Self::IntervalIter {
+	fn intervals(&self) -> Self::IntervalIter<'_> {
 		once(self.lower_bound())
 			.chain(
 				self.intervals[self.has_lb as usize..]
@@ -304,12 +308,15 @@ pub struct FloatSetView<'a> {
 }
 
 impl<'a> IntervalIterator<FloatVal> for FloatSetView<'a> {
-	type IntervalIter = Map<
+	type IntervalIter<'b>
+		= Map<
 		Tuples<Copied<std::slice::Iter<'a, FloatVal>>, (FloatVal, FloatVal)>,
 		fn((FloatVal, FloatVal)) -> RangeInclusive<FloatVal>,
-	>;
+	>
+	where
+		Self: 'b;
 
-	fn intervals(&self) -> Self::IntervalIter {
+	fn intervals(&self) -> Self::IntervalIter<'_> {
 		self.intervals.iter().copied().tuples().map(|(a, b)| a..=b)
 	}
 }
@@ -384,6 +391,7 @@ impl Display for FloatSetView<'_> {
 	}
 }
 
+/// The empty integer set
 pub static INT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::IntSet,
@@ -401,6 +409,7 @@ pub static INT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 		bytes: InitEmpty,
 	})
 });
+/// The infinite integer set
 pub static INT_SET_INF: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::IntSet,
@@ -419,6 +428,7 @@ pub static INT_SET_INF: Lazy<Value> = Lazy::new(|| {
 	})
 });
 
+/// THe empty float set
 pub static FLOAT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::FloatSet,
@@ -436,6 +446,7 @@ pub static FLOAT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 		bytes: InitEmpty,
 	})
 });
+/// The infinite float set
 pub static FLOAT_SET_INF: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::FloatSet,
@@ -481,12 +492,12 @@ impl FromIterator<RangeInclusive<IntVal>> for Value {
 		if matches!(values.front().unwrap(), IntVal::Int(_)) {
 			len |= 0b01;
 		} else {
-			values.pop_front();
+			let _ = values.pop_front();
 		}
 		if matches!(values.back().unwrap(), IntVal::Int(_)) {
 			len |= 0b10;
 		} else {
-			values.pop_back();
+			let _ = values.pop_back();
 		}
 
 		debug_assert_eq!(ValueStorage::int_set_len(len), values.len());

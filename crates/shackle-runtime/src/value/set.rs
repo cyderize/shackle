@@ -1,6 +1,7 @@
 use std::{
 	collections::VecDeque,
 	fmt::Display,
+	hash::{Hash, Hasher},
 	iter::{Chain, Copied, FilterMap, Map, Once, once},
 	ops::RangeInclusive,
 };
@@ -8,10 +9,11 @@ use std::{
 use itertools::{Itertools, MapInto, Tuples};
 use once_cell::sync::Lazy;
 use rangelist::IntervalIterator;
+use rustc_hash::FxHashSet;
 use varlen::array_init::FromIterPrefix;
 
 use crate::{
-	Value,
+	DataView, Value,
 	value::{
 		InitEmpty, ValType, ValueStorage,
 		num::{FloatVal, IntVal},
@@ -19,7 +21,148 @@ use crate::{
 	},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// A borrowed view of a finite set of non-range values.
+///
+/// Unlike [`IntSetView`] and [`FloatSetView`], this can represent values such
+/// as strings, variables, annotations, and tuples.
+#[derive(Debug, Clone)]
+pub struct Set<'a> {
+	pub(crate) values: &'a [Value],
+}
+
+impl PartialEq for Set<'_> {
+	fn eq(&self, other: &Self) -> bool {
+		self.card() == other.card() && self.values().all(|value| other.contains(value))
+	}
+}
+impl Eq for Set<'_> {}
+impl Hash for Set<'_> {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		// Set values are sorted when constructed, so equal sets have identical
+		// storage order.
+		self.values.hash(state);
+	}
+}
+impl PartialOrd for Set<'_> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+impl Ord for Set<'_> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.values.cmp(other.values)
+	}
+}
+
+impl Set<'_> {
+	/// Return the number of values in the set.
+	pub fn card(&self) -> Value {
+		(self.values.len() as i64).into()
+	}
+
+	/// Return whether the set contains no values.
+	pub fn is_empty(&self) -> bool {
+		self.values.is_empty()
+	}
+
+	/// Iterate over the values in the set.
+	pub fn values(&self) -> impl Iterator<Item = &Value> {
+		self.values.iter()
+	}
+
+	/// Get the minimum value in the set, if any.
+	pub fn min_value(&self) -> Option<Value> {
+		self.values.first().cloned()
+	}
+
+	/// Get the maximum value in the set, if any.
+	pub fn max_value(&self) -> Option<Value> {
+		self.values.last().cloned()
+	}
+
+	/// Return whether the set contains `value`.
+	pub fn contains(&self, value: &Value) -> bool {
+		self.values.contains(value)
+	}
+
+	/// Return the union of this set and `other`.
+	pub fn union(&self, other: &Self) -> Value {
+		Value::new_discrete_set(
+			self.values
+				.iter()
+				.cloned()
+				.chain(other.values.iter().cloned()),
+		)
+	}
+
+	/// Return the intersection of this set and `other`.
+	pub fn intersect(&self, other: &Self) -> Value {
+		Value::new_discrete_set(
+			self.values
+				.iter()
+				.cloned()
+				.filter(|value| other.contains(value)),
+		)
+	}
+
+	/// Return the difference of this set and `other`.
+	pub fn diff(&self, other: &Self) -> Value {
+		Value::new_discrete_set(
+			self.values
+				.iter()
+				.cloned()
+				.filter(|value| !other.contains(value)),
+		)
+	}
+}
+
+impl Value {
+	/// Construct a finite, discrete set of values.
+	pub fn new_discrete_set(values: impl IntoIterator<Item = Value>) -> Value {
+		let values = FxHashSet::from_iter(values.into_iter());
+		Self::new_box(value_storage::Init {
+			ty: ValType::Set,
+			len: values.len() as u32,
+			ref_count: 1.into(),
+			weak_count: 0.into(),
+			values: FromIterPrefix(values.into_iter().sorted()),
+			idents: InitEmpty,
+			ints: InitEmpty,
+			floats: InitEmpty,
+			bool_var: InitEmpty,
+			int_var: InitEmpty,
+			float_var: InitEmpty,
+			int_set_var: InitEmpty,
+			bytes: InitEmpty,
+		})
+	}
+
+	/// Get value an integer set
+	pub fn as_int_set(&self) -> IntSetView<'_> {
+		let DataView::IntSet(i) = self.deref() else {
+			panic!("expected int set, found {self:?}");
+		};
+		i
+	}
+
+	/// Get value as a float set
+	pub fn as_float_set(&self) -> FloatSetView<'_> {
+		let DataView::FloatSet(f) = self.deref() else {
+			panic!("expected float set, found {self:?}");
+		};
+		f
+	}
+
+	/// Get value as a discrete set of values
+	pub fn as_discrete_set(&self) -> Set<'_> {
+		let DataView::Set(s) = self.deref() else {
+			panic!("expected discrete set, found {self:?}");
+		};
+		s
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntSetView<'a> {
 	/// Whether the set has a defined lower bound
 	pub(crate) has_lb: bool,
@@ -121,6 +264,11 @@ impl IntSetView<'_> {
 			IntVal::InfPos
 		}
 	}
+
+	/// Returns whether the set is contiguous (i.e., has no gaps)
+	pub fn is_contiguous(&self) -> bool {
+		self.intervals().count() == 1
+	}
 }
 
 impl Display for IntSetView<'_> {
@@ -148,8 +296,9 @@ impl Display for IntSetView<'_> {
 		}
 	}
 }
-
-#[derive(Debug, Clone, PartialEq)]
+/// A view of a float set
+///
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FloatSetView<'a> {
 	pub(crate) intervals: &'a [FloatVal],
 }

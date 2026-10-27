@@ -134,7 +134,7 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for ComprehensionRewriter<'db, Dst> 
 						&self.result,
 						expression.origin(),
 						LookupCall {
-							function: self.ids.functions.mzn_array2set.into(),
+							function: self.ids.functions.array2set_internal.into(),
 							arguments: vec![Expression::new(
 								db,
 								&self.result,
@@ -737,7 +737,7 @@ mod tests {
 			expect!([r#"
     set of int: S;
     function var int: foo(int: x);
-    var set of int: x = mzn_array2set([foo(i) | i in S]);
+    var set of int: x = array2set_internal([foo(i) | i in S]);
 "#]),
 		)
 	}
@@ -758,7 +758,7 @@ mod tests {
 			expect!([r#"
     var set of int: S;
     function var int: foo(int: x);
-    var set of int: x = mzn_array2set([if _DECL_1 then val2opt(foo(i)) else let {
+    var set of int: x = array2set_internal([if _DECL_1 then val2opt(foo(i)) else let {
       var opt int: _DECL_2 = <>;
     } in _DECL_2 endif | i in ub(S), _DECL_1 :: (mzn_var_where_clause) = 'in'(i, S)]);
 "#]),

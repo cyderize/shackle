@@ -965,7 +965,6 @@ function var set of $$E: 'symdiff'(var set of $$E: x, var set of $$E: y) =
 
 % Coercions
 
-function int: bool2int(bool: x) = if x then 1 else 0 endif;
 function var int: bool2int(var bool: x) = bool2int_t(x);
 
 function var int: bool2int_t(

@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn, reason = "occurs due to varlen derive macro")]
+
 //! Value representation for the Shackle runtime.
 mod bool_var;
 mod float_var;
@@ -8,42 +10,45 @@ mod seq;
 mod set;
 
 use std::{
+	cmp::Ordering,
 	fmt::Debug,
+	hash::{Hash, Hasher},
 	mem::MaybeUninit,
 	num::{NonZeroU32, NonZeroU64},
 	pin::Pin,
 	ptr::NonNull,
 	str::{from_utf8, from_utf8_unchecked},
 	sync::{
+		Mutex,
 		atomic::{
-			self, AtomicU16, AtomicU8,
+			self, AtomicU8, AtomicU16,
 			Ordering::{Acquire, Relaxed, Release},
 		},
-		Mutex,
 	},
 };
 
 use bilge::{
-	bitsize,
-	prelude::{u2, u61, Integer},
-	Bitsized, TryFromBits,
+	Bitsized, TryFromBits, bitsize,
+	prelude::{Integer, u2, u61},
 };
-pub use num::{FloatVal, IntVal};
 use once_cell::sync::Lazy;
-pub use set::{FLOAT_SET_INF, INT_SET_INF};
+use seq::{InnerViewType, ViewType};
 use varlen::{
-	define_varlen,
+	Initializer, Layout, VarLen, define_varlen,
 	prelude::{ArrayInitializer, FromIterPrefix},
-	Initializer, Layout, VarLen,
 };
 
-use crate::value::{
+use crate::value::seq::{Pairs, SeqViewInner};
+pub use crate::value::{
 	bool_var::{BoolVar, BoolVarRef},
 	float_var::{FloatVar, FloatVarRef},
 	int_set_var::{IntSetVar, IntSetVarRef},
 	int_var::{IntVar, IntVarRef},
-	seq::{InnerViewType, Pairs, SeqView, ViewType},
-	set::{FloatSetView, IntSetView},
+	num::{FLOAT_INF_NEG, FLOAT_INF_POS, FloatVal, INT_INF_NEG, INT_INF_POS, IntVal},
+	seq::{EMPTY_SEQ, SeqView},
+	set::{
+		FLOAT_SET_EMPTY, FLOAT_SET_INF, FloatSetView, INT_SET_EMPTY, INT_SET_INF, IntSetView, Set,
+	},
 };
 
 #[bitsize(2)]
@@ -54,6 +59,7 @@ enum RefType {
 	Int = 0b10,
 }
 
+/// A value which is computed by the interpreter.
 pub struct Value {
 	raw: NonZeroU64,
 }
@@ -74,7 +80,7 @@ impl Clone for Value {
 			// another must already provide any required synchronization.
 			//
 			// [1]: (www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-			increment_strong_count(&slf.refs().ref_count);
+			let _ = increment_strong_count(&slf.refs().ref_count);
 		}
 		Self { raw: self.raw }
 	}
@@ -83,16 +89,7 @@ impl Clone for Value {
 impl Drop for Value {
 	fn drop(&mut self) {
 		if matches!(self.ref_ty(), RefType::Boxed) {
-			let mut slf = self.get_pin();
-			debug_assert!(slf.refs().ref_count.load(Relaxed) > 0);
-			if slf.as_mut().muts().ref_count.fetch_sub(1, Release) == 1 {
-				atomic::fence(Acquire);
-				unsafe { ValueStorage::deinit(self.get_pin()) };
-				// Each allocation has an implicit weak reference while it has at
-				// least one strong reference. Releasing it here makes exactly one
-				// of the final strong or weak drops responsible for deallocation.
-				unsafe { ValueStorage::release_weak(slf) };
-			}
+			unsafe { ValueStorage::release_strong(self.get_pin()) };
 		}
 	}
 }
@@ -114,6 +111,107 @@ impl PartialEq for Value {
 		self.deref().eq(&other.deref())
 	}
 }
+impl Eq for Value {}
+
+impl Hash for Value {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		use DataView::*;
+
+		match self.deref() {
+			// Scalar equality is based on the tagged representation rather than
+			// the decoded value, so preserve that distinction when hashing.
+			Int(_) | Float(_) => self.raw.hash(state),
+			Seq(value) => {
+				2_u8.hash(state);
+				value.hash(state);
+			}
+			Set(value) => {
+				3_u8.hash(state);
+				value.hash(state);
+			}
+			Str(value) => {
+				4_u8.hash(state);
+				value.hash(state);
+			}
+			IntSet(value) => {
+				5_u8.hash(state);
+				value.hash(state);
+			}
+			FloatSet(value) => {
+				6_u8.hash(state);
+				value.hash(state);
+			}
+			Annotation(value) => {
+				7_u8.hash(state);
+				value.hash(state);
+			}
+			BoolVar(value) => {
+				8_u8.hash(state);
+				value.ident().hash(state);
+			}
+			IntVar(value) => {
+				9_u8.hash(state);
+				value.ident().hash(state);
+			}
+			FloatVar(value) => {
+				10_u8.hash(state);
+				value.ident().hash(state);
+			}
+			IntSetVar(value) => {
+				11_u8.hash(state);
+				value.ident().hash(state);
+			}
+		}
+	}
+}
+
+impl PartialOrd for Value {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for Value {
+	fn cmp(&self, other: &Self) -> Ordering {
+		use DataView::*;
+
+		match (self.deref(), other.deref()) {
+			(Int(lhs), Int(rhs)) => lhs.cmp(&rhs).then_with(|| self.raw.cmp(&other.raw)),
+			(Float(lhs), Float(rhs)) => lhs.cmp(&rhs).then_with(|| self.raw.cmp(&other.raw)),
+			(Seq(lhs), Seq(rhs)) => lhs.cmp(&rhs),
+			(Set(lhs), Set(rhs)) => lhs.cmp(&rhs),
+			(Str(lhs), Str(rhs)) => lhs.cmp(rhs),
+			(IntSet(lhs), IntSet(rhs)) => lhs.cmp(&rhs),
+			(FloatSet(lhs), FloatSet(rhs)) => lhs.cmp(&rhs),
+			(Annotation(lhs), Annotation(rhs)) => lhs
+				.ident
+				.cmp(&rhs.ident)
+				.then_with(|| lhs.arguments.cmp(rhs.arguments)),
+			(BoolVar(lhs), BoolVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
+			(IntVar(lhs), IntVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
+			(FloatVar(lhs), FloatVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
+			(IntSetVar(lhs), IntSetVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
+			(lhs, rhs) => data_view_discriminant(&lhs).cmp(&data_view_discriminant(&rhs)),
+		}
+	}
+}
+
+fn data_view_discriminant(value: &DataView<'_>) -> u8 {
+	match value {
+		DataView::Int(_) => 0,
+		DataView::Float(_) => 1,
+		DataView::Seq(_) => 2,
+		DataView::Set(_) => 3,
+		DataView::Str(_) => 4,
+		DataView::IntSet(_) => 5,
+		DataView::FloatSet(_) => 6,
+		DataView::Annotation(_) => 7,
+		DataView::BoolVar(_) => 8,
+		DataView::IntVar(_) => 9,
+		DataView::FloatVar(_) => 10,
+		DataView::IntSetVar(_) => 11,
+	}
+}
 
 impl Debug for Value {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -132,7 +230,9 @@ impl Value {
 	const FLOAT_TAG: u64 = 0b1;
 	const INT_SIGN_BIT: u64 = 0b100;
 	const INT_TAG: u64 = 0b10;
+	/// Max integer value
 	pub const MAX_INT: i64 = <u61 as Integer>::MAX.value() as i64;
+	/// Min integer value
 	pub const MIN_INT: i64 = -(Self::MAX_INT + 1);
 
 	/// Determine the type of the reference based on bit-tags
@@ -148,6 +248,7 @@ impl Value {
 		}
 	}
 
+	/// Get the value as a [DataView].
 	pub fn deref(&self) -> DataView<'_> {
 		match self.ref_ty() {
 			RefType::Float => {
@@ -199,7 +300,10 @@ impl Value {
 						let val = v.refs().floats[0];
 						DataView::Float(val)
 					}
-					ValType::Seq => DataView::Seq(SeqView::Direct(v.refs().values)),
+					ValType::Seq => DataView::Seq(SeqViewInner::Direct(v.refs().values).into()),
+					ValType::Set => DataView::Set(Set {
+						values: v.refs().values,
+					}),
 					ValType::Str => DataView::Str(from_utf8_unchecked(v.refs().bytes)),
 					ValType::IntSet => DataView::IntSet(IntSetView {
 						has_lb: v.len & 0b01 != 0,
@@ -216,27 +320,31 @@ impl Value {
 					ValType::View => {
 						let vty = ViewType::from_len(v.len);
 						DataView::Seq(match vty.ty() {
-							InnerViewType::Dim => SeqView::WithDim {
+							InnerViewType::Dim => SeqViewInner::WithDim {
 								dims: Pairs::new(v.refs().ints),
 								storage: &v.refs().values[0],
-							},
+							}
+							.into(),
 							InnerViewType::Slice => {
 								let slice_offset = vty.slice() as usize;
-								SeqView::Slice {
+								SeqViewInner::Slice {
 									dims: Pairs::new(&v.refs().ints[..slice_offset]),
 									slice: Pairs::new(&v.refs().ints[slice_offset..]),
 									storage: &v.refs().values[0],
 								}
+								.into()
 							}
-							InnerViewType::Transpose => SeqView::Transposed {
+							InnerViewType::Transpose => SeqViewInner::Transposed {
 								reloc: v.refs().ints,
 								storage: &v.refs().values[0],
-							},
-							InnerViewType::Compact => SeqView::Compressed {
+							}
+							.into(),
+							InnerViewType::Compact => SeqViewInner::Compressed {
 								dims: Pairs::new(&v.refs().ints[1..]),
 								repeat: v.refs().ints[0],
 								storage: &v.refs().values[0],
-							},
+							}
+							.into(),
 						})
 					}
 					ValType::BoolVar => {
@@ -254,6 +362,7 @@ impl Value {
 		}
 	}
 
+	/// Check whether the value is equal to a constant value.
 	pub fn is_constant(&self, c: &'static Value) -> bool {
 		self.raw == c.raw
 	}
@@ -282,6 +391,7 @@ impl Value {
 		}
 	}
 
+	/// Create a string value
 	pub fn new_str<I: ExactSizeIterator<Item = u8>, S: IntoIterator<IntoIter = I>>(s: S) -> Value {
 		let s = s.into_iter();
 		if s.len() == 0 {
@@ -346,8 +456,17 @@ impl Value {
 		assert_eq!(self.ref_ty(), RefType::Boxed);
 		unsafe { Pin::new_unchecked(&mut (*self.get_ptr())) }
 	}
+
+	/// Get value as a string
+	pub fn as_str(&self) -> &str {
+		let DataView::Str(s) = self.deref() else {
+			panic!("expected value to be a string literal")
+		};
+		s
+	}
 }
 
+/// The empty string value
 pub static EMPTY_STRING: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::Str,
@@ -383,23 +502,37 @@ impl<'a> TryInto<&'a str> for &'a Value {
 	}
 }
 
+/// Used to access the data in a [Value]
 #[derive(Debug, PartialEq)]
 pub enum DataView<'a> {
+	/// Integer value, which can be either a boxed integer or an unboxed integer.
 	Int(IntVal),
+	/// Floating point value, which can be either a boxed float or an unboxed float.
 	Float(FloatVal),
+	/// Sequence of values (tuple or array)
 	Seq(SeqView<'a>),
+	/// Finite set of non-range values.
+	Set(Set<'a>),
+	/// Character string
 	Str(&'a str),
+	/// Integer set
 	IntSet(IntSetView<'a>),
+	/// Floating point set
 	FloatSet(FloatSetView<'a>),
+	/// Annotation
 	Annotation(AnnotationView<'a>),
+	/// Boolean variable
 	BoolVar(BoolVarRef<'a>),
+	/// Integer variable
 	IntVar(IntVarRef<'a>),
+	/// Float variable
 	FloatVar(FloatVarRef<'a>),
+	/// Int set variable
 	IntSetVar(IntSetVarRef<'a>),
 }
 
 /// A borrowed view of an annotation value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AnnotationView<'a> {
 	/// The annotation identifier.
 	pub ident: NonZeroU32,
@@ -409,6 +542,7 @@ pub struct AnnotationView<'a> {
 
 macro_rules! define_var_ref {
 	($v:ident, $r:ident) => {
+		/// A reference to a variable
 		#[derive(Debug)]
 		pub struct $r<'a> {
 			guard: std::sync::MutexGuard<'a, $v>,
@@ -450,6 +584,8 @@ enum ValType {
 	Float,
 	/// Types that can be represented as simple sequences of values: Tuples, 1-to-n arrays
 	Seq,
+	/// A finite set of non-range values.
+	Set,
 	/// An annotation identifier and its arguments
 	Annotation,
 	/// Character strings
@@ -496,7 +632,7 @@ struct ValueStorage {
 
 	#[varlen_array]
 	values: [Value; match *ty {
-		ValType::Seq | ValType::Annotation => *len as usize,
+		ValType::Seq | ValType::Set | ValType::Annotation => *len as usize,
 		ValType::View => 1,
 		_ => 0,
 	}],
@@ -552,31 +688,74 @@ impl ValueStorage {
 
 	unsafe fn deinit(slf: Pin<&mut ValueStorage>) {
 		match slf.ty {
-			ValType::Seq | ValType::Annotation => {
-				// Replace all values in the sequence with non-reference counted objects
+			ValType::Seq | ValType::Set | ValType::Annotation => {
+				// Replace all contained values with non-reference counted objects.
 				for v in slf.muts().values {
 					*v = 0.into();
 				}
 			}
 			ValType::View => slf.muts().values[0] = 0.into(),
+			ValType::IntVar => slf.muts().int_var[0].lock().unwrap().clear_domain(),
+			ValType::FloatVar => slf.muts().float_var[0].lock().unwrap().clear_domain(),
+			ValType::IntSetVar => slf.muts().int_set_var[0].lock().unwrap().clear_domain(),
 			_ => {}
 		}
 	}
 
 	unsafe fn drop(slf: Pin<&mut ValueStorage>) {
-		let ptr: *mut ValueStorage = Pin::get_unchecked_mut(slf);
-		let slf = Pin::new_unchecked(&mut *ptr);
+		let ptr: *mut ValueStorage = unsafe { Pin::get_unchecked_mut(slf) };
+		let slf = unsafe { Pin::new_unchecked(&mut *ptr) };
 		let layout = ValueStorage::calculate_layout(&slf);
-		let alloc_layout =
-			std::alloc::Layout::from_size_align_unchecked(layout.size(), ValueStorage::ALIGN);
-		ValueStorage::vdrop(slf, layout);
-		std::alloc::dealloc(ptr as *mut u8, alloc_layout);
+		let alloc_layout = unsafe {
+			std::alloc::Layout::from_size_align_unchecked(layout.size(), ValueStorage::ALIGN)
+		};
+		unsafe {
+			ValueStorage::vdrop(slf, layout);
+			std::alloc::dealloc(ptr as *mut u8, alloc_layout);
+		}
 	}
 
 	unsafe fn release_weak(mut slf: Pin<&mut ValueStorage>) {
-		if slf.as_mut().muts().weak_count.fetch_sub(1, Release) == 1 {
+		let muts = slf.as_mut().muts();
+		if muts.weak_count.fetch_sub(1, Release) == 1 {
 			atomic::fence(Acquire);
-			unsafe { ValueStorage::drop(slf) };
+			let needs_deinit = match muts.ty {
+				ValType::BoolVar => muts.bool_var[0].lock().unwrap().binding_domain(),
+				ValType::IntVar => muts.int_var[0].lock().unwrap().binding_domain(),
+				ValType::FloatVar => muts.float_var[0].lock().unwrap().binding_domain(),
+				ValType::IntSetVar => muts.int_set_var[0].lock().unwrap().binding_domain(),
+				_ => false,
+			};
+			unsafe {
+				if needs_deinit {
+					ValueStorage::deinit(slf.as_mut());
+				}
+				ValueStorage::drop(slf)
+			}
+		}
+	}
+
+	unsafe fn release_strong(mut slf: Pin<&mut ValueStorage>) {
+		debug_assert!(slf.refs().ref_count.load(Relaxed) > 0);
+		let muts = slf.as_mut().muts();
+		if muts.ref_count.fetch_sub(1, Release) == 1 {
+			atomic::fence(Acquire);
+			match muts.ty {
+				ValType::BoolVar if muts.bool_var[0].lock().unwrap().binding_domain() => {}
+				ValType::IntVar if muts.int_var[0].lock().unwrap().binding_domain() => {}
+				ValType::FloatVar if muts.float_var[0].lock().unwrap().binding_domain() => {}
+				ValType::IntSetVar if muts.int_set_var[0].lock().unwrap().binding_domain() => {}
+				_ => {
+					unsafe {
+						ValueStorage::deinit(slf.as_mut());
+					};
+				}
+			}
+
+			unsafe {
+				// Release implicit weak reference
+				ValueStorage::release_weak(slf);
+			}
 		}
 	}
 }
@@ -588,10 +767,10 @@ unsafe impl<T> ArrayInitializer<T> for InitEmpty {
 	}
 }
 
-fn increment_strong_count(counter: &AtomicU16) {
-	let _ = counter
+fn increment_strong_count(counter: &AtomicU16) -> u16 {
+	counter
 		.fetch_update(Relaxed, Relaxed, |count| count.checked_add(1))
-		.expect("strong reference count overflow");
+		.expect("strong reference count overflow")
 }
 
 fn increment_weak_count(counter: &AtomicU8) {
@@ -622,9 +801,64 @@ pub struct WeakValue {
 }
 
 impl WeakValue {
+	/// Check whether the value is still alive.
+	pub fn is_alive(&self) -> bool {
+		let slf = self.get_pin();
+		match slf.refs().ty {
+			ValType::BoolVar if slf.refs().bool_var[0].lock().unwrap().binding_domain() => true,
+			ValType::IntVar if slf.refs().int_var[0].lock().unwrap().binding_domain() => true,
+			ValType::FloatVar if slf.refs().float_var[0].lock().unwrap().binding_domain() => true,
+			ValType::IntSetVar if slf.refs().int_set_var[0].lock().unwrap().binding_domain() => {
+				true
+			}
+			_ => slf.refs().ref_count.load(Relaxed) > 0,
+		}
+	}
+
 	/// Upgrade to a strong reference, if the value is still alive.
 	pub fn upgrade(&self) -> Option<Value> {
 		let slf = self.get_pin();
+
+		match slf.refs().ty {
+			ValType::BoolVar => {
+				let var = slf.refs().bool_var[0].lock().unwrap();
+				if var.binding_domain() {
+					if increment_strong_count(&slf.refs().ref_count) == 0 {
+						increment_weak_count(&slf.refs().weak_count);
+					}
+					return Some(Value { raw: self.raw });
+				}
+			}
+			ValType::IntVar => {
+				let var = slf.refs().int_var[0].lock().unwrap();
+				if var.binding_domain() {
+					if increment_strong_count(&slf.refs().ref_count) == 0 {
+						increment_weak_count(&slf.refs().weak_count);
+					}
+					return Some(Value { raw: self.raw });
+				}
+			}
+			ValType::FloatVar => {
+				let var = slf.refs().float_var[0].lock().unwrap();
+				if var.binding_domain() {
+					if increment_strong_count(&slf.refs().ref_count) == 0 {
+						increment_weak_count(&slf.refs().weak_count);
+					}
+					return Some(Value { raw: self.raw });
+				}
+			}
+			ValType::IntSetVar => {
+				let var = slf.refs().int_set_var[0].lock().unwrap();
+				if var.binding_domain() {
+					if increment_strong_count(&slf.refs().ref_count) == 0 {
+						increment_weak_count(&slf.refs().weak_count);
+					}
+					return Some(Value { raw: self.raw });
+				}
+			}
+			_ => {}
+		}
+
 		if increment_strong_count_if_nonzero(&slf.refs().ref_count) {
 			Some(Value { raw: self.raw })
 		} else {
@@ -638,6 +872,12 @@ impl WeakValue {
 
 	fn get_pin(&self) -> Pin<&mut ValueStorage> {
 		unsafe { Pin::new_unchecked(&mut (*self.get_ptr())) }
+	}
+}
+
+impl PartialEq for WeakValue {
+	fn eq(&self, other: &Self) -> bool {
+		self.raw == other.raw
 	}
 }
 
@@ -665,27 +905,37 @@ impl Debug for WeakValue {
 
 #[cfg(test)]
 mod tests {
+	use std::{
+		collections::hash_map::DefaultHasher,
+		hash::{Hash, Hasher},
+	};
 
 	use super::*;
 
+	fn hash(value: &Value) -> u64 {
+		let mut hasher = DefaultHasher::new();
+		value.hash(&mut hasher);
+		hasher.finish()
+	}
+
 	#[test]
 	fn memory_guarantees() {
-		assert_eq!(std::mem::size_of::<Value>(), 8);
+		assert_eq!(size_of::<Value>(), 8);
 		assert_eq!(ValueStorage::ALIGN, 8);
 
-		const BOX_BASE_BYTES: usize = std::mem::size_of::<u64>();
+		const BOX_BASE_BYTES: usize = size_of::<u64>();
 
 		const S: &str = "123";
 		let val_str = Value::from(S);
 		assert_eq!(
 			val_str.get_pin().calculate_layout().size(),
-			BOX_BASE_BYTES + std::mem::size_of_val(S.as_bytes())
+			BOX_BASE_BYTES + size_of_val(S.as_bytes())
 		);
 		let t: &[Value] = &[1.into(), 2.2.into()];
 		let tup2: Value = t.iter().cloned().collect();
 		assert_eq!(
 			tup2.get_pin().calculate_layout().size(),
-			BOX_BASE_BYTES + std::mem::size_of_val(t)
+			BOX_BASE_BYTES + size_of_val(t)
 		);
 	}
 
@@ -728,6 +978,51 @@ mod tests {
 	}
 
 	#[test]
+	fn binding_domain_retains_variables_until_cleared() {
+		let values = [
+			Value::new_bool_var(0),
+			Value::new_int_var(1, 1.into()),
+			Value::new_float_var(2, 1.into()),
+			Value::new_int_set_var(3, 1.into()),
+		];
+		for value in values {
+			let weak = value.downgrade();
+			match value.deref() {
+				DataView::BoolVar(mut variable) => variable.set_binding_domain(true),
+				DataView::IntVar(mut variable) => variable.set_binding_domain(true),
+				DataView::FloatVar(mut variable) => variable.set_binding_domain(true),
+				DataView::IntSetVar(mut variable) => variable.set_binding_domain(true),
+				_ => unreachable!("Expected variable"),
+			};
+
+			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 1);
+			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
+			drop(value);
+			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 0);
+			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
+
+			let retained_value = weak
+				.upgrade()
+				.expect("binding domain should retain the variable");
+			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 1);
+			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
+
+			match retained_value.deref() {
+				DataView::BoolVar(mut retained) => retained.set_binding_domain(false),
+				DataView::IntVar(mut retained) => retained.set_binding_domain(false),
+				DataView::FloatVar(mut retained) => retained.set_binding_domain(false),
+				DataView::IntSetVar(mut retained) => retained.set_binding_domain(false),
+				_ => unreachable!("Expected variable"),
+			};
+			drop(retained_value);
+
+			assert!(weak.upgrade().is_none());
+			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 0);
+			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
+		}
+	}
+
+	#[test]
 	fn test_string_value() {
 		let empty = Value::from("");
 		assert_eq!(empty.deref(), DataView::Str(""));
@@ -745,6 +1040,52 @@ mod tests {
 		Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."#;
 		let vlorem = Value::from(lorem);
 		assert_eq!(vlorem.deref(), DataView::Str(lorem));
+	}
+
+	#[test]
+	fn non_range_set_value_deduplicates_members() {
+		let string = Value::from("string");
+		let tuple = Value::from_iter([Value::from(1), Value::from(2)]);
+		let annotation = Value::new_annotation(NonZeroU32::new(7).unwrap(), [3.into()].into_iter());
+		let set = Value::new_discrete_set([
+			string.clone(),
+			tuple.clone(),
+			annotation.clone(),
+			string.clone(),
+			tuple.clone(),
+		]);
+
+		let DataView::Set(set) = set.deref() else {
+			unreachable!()
+		};
+		assert_eq!(set.card(), 3.into());
+		assert!(set.contains(&string));
+		assert!(set.contains(&tuple));
+		assert!(set.contains(&annotation));
+		assert_eq!(
+			Value::new_discrete_set([string.clone(), tuple.clone()]),
+			Value::new_discrete_set([tuple, string])
+		);
+
+		let sorted = Value::new_discrete_set([Value::from(3), Value::from(1), Value::from(2)]);
+		let DataView::Set(sorted) = sorted.deref() else {
+			unreachable!()
+		};
+		assert_eq!(
+			sorted.values().cloned().collect::<Vec<_>>(),
+			vec![Value::from(1), Value::from(2), Value::from(3)]
+		);
+	}
+
+	#[test]
+	fn equal_values_have_equal_hashes() {
+		let string = Value::from("string");
+		assert_eq!(hash(&string), hash(&Value::from("string")));
+
+		let left = Value::new_discrete_set([Value::from(1), Value::from("string")]);
+		let right = Value::new_discrete_set([Value::from("string"), Value::from(1)]);
+		assert_eq!(left, right);
+		assert_eq!(hash(&left), hash(&right));
 	}
 
 	#[test]

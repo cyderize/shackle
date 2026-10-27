@@ -78,8 +78,18 @@ impl ViewType {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum SeqView<'a> {
+/// A view of an array/tuple value, with optional dimensions and/or slicing
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SeqView<'a>(SeqViewInner<'a>);
+
+impl<'a> From<SeqViewInner<'a>> for SeqView<'a> {
+	fn from(inner: SeqViewInner<'a>) -> Self {
+		Self(inner)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum SeqViewInner<'a> {
 	Direct(&'a [Value]),
 	WithDim {
 		dims: Pairs<'a, i64>,
@@ -102,35 +112,37 @@ pub enum SeqView<'a> {
 }
 
 impl SeqView<'_> {
+	/// Get the number of dimensions for an array
 	pub const fn dims(&self) -> usize {
-		match self {
-			SeqView::Direct(_) => 1,
-			SeqView::WithDim { dims, storage: _ }
-			| SeqView::Compressed {
+		match &self.0 {
+			SeqViewInner::Direct(_) => 1,
+			SeqViewInner::WithDim { dims, storage: _ }
+			| SeqViewInner::Compressed {
 				dims,
 				repeat: _,
 				storage: _,
 			}
-			| SeqView::Slice {
+			| SeqViewInner::Slice {
 				dims,
 				slice: _,
 				storage: _,
 			} => dims.len(),
-			SeqView::Transposed { reloc, storage: _ } => reloc.len(),
+			SeqViewInner::Transposed { reloc, storage: _ } => reloc.len(),
 		}
 	}
 
+	/// Get the i-th index set
 	pub fn dim(&self, i: usize) -> (i64, i64) {
 		debug_assert!(1 <= i && i <= self.dims());
-		match self {
-			SeqView::Direct(v) => (1, v.len() as i64),
-			SeqView::WithDim { dims, storage: _ }
-			| SeqView::Compressed {
+		match &self.0 {
+			SeqViewInner::Direct(v) => (1, v.len() as i64),
+			SeqViewInner::WithDim { dims, storage: _ }
+			| SeqViewInner::Compressed {
 				dims,
 				repeat: _,
 				storage: _,
 			}
-			| SeqView::Slice {
+			| SeqViewInner::Slice {
 				dims,
 				slice: _,
 				storage: _,
@@ -138,7 +150,7 @@ impl SeqView<'_> {
 				let pair = &dims[i - 1];
 				(pair[0], pair[1])
 			}
-			SeqView::Transposed { reloc, storage } => {
+			SeqViewInner::Transposed { reloc, storage } => {
 				let DataView::Seq(v) = storage.deref() else {
 					unreachable!("Storage of SeqView must point to another sequence")
 				};
@@ -147,10 +159,16 @@ impl SeqView<'_> {
 		}
 	}
 
+	/// Get the index sets
+	pub fn dims_iter(&self) -> impl Iterator<Item = (i64, i64)> + '_ {
+		(1..=self.dims()).map(|i| self.dim(i))
+	}
+
+	/// Get the length of the sequence
 	pub fn len(&self) -> usize {
-		match self {
-			SeqView::Direct(v) => v.len(),
-			SeqView::Slice {
+		match &self.0 {
+			SeqViewInner::Direct(v) => v.len(),
+			SeqViewInner::Slice {
 				dims,
 				slice: _,
 				storage: _,
@@ -158,7 +176,7 @@ impl SeqView<'_> {
 				.iter()
 				.map(|(start, end)| (end - start + 1) as usize)
 				.sum(),
-			SeqView::Compressed {
+			SeqViewInner::Compressed {
 				dims: _,
 				repeat,
 				storage,
@@ -168,7 +186,8 @@ impl SeqView<'_> {
 				};
 				v.len() + *repeat as usize
 			}
-			SeqView::WithDim { dims: _, storage } | SeqView::Transposed { reloc: _, storage } => {
+			SeqViewInner::WithDim { dims: _, storage }
+			| SeqViewInner::Transposed { reloc: _, storage } => {
 				let DataView::Seq(v) = storage.deref() else {
 					unreachable!("Storage of SeqView must point to another sequence")
 				};
@@ -177,6 +196,7 @@ impl SeqView<'_> {
 		}
 	}
 
+	/// Get the values in the sequence
 	pub fn iter(&self) -> impl Iterator<Item = &Value> {
 		// TODO: Can this be done more effiencently?
 		self.indices().map(|v| self.index(&v))
@@ -230,18 +250,18 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 
 		let mut dv = DataView::Seq(self.clone());
 		let mut index: Vec<i64> = Vec::from_iter(index.iter().copied());
-		while let DataView::Seq(s) = dv {
+		while let DataView::Seq(SeqView(s)) = dv {
 			match s {
-				SeqView::Direct(v) => {
+				SeqViewInner::Direct(v) => {
 					debug_assert!(1 <= index[0] && index[0] <= v.len() as i64);
 					let i = (index[0] - 1) as usize;
 					return &v[i];
 				}
-				SeqView::WithDim { dims, storage } => {
+				SeqViewInner::WithDim { dims, storage } => {
 					index = vec![RESOLVE_DIM(&index, &dims)];
 					dv = storage.deref();
 				}
-				SeqView::Slice {
+				SeqViewInner::Slice {
 					dims,
 					slice,
 					storage,
@@ -253,7 +273,7 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 					index = RESOLVE_SLICE(idx, &slice, &seq);
 					dv = storage.deref();
 				}
-				SeqView::Transposed { reloc, storage } => {
+				SeqViewInner::Transposed { reloc, storage } => {
 					let DataView::Seq(v) = storage.deref() else {
 						unreachable!()
 					};
@@ -275,7 +295,7 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 						.collect_vec();
 					dv = storage.deref();
 				}
-				SeqView::Compressed {
+				SeqViewInner::Compressed {
 					dims,
 					repeat,
 					storage,
@@ -290,20 +310,20 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Pairs<'a, T>(&'a [T]);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct Pairs<'a, T>(&'a [T]);
 
 impl<'a, T> Pairs<'a, T> {
-	pub fn new(slice: &'a [T]) -> Self {
+	pub(super) fn new(slice: &'a [T]) -> Self {
 		assert_eq!(slice.len() % 2, 0);
 		Self(slice)
 	}
 
-	pub const fn len(&self) -> usize {
+	pub(super) const fn len(&self) -> usize {
 		self.0.len() / 2
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item = (&'a T, &'a T)> {
+	pub(super) fn iter(&self) -> impl Iterator<Item = (&'a T, &'a T)> {
 		self.0.iter().tuples()
 	}
 }
@@ -338,8 +358,8 @@ impl Value {
 					.product::<usize>(),
 			"dimensions given do not match the length of the array"
 		);
-		match seq {
-			SeqView::Slice {
+		match seq.0 {
+			SeqViewInner::Slice {
 				dims: _,
 				slice,
 				storage: _,
@@ -366,7 +386,7 @@ impl Value {
 				int_set_var: InitEmpty,
 				bytes: InitEmpty,
 			}),
-			SeqView::Compressed {
+			SeqViewInner::Compressed {
 				dims: _,
 				repeat,
 				storage: _,
@@ -385,7 +405,7 @@ impl Value {
 				int_set_var: InitEmpty,
 				bytes: InitEmpty,
 			}),
-			SeqView::WithDim { dims: _, storage } => Self::new_box(value_storage::Init {
+			SeqViewInner::WithDim { dims: _, storage } => Self::new_box(value_storage::Init {
 				ty: ValType::View,
 				ref_count: 1.into(),
 				weak_count: 0.into(),
@@ -540,8 +560,17 @@ impl Value {
 			bytes: InitEmpty,
 		})
 	}
+
+	/// Get value as a sequence
+	pub fn as_seq(&self) -> SeqView<'_> {
+		let DataView::Seq(seq) = self.deref() else {
+			panic!("not a sequence");
+		};
+		seq
+	}
 }
 
+/// The empty sequence
 pub static EMPTY_SEQ: Lazy<Value> = Lazy::new(|| {
 	Value::new_box(value_storage::Init {
 		ty: ValType::Seq,
@@ -620,28 +649,37 @@ mod tests {
 		Value,
 		value::{
 			DataView,
-			seq::{EMPTY_SEQ, InnerViewType, SeqView, ViewType},
+			seq::{EMPTY_SEQ, InnerViewType, SeqView, SeqViewInner, ViewType},
 		},
 	};
 
 	#[test]
 	fn test_sequence() {
 		let empty: Value = empty::<Value>().collect();
-		assert_eq!(empty.deref(), DataView::Seq(SeqView::Direct(&[])));
+		assert_eq!(
+			empty.deref(),
+			DataView::Seq(SeqView(SeqViewInner::Direct(&[])))
+		);
 		assert!(empty.is_constant(&EMPTY_SEQ));
 
 		let single: Value = [Value::from(1)].into_iter().collect();
-		assert_eq!(single.deref(), DataView::Seq(SeqView::Direct(&[1.into()])));
+		assert_eq!(
+			single.deref(),
+			DataView::Seq(SeqView(SeqViewInner::Direct(&[1.into()])))
+		);
 
 		let tup2: Value = [Value::from(1), 2.2.into()].into_iter().collect();
 		assert_eq!(
 			tup2.deref(),
-			DataView::Seq(SeqView::Direct(&[1.into(), 2.2.into()]))
+			DataView::Seq(SeqView(SeqViewInner::Direct(&[1.into(), 2.2.into()])))
 		);
 
 		let list = (1..=2000).map(Value::from).collect_vec();
 		let vlist: Value = list.iter().cloned().collect();
-		assert_eq!(vlist.deref(), DataView::Seq(SeqView::Direct(&list)));
+		assert_eq!(
+			vlist.deref(),
+			DataView::Seq(SeqView(SeqViewInner::Direct(&list)))
+		);
 
 		// Test reverse
 		let blist = vlist.transpose([-1]);
@@ -658,14 +696,14 @@ mod tests {
 
 		assert!(matches!(
 			view,
-			SeqView::Compressed {
+			SeqView(SeqViewInner::Compressed {
 				dims: _,
 				repeat: 99,
 				storage: _
-			}
+			})
 		));
 		assert_eq!(view.len(), list.len());
-		itertools::equal(list.iter(), view.iter());
+		assert!(itertools::equal(list.iter(), view.iter()));
 
 		let vlist: Value = (1..=9).map(Value::from).collect();
 		// Test dimensions
@@ -687,10 +725,10 @@ mod tests {
 			};
 			assert_eq!(view.len(), 3);
 			assert_eq!(view.iter().count(), 3);
-			itertools::equal(
+			assert!(itertools::equal(
 				view.iter().cloned(),
 				(1..=3).map(|j| Value::from((i - 1) * 3 + j)),
-			);
+			));
 			// Slice column
 			let row = dim_list.slice([(-1, 1), (i + 4, i + 4)], [(1, 3)]);
 			let DataView::Seq(view) = row.deref() else {
@@ -698,10 +736,10 @@ mod tests {
 			};
 			assert_eq!(view.len(), 3);
 			assert_eq!(view.iter().count(), 3);
-			itertools::equal(
+			assert!(itertools::equal(
 				view.iter().cloned(),
 				(1..=3).map(|j| Value::from((j - 1) * 3 + i)),
-			);
+			));
 		}
 		// Test transpose
 		let t = dim_list.with_dim([(1, 3), (1, 3)]).transpose([2, 1]);

@@ -32,6 +32,13 @@ pub enum Builtin<T> {
 		domain: T,
 	},
 
+	/// Coerce boolean to integer
+	#[name(bool2int)]
+	BoolToInt(T),
+	/// Coerce integer to float
+	#[name(int2float)]
+	IntToFloat(T),
+
 	/// Transform list of tuples of index and value into indexed array
 	#[name(mzn_indexed_array)]
 	IndexedArray(T),
@@ -52,8 +59,14 @@ pub enum Builtin<T> {
 		slices: T,
 	},
 	/// Coerce array to set
-	#[name(mzn_array2set)]
-	ArrayToSet(T),
+	#[name(array2set_internal_int)]
+	ArrayToIntSet(T),
+	/// Coerce array to set
+	#[name(array2set_internal_float)]
+	ArrayToFloatSet(T),
+	/// Coerce array to set
+	#[name(array2set_internal_discrete)]
+	ArrayToDiscreteSet(T),
 	/// Array length
 	#[name(length)]
 	ArrayLength(T),

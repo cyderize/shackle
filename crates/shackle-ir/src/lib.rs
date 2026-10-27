@@ -2,42 +2,41 @@
 //!
 //! IR is imperative and designed to be easy to interpret.
 
+use std::num::NonZeroU32;
+
 use derive_more::{From, TryUnwrap, Unwrap};
 #[cfg(test)]
 use expect_test as _;
 #[cfg(test)]
 use salsa as _;
 use shackle_hir::{self as _, BooleanLiteral, FloatLiteral, IntegerLiteral, StringLiteral};
-use shackle_mir::{Name, liveness::SlotId};
+use shackle_mir::Name;
 use shackle_thir as _;
-use shackle_utils::arena::{Arena, ArenaIndex};
+use shackle_utils::arena::{Arena, ArenaIndex, ArenaMap};
 
 pub mod lower;
 
-/// A global slot
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct GlobalSlot<'db> {
-	/// The name of the global slot
-	pub name: Option<Name<'db>>,
+/// A slot ID
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum SlotId {
+	/// Absolute slot ID (for globals)
+	Absolute(NonZeroU32),
+	/// Relative to current frame
+	Relative(NonZeroU32),
 }
 
 /// A program which can be executed
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Program<'db> {
-	/// The global slots
-	globals: Arena<GlobalSlot<'db>>,
 	/// The functions
-	functions: Arena<Function<'db>>,
+	pub functions: Arena<Function<'db>>,
 	/// The annotations
-	annotations: Arena<Annotation<'db>>,
+	pub annotations: Arena<Annotation<'db>>,
 	/// The main entry point function
-	main_entry_point: FunctionId<'db>,
+	pub main_entry_point: FunctionId<'db>,
 	/// The output entry point function
-	output_entry_point: FunctionId<'db>,
+	pub output_entry_point: FunctionId<'db>,
 }
-
-/// A global slot ID
-pub type GlobalSlotId<'db> = ArenaIndex<GlobalSlot<'db>>;
 
 /// An instruction ID
 pub type InstructionId<'db> = ArenaIndex<Instruction<'db>>;
@@ -62,10 +61,10 @@ pub enum Instruction<'db> {
 		/// The target instruction ID
 		target: InstructionId<'db>,
 	},
-	/// Jump to a different instruction if the value in the slot is false
+	/// Jump to a different instruction if the condition is flase
 	JumpIfFalse {
 		/// The slot to check
-		slot: SlotId,
+		condition: Value<'db>,
 		/// The target instruction ID to jump to if the slot is false
 		target: InstructionId<'db>,
 	},
@@ -83,17 +82,38 @@ pub enum Instruction<'db> {
 		/// The target instruction ID to jump to if the iterator is exhausted
 		done: InstructionId<'db>,
 	},
+	/// Push a comprehension on to the stack
+	ComprehensionStart,
+	/// Append a value to the current comprehension
+	ComprehensionAppend {
+		/// Value to append
+		value: Value<'db>,
+	},
+	/// Pop the current comprehension from the stack and assign it to a slot
+	ComprehensionEnd {
+		/// The slot to assign to
+		slot: SlotId,
+	},
+	/// Return from a function
+	Return {
+		/// Expression to return
+		expression: Expression<'db>,
+	},
+	/// No operation
+	NoOp,
 }
 
 /// A function
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Function<'db> {
 	/// Function name
-	name: Name<'db>,
+	pub name: Name<'db>,
 	/// Number of slots
-	slot_count: usize,
+	pub slot_count: usize,
 	/// Body of the function (if empty, the function is external)
-	body: Arena<Instruction<'db>>,
+	pub body: Arena<Instruction<'db>>,
+	/// Source map for instructions
+	pub origins: ArenaMap<Instruction<'db>, shackle_thir::source::Origin<'db>>,
 }
 
 /// A function ID
@@ -208,8 +228,6 @@ pub enum Literal<'db> {
 pub enum Identifier<'db> {
 	/// An identifier pointing to a slot
 	Slot(SlotId),
-	/// A global variable or parameter
-	GlobalSlot(GlobalSlotId<'db>),
 	/// An identifier pointing to an annotation
 	Annotation(AnnotationId<'db>),
 }

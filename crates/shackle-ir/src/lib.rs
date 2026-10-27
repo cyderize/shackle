@@ -9,11 +9,11 @@ use derive_more::{From, TryUnwrap, Unwrap};
 use expect_test as _;
 #[cfg(test)]
 use salsa as _;
-use shackle_hir::{self as _, BooleanLiteral, FloatLiteral, IntegerLiteral, StringLiteral};
+use shackle_hir::{self as _, BooleanLiteral, Db, FloatLiteral, IntegerLiteral, StringLiteral};
 use shackle_mir::Name;
+pub use shackle_mir::SetType;
 use shackle_thir as _;
 use shackle_utils::arena::{Arena, ArenaIndex, ArenaMap};
-
 pub mod lower;
 
 /// A slot ID
@@ -28,6 +28,8 @@ pub enum SlotId {
 /// A program which can be executed
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Program<'db> {
+	/// The number of slots in the program
+	pub global_slot_count: usize,
 	/// The functions
 	pub functions: Arena<Function<'db>>,
 	/// The annotations
@@ -36,6 +38,14 @@ pub struct Program<'db> {
 	pub main_entry_point: FunctionId<'db>,
 	/// The output entry point function
 	pub output_entry_point: FunctionId<'db>,
+}
+
+impl<'db> Program<'db> {
+	/// Get the IR of the program
+	pub fn lower_from_mir(db: &'db dyn Db) -> Program<'db> {
+		let mir = shackle_mir::Model::lower_from_thir(db);
+		lower::lower_model(&mir)
+	}
 }
 
 /// An instruction ID
@@ -99,6 +109,8 @@ pub enum Instruction<'db> {
 		/// Expression to return
 		expression: Expression<'db>,
 	},
+	/// Return no value from a function
+	ReturnRoot,
 	/// No operation
 	NoOp,
 }
@@ -133,7 +145,7 @@ pub enum Expression<'db> {
 }
 
 /// A builtin whose arguments are IR values.
-pub type Builtin<'db> = shackle_mir::builtins::Builtin<Box<Value<'db>>>;
+pub type Builtin<'db, T = Box<Value<'db>>> = shackle_mir::builtins::Builtin<T>;
 
 /// A call
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -187,6 +199,8 @@ pub struct Array<'db> {
 /// A set literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Set<'db> {
+	/// Type of set literal
+	pub kind: SetType,
 	/// Set literal members
 	pub members: Vec<Literal<'db>>,
 }

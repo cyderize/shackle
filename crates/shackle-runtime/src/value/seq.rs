@@ -179,13 +179,17 @@ impl SeqView<'_> {
 
 	pub fn iter(&self) -> impl Iterator<Item = &Value> {
 		// TODO: Can this be done more effiencently?
-		let indices = (1..=self.dims())
+		self.indices().map(|v| self.index(&v))
+	}
+
+	/// Get an iterator over the indices of the sequence
+	pub fn indices(&self) -> impl Iterator<Item = Vec<i64>> + use<> {
+		(1..=self.dims())
 			.map(|i| {
 				let dim = self.dim(i);
 				dim.0..=dim.1
 			})
-			.multi_cartesian_product();
-		indices.map(|v| self.index(&v))
+			.multi_cartesian_product()
 	}
 }
 
@@ -350,6 +354,7 @@ impl Value {
 				)
 				.as_len(),
 				values: MoveFrom([self.clone()]),
+				idents: InitEmpty,
 				ints: FromIterPrefix(
 					dims.into_iter()
 						.chain(slice.iter().flat_map(|(&min, &max)| [min, max])),
@@ -371,6 +376,7 @@ impl Value {
 				weak_count: 0.into(),
 				len: ViewType::new(InnerViewType::Compact, (dims.len() / 2) as u8, 0).as_len(),
 				values: MoveFrom([self.clone()]),
+				idents: InitEmpty,
 				ints: FromIterPrefix(once(repeat).chain(dims)),
 				floats: InitEmpty,
 				bool_var: InitEmpty,
@@ -385,6 +391,7 @@ impl Value {
 				weak_count: 0.into(),
 				len: ViewType::new(InnerViewType::Dim, (dims.len() / 2) as u8, 0).as_len(),
 				values: MoveFrom([storage.clone()]),
+				idents: InitEmpty,
 				ints: FromIterPrefix(dims.into_iter()),
 				floats: InitEmpty,
 				bool_var: InitEmpty,
@@ -399,6 +406,7 @@ impl Value {
 				weak_count: 0.into(),
 				len: ViewType::new(InnerViewType::Dim, (dims.len() / 2) as u8, 0).as_len(),
 				values: MoveFrom([self.clone()]),
+				idents: InitEmpty,
 				ints: FromIterPrefix(dims.into_iter()),
 				floats: InitEmpty,
 				bool_var: InitEmpty,
@@ -485,6 +493,7 @@ impl Value {
 			)
 			.as_len(),
 			values: MoveFrom([self.clone()]),
+			idents: InitEmpty,
 			ints: FromIterPrefix(dims.into_iter().chain(slice)),
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -521,6 +530,7 @@ impl Value {
 			weak_count: 0.into(),
 			len: ViewType::new(InnerViewType::Transpose, dims.len() as u8, 0).as_len(),
 			values: MoveFrom([self.clone()]),
+			idents: InitEmpty,
 			ints: FromIterPrefix(dims.into_iter()),
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -539,6 +549,7 @@ pub static EMPTY_SEQ: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: InitEmpty,
 		floats: InitEmpty,
 		bool_var: InitEmpty,
@@ -568,6 +579,7 @@ impl FromIterator<Value> for Value {
 			weak_count: 0.into(),
 			len,
 			values: FromIterPrefix(iter),
+			idents: InitEmpty,
 			ints: InitEmpty,
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -584,6 +596,7 @@ impl FromIterator<Value> for Value {
 				weak_count: 0.into(),
 				len: ViewType::new(InnerViewType::Compact, 1, 0).as_len(),
 				values: MoveFrom([val]),
+				idents: InitEmpty,
 				ints: MoveFrom([eq_count as i64, 1, len as i64]),
 				floats: InitEmpty,
 				bool_var: InitEmpty,

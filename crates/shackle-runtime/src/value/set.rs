@@ -60,6 +60,7 @@ impl<'a> IntervalIterator<IntVal> for IntSetView<'a> {
 }
 
 impl IntSetView<'_> {
+	/// Returns the cardinality of the set
 	pub fn card(&self) -> IntVal {
 		// Extract finite bounds or return infinity
 		let (IntVal::Int(lb), IntVal::Int(ub)) = (self.lower_bound(), self.upper_bound()) else {
@@ -85,7 +86,7 @@ impl IntSetView<'_> {
 
 	/// Returns an iterator over the values contained in the set if the set
 	/// contains a finite number of elements
-	pub fn values(&self) -> impl Iterator<Item = IntVal> + '_ {
+	pub fn values(&self) -> impl Iterator<Item = IntVal> + '_ + use<'_> {
 		assert!(
 			self.is_finite(),
 			"unable to iterate over the values of an infinite set"
@@ -103,6 +104,7 @@ impl IntSetView<'_> {
 			.map(IntVal::Int)
 	}
 
+	/// Returns the lower bound of the set
 	pub fn lower_bound(&self) -> IntVal {
 		if self.has_lb {
 			IntVal::Int(self.intervals[0])
@@ -111,6 +113,7 @@ impl IntSetView<'_> {
 		}
 	}
 
+	/// Returns the upper bound of the set
 	pub fn upper_bound(&self) -> IntVal {
 		if self.has_ub {
 			IntVal::Int(self.intervals[self.intervals.len() - 1])
@@ -163,7 +166,7 @@ impl<'a> IntervalIterator<FloatVal> for FloatSetView<'a> {
 }
 
 impl FloatSetView<'_> {
-	// Returns the cardinality of the set
+	/// Returns the cardinality of the set
 	pub fn card(&self) -> IntVal {
 		let mut card = 0;
 		for r in self.intervals() {
@@ -178,10 +181,32 @@ impl FloatSetView<'_> {
 		card.into()
 	}
 
+	/// Returns whether the set constains a finite number of elements.
+	pub fn is_finite(&self) -> bool {
+		for r in self.intervals() {
+			if !r.start().is_finite() || !r.end().is_finite() || r.start() < r.end() {
+				return false;
+			}
+		}
+		true
+	}
+
+	/// Returns an iterator over the values contained in the set if the set
+	/// contains a finite number of elements
+	pub fn values(&self) -> impl Iterator<Item = FloatVal> + '_ + use<'_> {
+		assert!(
+			self.is_finite(),
+			"unable to iterate over the values of an infinite set"
+		);
+		self.intervals().map(|r| *r.start())
+	}
+
+	/// Returns the lower bound of the set
 	pub fn lower_bound(&self) -> FloatVal {
 		self.intervals.first().copied().unwrap_or(1.0.into())
 	}
 
+	/// Returns the upper bound of the set
 	pub fn upper_bound(&self) -> FloatVal {
 		self.intervals.last().copied().unwrap_or(0.0.into())
 	}
@@ -217,6 +242,7 @@ pub static INT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: FromIterPrefix([1i64, 0].into_iter()),
 		floats: InitEmpty,
 		bool_var: InitEmpty,
@@ -233,6 +259,7 @@ pub static INT_SET_INF: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: InitEmpty,
 		floats: InitEmpty,
 		bool_var: InitEmpty,
@@ -250,6 +277,7 @@ pub static FLOAT_SET_EMPTY: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: InitEmpty,
 		floats: InitEmpty,
 		bool_var: InitEmpty,
@@ -266,6 +294,7 @@ pub static FLOAT_SET_INF: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: InitEmpty,
 		floats: FromIterPrefix([FloatVal::NEG_INFINITY, FloatVal::INFINITY].into_iter()),
 		bool_var: InitEmpty,
@@ -319,6 +348,7 @@ impl FromIterator<RangeInclusive<IntVal>> for Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: InitEmpty,
+			idents: InitEmpty,
 			ints: FromIterPrefix(values.into_iter().map(|i| {
 				let IntVal::Int(i) = i else { unreachable!() };
 				i
@@ -364,6 +394,7 @@ impl FromIterator<RangeInclusive<FloatVal>> for Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: InitEmpty,
+			idents: InitEmpty,
 			ints: InitEmpty,
 			floats: FromIterPrefix(values.into_iter()),
 			bool_var: InitEmpty,

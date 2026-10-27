@@ -1,3 +1,4 @@
+//! Value representation for the Shackle runtime.
 mod bool_var;
 mod float_var;
 mod int_set_var;
@@ -9,7 +10,7 @@ mod set;
 use std::{
 	fmt::Debug,
 	mem::MaybeUninit,
-	num::NonZeroU64,
+	num::{NonZeroU32, NonZeroU64},
 	pin::Pin,
 	ptr::NonNull,
 	str::{from_utf8, from_utf8_unchecked},
@@ -26,7 +27,9 @@ use bilge::{
 	Bitsized, TryFromBits, bitsize,
 	prelude::{Integer, u2, u61},
 };
+pub use num::{FloatVal, IntVal};
 use once_cell::sync::Lazy;
+pub use set::{FLOAT_SET_INF, INT_SET_INF};
 use varlen::{
 	Initializer, Layout, VarLen, define_varlen,
 	prelude::{ArrayInitializer, FromIterPrefix},
@@ -37,7 +40,6 @@ use crate::value::{
 	float_var::{FloatVar, FloatVarRef},
 	int_set_var::{IntSetVar, IntSetVarRef},
 	int_var::{IntVar, IntVarRef},
-	num::{FloatVal, IntVal},
 	seq::{InnerViewType, Pairs, SeqView, ViewType},
 	set::{FloatSetView, IntSetView},
 };
@@ -106,7 +108,7 @@ impl PartialEq for Value {
 			return false;
 		}
 		// Compare
-		self.deref().eq(&self.deref())
+		self.deref().eq(&other.deref())
 	}
 }
 
@@ -204,6 +206,10 @@ impl Value {
 					ValType::FloatSet => DataView::FloatSet(FloatSetView {
 						intervals: v.refs().floats,
 					}),
+					ValType::Annotation => DataView::Annotation(AnnotationView {
+						ident: v.refs().idents[0],
+						arguments: v.refs().values,
+					}),
 					ValType::View => {
 						let vty = ViewType::from_len(v.len);
 						DataView::Seq(match vty.ty() {
@@ -280,6 +286,7 @@ impl Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: InitEmpty,
+			idents: InitEmpty,
 			ints: InitEmpty,
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -290,6 +297,29 @@ impl Value {
 		});
 		debug_assert!(from_utf8(v.get_pin().refs().bytes).is_ok());
 		v
+	}
+
+	/// Construct an annotation with the given identifier and arguments.
+	pub fn new_annotation<I: ExactSizeIterator<Item = Value>, S: IntoIterator<IntoIter = I>>(
+		ident: NonZeroU32,
+		arguments: S,
+	) -> Value {
+		let arguments = arguments.into_iter();
+		Self::new_box(value_storage::Init {
+			ty: ValType::Annotation,
+			len: arguments.len() as u32,
+			ref_count: 1.into(),
+			weak_count: 0.into(),
+			values: FromIterPrefix(arguments),
+			idents: FromIterPrefix([ident].into_iter()),
+			ints: InitEmpty,
+			floats: InitEmpty,
+			bool_var: InitEmpty,
+			int_var: InitEmpty,
+			float_var: InitEmpty,
+			int_set_var: InitEmpty,
+			bytes: InitEmpty,
+		})
 	}
 
 	unsafe fn get_ptr(&self) -> *mut ValueStorage {
@@ -310,6 +340,7 @@ pub static EMPTY_STRING: Lazy<Value> = Lazy::new(|| {
 		ref_count: 1.into(),
 		weak_count: 0.into(),
 		values: InitEmpty,
+		idents: InitEmpty,
 		ints: InitEmpty,
 		floats: InitEmpty,
 		bool_var: InitEmpty,
@@ -345,10 +376,20 @@ pub enum DataView<'a> {
 	Str(&'a str),
 	IntSet(IntSetView<'a>),
 	FloatSet(FloatSetView<'a>),
+	Annotation(AnnotationView<'a>),
 	BoolVar(BoolVarRef<'a>),
 	IntVar(IntVarRef<'a>),
 	FloatVar(FloatVarRef<'a>),
 	IntSetVar(IntSetVarRef<'a>),
+}
+
+/// A borrowed view of an annotation value.
+#[derive(Debug, PartialEq)]
+pub struct AnnotationView<'a> {
+	/// The annotation identifier.
+	pub ident: NonZeroU32,
+	/// The annotation arguments.
+	pub arguments: &'a [Value],
 }
 
 macro_rules! define_var_ref {
@@ -394,6 +435,8 @@ enum ValType {
 	Float,
 	/// Types that can be represented as simple sequences of values: Tuples, 1-to-n arrays
 	Seq,
+	/// An annotation identifier and its arguments
+	Annotation,
 	/// Character strings
 	Str,
 	/// View into an array
@@ -429,10 +472,15 @@ struct ValueStorage {
 	ref_count: AtomicU16,
 	// Number of weak references (e.g., CSE)
 	weak_count: AtomicU8,
+	#[varlen_array]
+	idents: [NonZeroU32; match *ty {
+		ValType::Annotation => 1,
+		_ => 0,
+	}],
 
 	#[varlen_array]
 	values: [Value; match *ty {
-		ValType::Seq => *len as usize,
+		ValType::Seq | ValType::Annotation => *len as usize,
 		ValType::View => 1,
 		_ => 0,
 	}],
@@ -461,7 +509,7 @@ struct ValueStorage {
 	}],
 	#[varlen_array]
 	float_var: [Mutex<FloatVar>; match *ty {
-		ValType::IntVar => 1,
+		ValType::FloatVar => 1,
 		_ => 0,
 	}],
 	#[varlen_array]
@@ -488,16 +536,13 @@ impl ValueStorage {
 
 	unsafe fn deinit(slf: Pin<&mut ValueStorage>) {
 		match slf.ty {
-			ValType::Seq => {
+			ValType::Seq | ValType::Annotation => {
 				// Replace all values in the sequence with non-reference counted objects
 				for v in slf.muts().values {
 					*v = 0.into();
 				}
 			}
 			ValType::View => slf.muts().values[0] = 0.into(),
-			ValType::IntVar => todo!(),
-			ValType::FloatVar => todo!(),
-			ValType::IntSetVar => todo!(),
 			_ => {}
 		}
 	}
@@ -564,5 +609,50 @@ mod tests {
 		Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."#;
 		let vlorem = Value::from(lorem);
 		assert_eq!(vlorem.deref(), DataView::Str(lorem));
+	}
+
+	#[test]
+	fn annotation_value() {
+		let empty = Value::new_annotation(NonZeroU32::new(42).unwrap(), std::iter::empty());
+		assert_eq!(
+			empty.deref(),
+			DataView::Annotation(AnnotationView {
+				ident: NonZeroU32::new(42).unwrap(),
+				arguments: &[],
+			})
+		);
+
+		let annotation = Value::new_annotation(
+			NonZeroU32::new(7).unwrap(),
+			[1.into(), 2.5.into()].into_iter(),
+		);
+		assert_eq!(
+			annotation.deref(),
+			DataView::Annotation(AnnotationView {
+				ident: NonZeroU32::new(7).unwrap(),
+				arguments: &[1.into(), 2.5.into()],
+			})
+		);
+	}
+
+	#[test]
+	fn decision_variables_are_distinct_and_droppable() {
+		let bool_var = Value::new_bool_var(0);
+		let other_bool_var = Value::new_bool_var(1);
+		assert!(matches!(bool_var.deref(), DataView::BoolVar(_)));
+		assert_eq!(bool_var, bool_var.clone());
+		assert_ne!(bool_var, other_bool_var);
+
+		let int_domain = Value::from_iter([IntVal::Int(1)..=3.into()]);
+		let int_var = Value::new_int_var(2, int_domain);
+		assert!(matches!(int_var.deref(), DataView::IntVar(_)));
+
+		let float_domain = Value::from_iter([FloatVal::from(1.0)..=3.0.into()]);
+		let float_var = Value::new_float_var(3, float_domain);
+		assert!(matches!(float_var.deref(), DataView::FloatVar(_)));
+
+		let set_domain = Value::from_iter([IntVal::Int(1)..=3.into()]);
+		let int_set_var = Value::new_int_set_var(4, set_domain);
+		assert!(matches!(int_set_var.deref(), DataView::IntSetVar(_)));
 	}
 }

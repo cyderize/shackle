@@ -62,7 +62,6 @@ impl Ord for IntVal {
 	}
 }
 
-const ERROR_DIV_ZERO: &str = "integer division by zero";
 const ERROR_FLT_OF: &str = "overflow in floating point operation";
 const ERROR_INF: &str = "arithmetic operation on infinite value";
 const ERROR_INT_OF: &str = "integer overflow";
@@ -120,7 +119,7 @@ impl Div for IntVal {
 		};
 		let Some(z) = x.checked_div(y) else {
 			return Err(ArithmeticError {
-				reason: ERROR_DIV_ZERO,
+				reason: ERROR_INT_OF,
 			});
 		};
 		Ok(z.into())
@@ -137,7 +136,7 @@ impl Rem for IntVal {
 			Ok(z.into())
 		} else {
 			Err(ArithmeticError {
-				reason: ERROR_DIV_ZERO,
+				reason: ERROR_INT_OF,
 			})
 		}
 	}
@@ -268,11 +267,6 @@ impl Div for FloatVal {
 			return Err(ArithmeticError { reason: ERROR_INF });
 		}
 		let z = self.0 / rhs.0;
-		if z.is_infinite() {
-			return Err(ArithmeticError {
-				reason: ERROR_DIV_ZERO,
-			});
-		}
 		Ok(z.into())
 	}
 }
@@ -280,15 +274,10 @@ impl Rem for FloatVal {
 	type Output = Result<FloatVal, ArithmeticError>;
 
 	fn rem(self, rhs: Self) -> Self::Output {
-		if !(self.0.is_finite() && rhs.0.is_finite()) {
+		if !(self.0.is_finite() && rhs.0.is_finite()) || rhs.0 == 0.0 {
 			return Err(ArithmeticError { reason: ERROR_INF });
 		}
 		let z = self.0 % rhs.0;
-		if z.is_nan() {
-			return Err(ArithmeticError {
-				reason: ERROR_DIV_ZERO,
-			});
-		}
 		Ok(z.into())
 	}
 }
@@ -339,6 +328,7 @@ impl Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: InitEmpty,
+			idents: InitEmpty,
 			ints: FromIterPrefix([i].into_iter()),
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -357,6 +347,7 @@ impl Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: InitEmpty,
+			idents: InitEmpty,
 			ints: InitEmpty,
 			floats: FromIterPrefix([i].into_iter()),
 			bool_var: InitEmpty,
@@ -741,7 +732,10 @@ mod tests {
 		assert_eq!(FloatVal(0.0) / FloatVal(5.0), Ok(FloatVal(0.0)));
 		assert!((FloatVal(f64::NEG_INFINITY) / FloatVal(1.0)).is_err());
 		assert!((FloatVal(100.0) / FloatVal(f64::INFINITY)).is_err());
-		assert!((FloatVal(10.0) / FloatVal(0.0)).is_err());
+		assert_eq!(
+			(FloatVal(10.0) / FloatVal(0.0)),
+			Ok(FloatVal(f64::INFINITY))
+		);
 
 		assert_eq!(FloatVal(10.0) % FloatVal(4.0), Ok(FloatVal(2.0)));
 		assert_eq!(FloatVal(10.0) % FloatVal(-1.0), Ok(FloatVal(0.0)));

@@ -15,14 +15,15 @@ derive_more = {workspace = true, features = [
   "unwrap",
   "try_unwrap",
 ]}
-shackle-hir = {path = "../shackle-hir"}
-shackle-mir = {path = "../shackle-mir"}
-shackle-thir = {path = "../shackle-thir"}
-shackle-utils = {path = "../shackle-utils"}
+shackle-hir = {workspace = true}
+shackle-mir = {workspace = true}
+shackle-thir = {workspace = true}
+shackle-utils = {workspace = true}
 
 [dev-dependencies]
 expect-test = {workspace = true}
 salsa = {workspace = true}
+shackle-syntax = {workspace = true}
 
 [lints]
 workspace = true

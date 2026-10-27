@@ -1,14 +1,18 @@
-use crate::{
-	value::{define_var_ref, value_storage, DataView, InitEmpty, ValType},
-	Value,
-};
 use varlen::prelude::FromIterPrefix;
 
+use crate::{
+	Value,
+	error::ValueError,
+	value::{DataView, InitEmpty, ValType, define_var_ref, value_storage},
+};
+
+/// Flattened integer variable
 #[derive(Debug)]
 pub struct IntVar {
 	ident: u64,
-	_domain: Option<Value>,
+	domain: Option<Value>,
 	alias: Option<Value>,
+	binding_domain: bool,
 }
 
 impl PartialEq for IntVar {
@@ -22,6 +26,60 @@ impl PartialEq for IntVar {
 	}
 }
 impl Eq for IntVar {}
+
+impl IntVar {
+	/// Get the unique identifier of the variable.
+	pub fn ident(&self) -> u64 {
+		self.ident
+	}
+
+	/// Get the domain of the variable.
+	pub fn domain(&self) -> Option<Value> {
+		self.domain.clone()
+	}
+
+	/// Set the domain of the variable.
+	pub fn set_domain(&mut self, domain: Value) {
+		self.domain = Some(domain);
+	}
+
+	/// Clear the domain of the variable.
+	pub fn clear_domain(&mut self) {
+		self.domain = None;
+	}
+
+	/// Whether the domain has been tightened by a non-defining constraint.
+	pub fn binding_domain(&self) -> bool {
+		self.binding_domain
+	}
+
+	/// Whether the domain has been tightened by a non-defining constraint.
+	pub fn set_binding_domain(&mut self, binding_domain: bool) {
+		self.binding_domain = binding_domain;
+	}
+
+	/// Whether the variable is fixed
+	pub fn is_fixed(&self) -> bool {
+		if let Some(domain) = &self.domain {
+			domain.as_float_set().card() == 1.into()
+		} else {
+			false
+		}
+	}
+
+	/// Get the fixed value of the variable, if it is fixed.
+	pub fn fix(&self) -> Result<Value, ValueError> {
+		if let Some(domain) = &self.domain {
+			let d = domain.as_int_set();
+			if d.card() == 1.into() {
+				return Ok(d.lower_bound().into());
+			}
+		}
+		Err(ValueError {
+			reason: "Variable is not fixed",
+		})
+	}
+}
 
 define_var_ref!(IntVar, IntVarRef);
 
@@ -40,8 +98,9 @@ impl Value {
 			int_var: FromIterPrefix(
 				[std::sync::Mutex::new(IntVar {
 					ident,
-					_domain: Some(domain),
+					domain: Some(domain),
 					alias: None,
+					binding_domain: false,
 				})]
 				.into_iter(),
 			),
@@ -51,7 +110,7 @@ impl Value {
 		})
 	}
 
-	pub(crate) fn as_int_var(&self) -> IntVarRef {
+	pub(crate) fn as_int_var(&self) -> IntVarRef<'_> {
 		let DataView::IntVar(iv) = self.deref() else {
 			panic!("Expected int var, found {:?}", self)
 		};

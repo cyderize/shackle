@@ -643,7 +643,7 @@ mod tests {
 		let mut visited = Vec::new();
 		assert_eq!(
 			builtin.map(|value| {
-				visited.push(value);
+				visited.push(*value);
 				value * 10
 			}),
 			Builtin::Add {
@@ -652,6 +652,7 @@ mod tests {
 			}
 		);
 		assert_eq!(visited, [1, 2]);
+		assert_eq!(builtin, Builtin::Add { left: 1, right: 2 });
 		assert_eq!(
 			Builtin::<i32>::VarBool.map(|value| value * 10),
 			Builtin::VarBool

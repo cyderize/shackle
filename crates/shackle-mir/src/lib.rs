@@ -7,8 +7,8 @@ pub mod pretty_print;
 
 use derive_more::{From, TryUnwrap, Unwrap};
 pub use shackle_hir::Identifier as Name;
-use shackle_hir::{BooleanLiteral, FloatLiteral, IntegerLiteral, StringLiteral};
-use shackle_thir::source::Origin;
+use shackle_hir::{BooleanLiteral, Db, FloatLiteral, IntegerLiteral, StringLiteral};
+use shackle_thir::{db::final_thir, source::Origin};
 use shackle_ty::Ty;
 use shackle_utils::{
 	TypedIndex,
@@ -43,6 +43,14 @@ pub struct Model<'db> {
 	pub output_entrypoint: FunctionId<'db>,
 	/// Solve method
 	pub solve: Solve<'db>,
+}
+
+impl<'db> Model<'db> {
+	/// Get the MIR
+	pub fn lower_from_thir(db: &'db dyn Db) -> Model<'db> {
+		let thir = final_thir(db).unwrap();
+		lower::lower_from_thir(db, &thir)
+	}
 }
 
 /// Solve method
@@ -319,8 +327,21 @@ pub struct Array<'db> {
 /// A set literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Set<'db> {
+	/// Type of set literal
+	pub kind: SetType,
 	/// Set literal members
 	pub members: Vec<Literal<'db>>,
+}
+
+/// Type of a set literal
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum SetType {
+	/// A set of integers
+	Integer,
+	/// A set of floats
+	Float,
+	/// A set of discrete, non-numeric values
+	Discrete,
 }
 
 /// A tuple field access

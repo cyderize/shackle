@@ -145,12 +145,18 @@ pub struct Let<'db> {
 }
 
 /// The result of a let expression
-#[derive(Clone, Debug, Hash, PartialEq, Eq, From)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum LetResult<'db> {
 	/// Root let which must hold
 	Root,
 	/// Returns result
-	Identifier(Identifier<'db>),
+	Expression(Box<Expression<'db>>),
+}
+
+impl<'db> From<Expression<'db>> for LetResult<'db> {
+	fn from(expr: Expression<'db>) -> Self {
+		LetResult::Expression(Box::new(expr))
+	}
 }
 
 /// An item in a let expression
@@ -361,7 +367,7 @@ pub struct IfThenElse<'db> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Comprehension<'db> {
 	/// The generated value
-	pub template: Let<'db>,
+	pub template: Value<'db>,
 	/// The generators
 	pub generators: Vec<Generator<'db>>,
 }

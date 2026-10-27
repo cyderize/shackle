@@ -117,7 +117,7 @@ impl<'db> LoweringContext<'db> {
 			let mut items = LetItems::default();
 			let lowered = fn_collector
 				.lower_expression(fn_collector.model[function].body().unwrap(), &mut items);
-			let body = items.into_let(&mut fn_collector, lowered);
+			let body = items.into_let(lowered);
 			let data = std::mem::take(&mut fn_collector.data);
 			self.functions[idx].body = Some(body);
 			self.functions[idx].data = data;
@@ -135,15 +135,11 @@ struct LetItems<'db> {
 }
 
 impl<'db> LetItems<'db> {
-	fn into_let(
-		mut self,
-		collector: &mut Collector<'_, 'db>,
-		result: impl Into<LoweredExpression<'db>>,
-	) -> Let<'db> {
+	fn into_let(self, result: impl Into<LoweredExpression<'db>>) -> Let<'db> {
 		let value = result.into();
 		let origin = value.origin();
 		Let {
-			result: value.into_identifier(collector, &mut self).into(),
+			result: value.into_expression().into(),
 			items: self.items,
 			origin,
 		}
@@ -553,10 +549,9 @@ impl<'a, 'db> Collector<'a, 'db> {
 					}
 				}
 
-				let mut expression_items = LetItems::default();
-				let lowered = self.lower_expression(&comp.template, &mut expression_items);
-				let template = expression_items.into_let(self, lowered);
-
+				let template = self
+					.lower_expression(&comp.template, &mut generators)
+					.into_value(self, &mut generators);
 				Expression::new(
 					Comprehension {
 						generators: generators.generators,
@@ -581,13 +576,13 @@ impl<'a, 'db> Collector<'a, 'db> {
 					};
 					let mut branch_items = LetItems::default();
 					let lowered = self.lower_expression(&branch.result, &mut branch_items);
-					let then = branch_items.into_let(self, lowered);
+					let then = branch_items.into_let(lowered);
 
 					result = Expression::new(
 						IfThenElse {
 							condition: Box::new(condition),
 							then,
-							else_expression: else_items.into_let(self, result),
+							else_expression: else_items.into_let(result),
 						},
 						ty.clone(),
 						origin,
@@ -958,6 +953,41 @@ mod tests {
     var bool: p = false;
     var bool: _DECL_2 = p;
     var bool: q = _DECL_2;
+    solve satisfy;
+"#]];
+		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
+	}
+
+	#[test]
+	fn test_mir_basic_2() {
+		let mut db = CompilerDatabase::default();
+		let model_file = InlineModelFile::new(
+			&db,
+			r#"
+			annotation 'output';
+			predicate foo(var bool: b) = b;
+			var bool: x;
+			constraint foo(x);
+			"#
+			.to_owned(),
+			InputLang::MiniZinc,
+		)
+		.into();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let model = final_thir(&db).unwrap();
+		let mir = lower_from_thir(&db, &model);
+		let expected = expect![[r#"
+    annotation 'output';
+    function var bool: foo(var bool: b) :: promise_total = let {
+
+    } in b;
+    var bool: x;
+    constraint annotate(x, 'output');
+    x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
+    constraint foo(x);
     solve satisfy;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));

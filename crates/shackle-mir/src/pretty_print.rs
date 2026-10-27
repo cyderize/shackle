@@ -225,7 +225,7 @@ impl<'db> PrettyPrinter<'db> {
 			.join("\n");
 		let result = match &l.result {
 			LetResult::Root => "true".to_owned(),
-			LetResult::Identifier(result) => self.print_identifier(db, item, result),
+			LetResult::Expression(result) => self.print_expression(db, item, result),
 		};
 		format!("let {{\n{}\n}} in {}", items, result)
 	}
@@ -311,7 +311,7 @@ impl<'db> PrettyPrinter<'db> {
 				format!("{}({})", f, args.join(", "))
 			}
 			ExpressionData::Comprehension(c) => {
-				let template = self.print_let(db, item, &c.template);
+				let template = self.print_value(db, item, &c.template);
 				let generators = c
 					.generators
 					.iter()

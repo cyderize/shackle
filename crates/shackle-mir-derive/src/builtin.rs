@@ -120,7 +120,7 @@ fn expand_derive(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 	Ok(quote! {
 		impl #impl_generics #enum_ident #ty_generics #where_clause {
 			/// Transform every argument of this builtin.
-			pub fn map<U>(self, mut f: impl FnMut(#argument) -> U) -> #enum_ident<U> {
+			pub fn map<U>(&self, mut f: impl FnMut(&#argument) -> U) -> #enum_ident<U> {
 				match self {
 					#(#map_arms),*
 				}

@@ -149,8 +149,8 @@ impl<'a, 'db> Liveness<'a, 'db> {
 		for item in l.items.iter() {
 			self.push_let_item(item);
 		}
-		if let LetResult::Identifier(ident) = &l.result {
-			self.todo.push(TodoItem::Identifier(ident));
+		if let LetResult::Expression(e) = &l.result {
+			self.todo.push(TodoItem::Expression(&e.data));
 		}
 	}
 
@@ -181,7 +181,7 @@ impl<'a, 'db> Liveness<'a, 'db> {
 				}
 			}
 		}
-		self.push_let(&c.template);
+		self.push_value(&c.template.data);
 	}
 
 	fn push_expression(&mut self, expr: &'a ExpressionData<'db>) {
@@ -267,9 +267,16 @@ impl<'a, 'db> Liveness<'a, 'db> {
 	}
 }
 
-/// A single stack slot allocated to a declaration or input parameter.
+/// A single stack slot allocated to a declaration or function parameter.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SlotId(u32);
+pub struct SlotId(NonZeroU32);
+
+impl SlotId {
+	/// Convert the slot ID into a raw u32 value.
+	pub fn into_raw(self) -> u32 {
+		self.0.into()
+	}
+}
 
 impl std::fmt::Debug for SlotId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -310,17 +317,12 @@ impl<'a, 'db> SlotAllocator<'a, 'db> {
 	}
 
 	fn max_card_search(&mut self) {
-		let Some(body) = self.function.body.as_ref() else {
+		if self.function.body.is_none() {
 			return;
-		};
+		}
 		let one = NonZeroU32::new(1).unwrap();
 		let mut weights =
 			ArenaMap::from_iter(self.function.data.declarations.keys().map(|k| (k, one)));
-		if let LetResult::Identifier(Identifier::Declaration(ret)) = body.result {
-			// Force the return value to be the first slot
-			let two = NonZeroU32::new(2).unwrap();
-			weights.insert(ret, two);
-		}
 		loop {
 			// TODO: Use a priority queue to avoid O(n) search for max weight
 			let Some((d, _)) = weights.iter().map(|(d, w)| (d, *w)).max_by_key(|(_, w)| *w) else {
@@ -339,16 +341,23 @@ impl<'a, 'db> SlotAllocator<'a, 'db> {
 	fn greedy_slot_assignment(&mut self) -> ArenaMap<Declaration<'db>, SlotId> {
 		let mut slots = ArenaMap::new();
 		for d in self.ordered.iter() {
-			let mut used_slots: Set<u32> = Set::new();
+			let mut used_slots: Set<SlotId> = Set::new();
 			for n in self.interferences.get(d).iter().flat_map(|ds| ds.iter()) {
-				if let Some(SlotId(slot)) = slots.get(*n) {
+				if let Some(slot) = slots.get(*n) {
 					let _ = used_slots.insert(*slot);
 				}
 			}
-			let slot = (self.function.parameters.len() as u32..)
-				.find(|s| !used_slots.contains(s))
+			let slot = ((self.function.parameters.len() + 1) as u32..)
+				.find_map(|s| {
+					let slot_id = SlotId(NonZeroU32::new(s).unwrap());
+					if !used_slots.contains(&slot_id) {
+						Some(slot_id)
+					} else {
+						None
+					}
+				})
 				.expect("There should always be a free slot");
-			slots.insert(*d, SlotId(slot));
+			slots.insert(*d, slot);
 		}
 		slots
 	}
@@ -460,11 +469,11 @@ mod tests {
             (r, s),
         ],
         slots: {
-            "p": SlotId(1),
-            "q": SlotId(0),
-            "r": SlotId(1),
-            "s": SlotId(0),
-            "t": SlotId(0),
+            "p": SlotId(2),
+            "q": SlotId(1),
+            "r": SlotId(2),
+            "s": SlotId(1),
+            "t": SlotId(1),
         },
     }
 "#]],
@@ -505,16 +514,16 @@ mod tests {
             (q, d),
         ],
         slots: {
-            "a": SlotId(1),
-            "b": SlotId(0),
-            "c": SlotId(0),
-            "d": SlotId(0),
-            "e": SlotId(1),
-            "f": SlotId(0),
-            "p": SlotId(0),
-            "q": SlotId(2),
-            "r": SlotId(0),
-            "x": SlotId(0),
+            "a": SlotId(2),
+            "b": SlotId(1),
+            "c": SlotId(1),
+            "d": SlotId(1),
+            "e": SlotId(2),
+            "f": SlotId(1),
+            "p": SlotId(1),
+            "q": SlotId(3),
+            "r": SlotId(1),
+            "x": SlotId(1),
         },
     }
 "#]],
@@ -540,10 +549,10 @@ mod tests {
             (r, a),
         ],
         slots: {
-            "a": SlotId(0),
-            "i": SlotId(3),
-            "p": SlotId(2),
-            "r": SlotId(1),
+            "a": SlotId(1),
+            "i": SlotId(4),
+            "p": SlotId(3),
+            "r": SlotId(2),
         },
     }
 "#]],
@@ -567,10 +576,10 @@ mod tests {
             (r, a),
         ],
         slots: {
-            "a": SlotId(0),
-            "i": SlotId(2),
-            "j": SlotId(1),
-            "r": SlotId(1),
+            "a": SlotId(1),
+            "i": SlotId(3),
+            "j": SlotId(2),
+            "r": SlotId(2),
         },
     }
 "#]],
@@ -624,16 +633,16 @@ mod tests {
             (w, a),
         ],
         slots: {
-            "a": SlotId(0),
-            "c": SlotId(1),
-            "d": SlotId(1),
-            "i": SlotId(4),
-            "j": SlotId(1),
-            "p": SlotId(2),
-            "r": SlotId(1),
-            "u": SlotId(3),
-            "v": SlotId(1),
-            "w": SlotId(1),
+            "a": SlotId(1),
+            "c": SlotId(2),
+            "d": SlotId(2),
+            "i": SlotId(5),
+            "j": SlotId(2),
+            "p": SlotId(3),
+            "r": SlotId(2),
+            "u": SlotId(4),
+            "v": SlotId(2),
+            "w": SlotId(2),
         },
     }
 "#]],

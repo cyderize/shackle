@@ -80,6 +80,7 @@ id_registry!(
 	expression_name,
 	constraint_name,
 	mzn_deprecated,
+	mzn_forward_annotations,
 );
 
 id_registry!(

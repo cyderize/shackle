@@ -11,3 +11,5 @@ annotation mzn_internal_generated;
 
 % An output array of (key, value) pairs, shown as an array indexed by the keys
 annotation mzn_output_keyed;
+% Forward the annotations to the next function call.
+annotation mzn_forward_annotations;

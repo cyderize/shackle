@@ -988,13 +988,14 @@ mod tests {
 		let mir = lower_from_thir(&db, &model);
 		let expected = expect![[r#"
     annotation 'output';
-    function var bool: foo(var bool: b) :: promise_total = let {
-
-    } in b;
+    function var bool: foo_root(var bool: b) :: promise_total = let {
+    var bool: _DECL_1 = b;
+    constraint _DECL_1;
+    } in true;
     var bool: x;
     constraint annotate(x, 'output');
     x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
-    constraint foo(x);
+    constraint foo_root(x);
     solve satisfy;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));

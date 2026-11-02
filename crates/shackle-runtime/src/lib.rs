@@ -153,6 +153,7 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 					return_address: self.pc,
 					return_slot: SlotIndex::first(),
 					halt_on_return: true,
+					annotations: Vec::new(),
 				},
 				self.program.functions[self.pc.function].slot_count,
 			);
@@ -176,6 +177,7 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 				return_address: old_pc,
 				return_slot,
 				halt_on_return: true,
+				annotations: Vec::new(),
 			},
 			self.program.functions[function].slot_count,
 		);
@@ -224,11 +226,22 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 					!self.program.functions[c.function].body.is_empty(),
 					"Call assigned to slot must have a body"
 				);
+				let annotations = c
+					.annotations
+					.iter()
+					.map(|ann| match ann {
+						shackle_ir::Identifier::Annotation(idx) => {
+							Value::new_annotation((*idx).into(), Vec::new())
+						}
+						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
+					})
+					.collect();
 				self.stack.push_call_frame(
 					CallFrame {
 						return_address: self.pc,
 						return_slot: *slot,
 						halt_on_return: false,
+						annotations,
 					},
 					self.program.functions[c.function].slot_count,
 				);
@@ -277,11 +290,22 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Call(c),
 			} => {
+				let annotations = c
+					.annotations
+					.iter()
+					.map(|ann| match ann {
+						shackle_ir::Identifier::Annotation(idx) => {
+							Value::new_annotation((*idx).into(), Vec::new())
+						}
+						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
+					})
+					.collect();
 				self.stack.push_call_frame(
 					CallFrame {
 						return_address: self.pc,
 						return_slot: SlotIndex::first(),
 						halt_on_return: false,
+						annotations,
 					},
 					self.program.functions[c.function].slot_count,
 				);
@@ -374,8 +398,18 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 			Instruction::Return {
 				expression: shackle_ir::Expression::Call(c),
 			} => {
+				let annotations = c
+					.annotations
+					.iter()
+					.map(|ann| match ann {
+						shackle_ir::Identifier::Annotation(idx) => {
+							Value::new_annotation((*idx).into(), Vec::new())
+						}
+						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
+					})
+					.collect::<Vec<_>>();
 				self.stack
-					.tail_call(self.program.functions[c.function].slot_count);
+					.tail_call(self.program.functions[c.function].slot_count, annotations);
 				for (i, arg) in c.arguments.iter().enumerate() {
 					let slot =
 						shackle_ir::SlotId::Relative(NonZeroU32::new((i + 1) as u32).unwrap());

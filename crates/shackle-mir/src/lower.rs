@@ -627,10 +627,19 @@ impl<'a, 'db> Collector<'a, 'db> {
 								self.model[*f].body()
 							)
 						});
+						let annotations = expression
+							.annotations()
+							.iter()
+							.map(|ann| {
+								self.lower_expression(ann, destination)
+									.into_identifier(self, destination)
+							})
+							.collect();
 						Expression::new(
 							Call {
 								function,
 								arguments,
+								annotations,
 							},
 							ty,
 							origin,

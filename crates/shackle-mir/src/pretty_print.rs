@@ -299,7 +299,23 @@ impl<'db> PrettyPrinter<'db> {
 					.iter()
 					.map(|v| self.print_value(db, item, v))
 					.collect::<Vec<_>>();
-				format!("{}({})", f, args.join(", "))
+				format!(
+					"{}({}){}",
+					f,
+					args.join(", "),
+					if c.annotations.is_empty() {
+						"".to_owned()
+					} else {
+						format!(
+							" :: {}",
+							c.annotations
+								.iter()
+								.map(|ann| self.print_identifier(db, item, ann))
+								.collect::<Vec<_>>()
+								.join("")
+						)
+					}
+				)
 			}
 			ExpressionData::AnnotationCall(c) => {
 				let f = self.model.annotations[c.annotation].name.pretty_print(db);

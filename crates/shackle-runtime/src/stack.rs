@@ -71,6 +71,7 @@ impl<'db> Stack<'db> {
 			return_address: frame.return_address,
 			return_slot: frame.return_slot.as_slot_index(self),
 			halt_on_return: frame.halt_on_return,
+			annotations: frame.annotations,
 		};
 		self.call_stack.push(CallFrameEntry {
 			frame_offset,
@@ -82,11 +83,12 @@ impl<'db> Stack<'db> {
 	}
 
 	/// Resize the top call frame and increment the tail call count
-	pub fn tail_call(&mut self, slot_count: usize) {
+	pub fn tail_call(&mut self, slot_count: usize, annotations: impl IntoIterator<Item = Value>) {
 		self.resize_call_frame(slot_count);
 		let frame = self.call_stack.last_mut().unwrap();
 		frame.values_defined.clear();
 		frame.tail_call_count += 1;
+		frame.inner.annotations.extend(annotations);
 	}
 
 	/// Resize the top call frame to have the given number of slots
@@ -126,6 +128,14 @@ impl<'db> Stack<'db> {
 			.unwrap_or(&[])
 	}
 
+	/// Get the annotations on the current callframe
+	pub fn annotations(&self) -> &[Value] {
+		self.call_stack
+			.last()
+			.map(|f| f.inner.annotations.as_slice())
+			.unwrap_or(&[])
+	}
+
 	/// Print the call stack to a string
 	pub fn dump(&self, db: &'db dyn Db, program: &shackle_ir::Program<'db>) -> String {
 		let mut s = String::new();
@@ -162,6 +172,8 @@ pub struct CallFrame<'db, T = SlotIndex> {
 	pub return_slot: T,
 	/// Whether to halt the interpreter when returning from this call
 	pub halt_on_return: bool,
+	/// Annotations on the call
+	pub annotations: Vec<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

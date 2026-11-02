@@ -154,6 +154,8 @@ pub struct Call<'db> {
 	pub function: FunctionId<'db>,
 	/// The arguments
 	pub arguments: Vec<Value<'db>>,
+	/// The annotations
+	pub annotations: Vec<Identifier<'db>>,
 }
 
 /// An annotation call

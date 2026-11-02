@@ -155,6 +155,17 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 					.iter()
 					.map(|arg| self.lower_value(&arg.data))
 					.collect(),
+				annotations: call
+					.annotations
+					.iter()
+					.map(|ann| match &ann {
+						shackle_mir::Identifier::Annotation(a) => {
+							self.parent.annotation_map[*a].into()
+						}
+						shackle_mir::Identifier::Declaration(d) => Identifier::Slot(self.slots[*d]),
+						_ => unreachable!(),
+					})
+					.collect(),
 			}),
 			shackle_mir::ExpressionData::AnnotationCall(call) => {
 				Expression::AnnotationCall(AnnotationCall {

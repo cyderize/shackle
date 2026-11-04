@@ -81,6 +81,7 @@ id_registry!(
 	constraint_name,
 	mzn_deprecated,
 	mzn_forward_annotations,
+	mzn_no_remove,
 );
 
 id_registry!(
@@ -95,6 +96,7 @@ id_registry!(
 	objective: "_objective",
 	this: "this",
 	object_id: "id",
+	root: "mzn_root",
 );
 
 id_registry!(
@@ -150,6 +152,7 @@ id_registry!(
 	dot_dot: "..",
 	enum2int,
 	enum_of,
+	enum_name_internal,
 	eq: "=",
 	exists,
 	exp,
@@ -187,6 +190,8 @@ id_registry!(
 	le: "<=",
 	length,
 	ln,
+	log,
+	log2,
 	log10,
 	lognormal,
 	logstream_to_string,
@@ -249,6 +254,7 @@ id_registry!(
 	mzn_var_float,
 	mzn_var_int,
 	mzn_var_set_of_int,
+	mzn_post,
 	ne: "!=",
 	normal,
 	not,
@@ -289,6 +295,7 @@ id_registry!(
 	subset,
 	sum,
 	string_length,
+	string_split,
 	superset,
 	symdiff,
 	symmetry_breaking_constraint,

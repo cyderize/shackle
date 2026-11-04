@@ -84,6 +84,8 @@ pub struct GlobalVar<'db> {
 	pub ty: Ty<'db>,
 	/// The name of the global
 	pub name: Option<Name<'db>>,
+	/// The annotations on the global
+	pub annotations: Vec<AnnotationId<'db>>,
 }
 
 /// A parameter for a function or annotation
@@ -279,6 +281,8 @@ pub enum ExpressionData<'db> {
 	AnnotationCall(AnnotationCall<'db>),
 	/// An interpreter intrinsic builtin
 	Builtin(Builtin<'db>),
+	/// Create a new fresh variable
+	FreshVariable(FreshVariable<Box<Value<'db>>>),
 	/// An if-then-else expression
 	IfThenElse(IfThenElse<'db>),
 	/// A comprehension
@@ -555,4 +559,35 @@ pub enum ValueData<'db> {
 	Array(Array<'db>),
 	/// A tuple access
 	TupleAccess(TupleAccess<'db>),
+}
+
+/// A new fresh variable
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum FreshVariable<T> {
+	/// Fresh boolean variable
+	VarBool {
+		/// Whether this variable is defined by the constraints in the current function
+		is_defined: bool,
+	},
+	/// Fresh integer variable
+	VarInt {
+		/// The domain of the variable
+		domain: T,
+		/// Whether this variable is defined by the constraints in the current function
+		is_defined: bool,
+	},
+	/// Fresh float variable
+	VarFloat {
+		/// The domain of the variable
+		domain: T,
+		/// Whether this variable is defined by the constraints in the current function
+		is_defined: bool,
+	},
+	/// Fresh set of integer variable
+	VarSetOfInt {
+		/// The domain of the variable
+		domain: T,
+		/// Whether this variable is defined by the constraints in the current function
+		is_defined: bool,
+	},
 }

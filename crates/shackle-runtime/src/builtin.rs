@@ -15,10 +15,10 @@ use crate::{
 };
 
 /// Builtin call with evaluated arguments
-pub type Builtin<'db> = shackle_ir::Builtin<'db, Value>;
+pub type Builtin = shackle_ir::Builtin<Value>;
 
 /// Evaluate a builtin call
-pub fn eval_builtin<'db>(interpreter: &mut Interpreter<'_, 'db>, builtin: Builtin<'db>) -> Value {
+pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Value {
 	macro_rules! float_math {
 		($value:expr, $operation:expr) => {
 			float_math($value, $operation).unwrap_or_else(|e| {
@@ -41,10 +41,6 @@ pub fn eval_builtin<'db>(interpreter: &mut Interpreter<'_, 'db>, builtin: Builti
 			interpreter.abort(&format!("Abort: {}", message.as_str()));
 			true.into()
 		}
-		Builtin::VarBool => interpreter.new_var_bool(),
-		Builtin::VarInt { domain } => interpreter.new_var_int(domain),
-		Builtin::VarFloat { domain } => interpreter.new_var_float(domain),
-		Builtin::VarSetOfInt { domain } => interpreter.new_var_set_of_int(domain),
 		Builtin::BoolToInt(v) => v, // Same representation, so no-op
 		Builtin::IntToFloat(v) => int_to_float(v).unwrap_or_else(|e| {
 			interpreter.abort(&format!("Float set coercion error: {}", e.reason));
@@ -167,6 +163,7 @@ pub fn eval_builtin<'db>(interpreter: &mut Interpreter<'_, 'db>, builtin: Builti
 		Builtin::CompilerVersion => compiler_version(),
 		Builtin::StringPlusPlus { left, right } => string_concat(left, right),
 		Builtin::StringLength(x) => string_len(x),
+		Builtin::StringSplit { string, separator } => string_split(string, separator),
 		Builtin::LessThan { left, right } => (left < right).into(),
 		Builtin::Equal { left, right } => (left == right).into(),
 		Builtin::Sort(x) => array_sort(x),
@@ -235,6 +232,11 @@ pub fn eval_builtin<'db>(interpreter: &mut Interpreter<'_, 'db>, builtin: Builti
 		}),
 		Builtin::Exp(x) => float_math!(x, FloatVal::exp),
 		Builtin::Ln(x) => float_math!(x, FloatVal::ln),
+		Builtin::Log { base, argument } => float_log(base, argument).unwrap_or_else(|e| {
+			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
+			0.into()
+		}),
+		Builtin::Log2(x) => float_math!(x, FloatVal::log2),
 		Builtin::Log10(x) => float_math!(x, FloatVal::log10),
 		Builtin::Sin(x) => float_math!(x, FloatVal::sin),
 		Builtin::Cos(x) => float_math!(x, FloatVal::cos),
@@ -477,6 +479,10 @@ fn float_math(
 	operation(&x).map(Value::from)
 }
 
+fn float_log(base: Value, argument: Value) -> Result<Value, ArithmeticError> {
+	base.as_float().log(argument.as_float()).map(Value::from)
+}
+
 fn int_pow(a: Value, b: Value) -> Result<Value, ArithmeticError> {
 	a.as_int().pow(b.as_int()).map(Value::from)
 }
@@ -545,6 +551,19 @@ fn string_len(x: Value) -> Value {
 
 fn string_concat(x: Value, y: Value) -> Value {
 	(&format!("{}{}", x.as_str(), y.as_str())[..]).into()
+}
+
+fn string_split(string: Value, separator: Value) -> Value {
+	let separator = separator.as_str();
+	if separator.is_empty() {
+		return Value::from_iter(
+			string
+				.as_str()
+				.chars()
+				.map(|character| Value::from(character.to_string().as_str())),
+		);
+	}
+	Value::from_iter(string.as_str().split(separator).map(Value::from))
 }
 
 fn array_len(x: Value) -> Value {
@@ -843,5 +862,17 @@ mod tests {
 		let weights = Value::from_iter([Value::from(0.0), Value::from(1.0)]).with_dim([(4, 5)]);
 		let sample: i64 = discrete_distribution(weights).unwrap().try_into().unwrap();
 		assert_eq!(sample, 5);
+	}
+
+	#[test]
+	fn string_split_preserves_empty_substrings_and_handles_unicode() {
+		assert_eq!(
+			string_split("a,,b,".into(), ",".into()),
+			Value::from_iter(["a", "", "b", ""].into_iter().map(Value::from)),
+		);
+		assert_eq!(
+			string_split("aé".into(), "".into()),
+			Value::from_iter(["a", "é"].into_iter().map(Value::from)),
+		);
 	}
 }

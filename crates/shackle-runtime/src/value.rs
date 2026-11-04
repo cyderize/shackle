@@ -14,7 +14,7 @@ use std::{
 	fmt::Debug,
 	hash::{Hash, Hasher},
 	mem::MaybeUninit,
-	num::{NonZeroU32, NonZeroU64},
+	num::NonZeroU64,
 	pin::Pin,
 	ptr::NonNull,
 	str::{from_utf8, from_utf8_unchecked},
@@ -184,8 +184,8 @@ impl Ord for Value {
 			(IntSet(lhs), IntSet(rhs)) => lhs.cmp(&rhs),
 			(FloatSet(lhs), FloatSet(rhs)) => lhs.cmp(&rhs),
 			(Annotation(lhs), Annotation(rhs)) => lhs
-				.ident
-				.cmp(&rhs.ident)
+				.annotation
+				.cmp(&rhs.annotation)
 				.then_with(|| lhs.arguments.cmp(rhs.arguments)),
 			(BoolVar(lhs), BoolVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
 			(IntVar(lhs), IntVar(rhs)) => lhs.ident().cmp(&rhs.ident()),
@@ -314,7 +314,7 @@ impl Value {
 						intervals: v.refs().floats,
 					}),
 					ValType::Annotation => DataView::Annotation(AnnotationView {
-						ident: v.refs().idents[0],
+						annotation: v.refs().idents[0],
 						arguments: v.refs().values,
 					}),
 					ValType::View => {
@@ -418,7 +418,7 @@ impl Value {
 
 	/// Construct an annotation with the given identifier and arguments.
 	pub fn new_annotation<I: ExactSizeIterator<Item = Value>, S: IntoIterator<IntoIter = I>>(
-		ident: NonZeroU32,
+		annotation: shackle_ir::AnnotationId,
 		arguments: S,
 	) -> Value {
 		let arguments = arguments.into_iter();
@@ -428,7 +428,7 @@ impl Value {
 			ref_count: 1.into(),
 			weak_count: 0.into(),
 			values: FromIterPrefix(arguments),
-			idents: FromIterPrefix([ident].into_iter()),
+			idents: FromIterPrefix([annotation].into_iter()),
 			ints: InitEmpty,
 			floats: InitEmpty,
 			bool_var: InitEmpty,
@@ -535,7 +535,7 @@ pub enum DataView<'a> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AnnotationView<'a> {
 	/// The annotation identifier.
-	pub ident: NonZeroU32,
+	pub annotation: shackle_ir::AnnotationId,
 	/// The annotation arguments.
 	pub arguments: &'a [Value],
 }
@@ -625,7 +625,7 @@ struct ValueStorage {
 	// are any strong references.
 	weak_count: AtomicU8,
 	#[varlen_array]
-	idents: [NonZeroU32; match *ty {
+	idents: [shackle_ir::AnnotationId; match *ty {
 		ValType::Annotation => 1,
 		_ => 0,
 	}],
@@ -910,6 +910,8 @@ mod tests {
 		hash::{Hash, Hasher},
 	};
 
+	use shackle_ir::AnnotationId;
+
 	use super::*;
 
 	fn hash(value: &Value) -> u64 {
@@ -1046,7 +1048,7 @@ mod tests {
 	fn non_range_set_value_deduplicates_members() {
 		let string = Value::from("string");
 		let tuple = Value::from_iter([Value::from(1), Value::from(2)]);
-		let annotation = Value::new_annotation(NonZeroU32::new(7).unwrap(), [3.into()].into_iter());
+		let annotation = Value::new_annotation(AnnotationId::new(7), [3.into()].into_iter());
 		let set = Value::new_discrete_set([
 			string.clone(),
 			tuple.clone(),
@@ -1090,23 +1092,21 @@ mod tests {
 
 	#[test]
 	fn annotation_value() {
-		let empty = Value::new_annotation(NonZeroU32::new(42).unwrap(), std::iter::empty());
+		let empty = Value::new_annotation(AnnotationId::new(42), std::iter::empty());
 		assert_eq!(
 			empty.deref(),
 			DataView::Annotation(AnnotationView {
-				ident: NonZeroU32::new(42).unwrap(),
+				annotation: AnnotationId::new(42),
 				arguments: &[],
 			})
 		);
 
-		let annotation = Value::new_annotation(
-			NonZeroU32::new(7).unwrap(),
-			[1.into(), 2.5.into()].into_iter(),
-		);
+		let annotation =
+			Value::new_annotation(AnnotationId::new(7), [1.into(), 2.5.into()].into_iter());
 		assert_eq!(
 			annotation.deref(),
 			DataView::Annotation(AnnotationView {
-				ident: NonZeroU32::new(7).unwrap(),
+				annotation: AnnotationId::new(7),
 				arguments: &[1.into(), 2.5.into()],
 			})
 		);

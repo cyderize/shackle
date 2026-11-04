@@ -6,7 +6,7 @@ use std::fmt::Write;
 use shackle_hir::Db;
 
 use crate::{
-	Annotation, Builtin, Constraint, DeclarationId, Expression, ExpressionData, Function,
+	Annotation, Constraint, DeclarationId, Expression, ExpressionData, FreshVariable, Function,
 	Generator, Identifier, Let, LetItem, LetResult, Literal, LiteralData, Model, Solve, Value,
 	ValueData,
 };
@@ -38,11 +38,19 @@ impl<'db> PrettyPrinter<'db> {
 		for (v_idx, v) in self.model.global_vars.iter() {
 			writeln!(
 				&mut w,
-				"{}: {};",
+				"{}: {}{};",
 				v.ty.pretty_print(db),
 				v.name
 					.map(|n| n.pretty_print(db))
-					.unwrap_or_else(|| format!("_GLOBAL_{}", Into::<u32>::into(v_idx)))
+					.unwrap_or_else(|| format!("_GLOBAL_{}", Into::<u32>::into(v_idx))),
+				v.annotations
+					.iter()
+					.map(|ann| format!(
+						" :: {}",
+						self.model.annotations[*ann].name.pretty_print(db)
+					))
+					.collect::<Vec<_>>()
+					.join("")
 			)
 			.unwrap();
 		}
@@ -224,7 +232,7 @@ impl<'db> PrettyPrinter<'db> {
 			.collect::<Vec<_>>()
 			.join("\n");
 		let result = match &l.result {
-			LetResult::Root => "true".to_owned(),
+			LetResult::Root => "mzn_root".to_owned(),
 			LetResult::Expression(result) => self.print_expression(db, item, result),
 		};
 		format!("let {{\n{}\n}} in {}", items, result)
@@ -262,25 +270,31 @@ impl<'db> PrettyPrinter<'db> {
 		data: &ExpressionData<'db>,
 	) -> String {
 		match data {
-			ExpressionData::Builtin(Builtin::VarBool) => {
-				"(let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR)".to_owned()
-			}
-			ExpressionData::Builtin(Builtin::VarInt { domain }) => {
+			ExpressionData::FreshVariable(FreshVariable::VarBool { is_defined }) => {
 				format!(
-					"(let {{ var {}: _FRESH_VAR; }} in _FRESH_VAR)",
-					self.print_value(db, item, domain)
+					"(let {{ var bool: _FRESH_VAR :: promise_total{}; }} in _FRESH_VAR)",
+					if *is_defined { ":: is_defined_var" } else { "" }
 				)
 			}
-			ExpressionData::Builtin(Builtin::VarFloat { domain }) => {
+			ExpressionData::FreshVariable(FreshVariable::VarInt { domain, is_defined }) => {
 				format!(
-					"(let {{ var {}: _FRESH_VAR; }} in _FRESH_VAR)",
-					self.print_value(db, item, domain)
+					"(let {{ var {}: _FRESH_VAR{}; }} in _FRESH_VAR)",
+					self.print_value(db, item, domain),
+					if *is_defined { ":: is_defined_var" } else { "" }
 				)
 			}
-			ExpressionData::Builtin(Builtin::VarSetOfInt { domain }) => {
+			ExpressionData::FreshVariable(FreshVariable::VarFloat { domain, is_defined }) => {
 				format!(
-					"(let {{ var set of {}: _FRESH_VAR; }} in _FRESH_VAR)",
-					self.print_value(db, item, domain)
+					"(let {{ var {}: _FRESH_VAR{}; }} in _FRESH_VAR)",
+					self.print_value(db, item, domain),
+					if *is_defined { ":: is_defined_var" } else { "" }
+				)
+			}
+			ExpressionData::FreshVariable(FreshVariable::VarSetOfInt { domain, is_defined }) => {
+				format!(
+					"(let {{ var set of {}: _FRESH_VAR{}; }} in _FRESH_VAR)",
+					self.print_value(db, item, domain),
+					if *is_defined { ":: is_defined_var" } else { "" }
 				)
 			}
 			ExpressionData::Builtin(b) => format!(

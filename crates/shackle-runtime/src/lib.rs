@@ -7,8 +7,7 @@ pub mod stack;
 pub mod value;
 use std::num::NonZeroU32;
 
-use shackle_hir::Db;
-use shackle_ir::{FunctionId, Instruction, InstructionId, Program};
+use shackle_ir::{FreshVariable, FunctionId, Instruction, InstructionId, Program};
 pub use value::{AnnotationView, DataView, FloatVal, IntVal, Value};
 
 use crate::{
@@ -31,14 +30,14 @@ pub enum InterpreterState {
 
 /// The address of an instruction
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Address<'db> {
+pub struct Address {
 	/// The function that the address is in
-	pub function: FunctionId<'db>,
+	pub function: FunctionId,
 	/// The instruction that the address points to
-	pub instruction: InstructionId<'db>,
+	pub instruction: InstructionId,
 }
 
-impl<'db> Address<'db> {
+impl Address {
 	/// Get the next instruction after this one
 	pub fn next(&self) -> Self {
 		Self {
@@ -50,21 +49,19 @@ impl<'db> Address<'db> {
 
 /// The interpreter for the Shackle IR
 #[derive(Debug)]
-pub struct Interpreter<'a, 'db> {
-	db: &'db dyn Db,
-	program: &'a Program<'db>,
-	pc: Address<'db>,
+pub struct Interpreter<'a> {
+	program: &'a Program,
+	pc: Address,
 	state: InterpreterState,
-	stack: Stack<'db>,
+	stack: Stack,
 	comprehensions: ComprehensionState,
-	nanozinc: NanoZinc<'db>,
+	nanozinc: NanoZinc,
 }
 
-impl<'a, 'db> Interpreter<'a, 'db> {
+impl<'a> Interpreter<'a> {
 	/// Create a new interpreter for the given program
-	pub fn new(db: &'db dyn Db, program: &'a Program<'db>) -> Self {
+	pub fn new(program: &'a Program) -> Self {
 		Self {
-			db,
 			program,
 			pc: Address {
 				function: program.main_entry_point,
@@ -82,12 +79,12 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 	}
 
 	/// Get a reference to the NanoZinc model
-	pub fn nanozinc(&self) -> &NanoZinc<'db> {
+	pub fn nanozinc(&self) -> &NanoZinc {
 		&self.nanozinc
 	}
 
 	/// Get a mutable reference to the NanoZinc model
-	pub fn nanozinc_mut(&mut self) -> &mut NanoZinc<'db> {
+	pub fn nanozinc_mut(&mut self) -> &mut NanoZinc {
 		&mut self.nanozinc
 	}
 
@@ -100,44 +97,6 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 	pub fn is_entry_point(&self) -> bool {
 		self.pc.function == self.program.main_entry_point
 			|| self.pc.function == self.program.output_entry_point
-	}
-
-	/// Get the values defined in the current call frame
-	pub fn values_defined(&self) -> &[Value] {
-		self.stack.values_defined()
-	}
-
-	/// Add a value to the list of values defined in the current call frame
-	pub fn add_value_defined(&mut self, value: Value) {
-		self.stack.add_value_defined(value);
-	}
-
-	/// Create a new boolean variable
-	pub fn new_var_bool(&mut self) -> Value {
-		let var = self.nanozinc_mut().add_var_bool();
-		self.stack.add_value_defined(var.clone());
-		var
-	}
-
-	/// Create a new integer variable with the given domain
-	pub fn new_var_int(&mut self, domain: Value) -> Value {
-		let var = self.nanozinc_mut().add_var_int(domain);
-		self.stack.add_value_defined(var.clone());
-		var
-	}
-
-	/// Create a new float variable with the given domain
-	pub fn new_var_float(&mut self, domain: Value) -> Value {
-		let var = self.nanozinc_mut().add_var_float(domain);
-		self.stack.add_value_defined(var.clone());
-		var
-	}
-
-	/// Create a new set of integer variable with the given domain
-	pub fn new_var_set_of_int(&mut self, domain: Value) -> Value {
-		let var = self.nanozinc_mut().add_var_set_of_int(domain);
-		self.stack.add_value_defined(var.clone());
-		var
 	}
 
 	/// Run the interpreter until it halts
@@ -154,6 +113,7 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 					return_slot: SlotIndex::first(),
 					halt_on_return: true,
 					annotations: Vec::new(),
+					nanozinc_pending_count: 0,
 				},
 				self.program.functions[self.pc.function].slot_count,
 			);
@@ -167,7 +127,7 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 	}
 
 	/// Evaluate a function
-	pub fn eval(&mut self, function: FunctionId<'db>, arguments: &[Value]) -> Value {
+	pub fn eval(&mut self, function: FunctionId, arguments: &[Value]) -> Value {
 		let old_state = self.state;
 		self.state = InterpreterState::Running;
 		let old_pc = self.pc;
@@ -178,6 +138,7 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 				return_slot,
 				halt_on_return: true,
 				annotations: Vec::new(),
+				nanozinc_pending_count: 0,
 			},
 			self.program.functions[function].slot_count,
 		);
@@ -220,13 +181,17 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 			} => self.stack[*slot] = self.eval_builtin(b),
 			Instruction::Assign {
 				slot,
+				expression: shackle_ir::Expression::FreshVariable(fv),
+			} => self.stack[*slot] = self.eval_fresh_variable(fv),
+			Instruction::Assign {
+				slot,
 				expression: shackle_ir::Expression::Call(c),
 			} => {
 				assert!(
 					!self.program.functions[c.function].body.is_empty(),
 					"Call assigned to slot must have a body"
 				);
-				let annotations = c
+				let mut annotations = c
 					.annotations
 					.iter()
 					.map(|ann| match ann {
@@ -235,13 +200,21 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 						}
 						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
 					})
-					.collect();
+					.collect::<Vec<_>>();
+				if c.forward_annotations {
+					annotations.extend(self.stack.annotations().iter().cloned());
+				}
+				let promise_total = self.program.functions[c.function].promise_total;
+				if promise_total {
+					self.nanozinc_mut().push_pending();
+				}
 				self.stack.push_call_frame(
 					CallFrame {
 						return_address: self.pc,
 						return_slot: *slot,
 						halt_on_return: false,
 						annotations,
+						nanozinc_pending_count: promise_total.into(),
 					},
 					self.program.functions[c.function].slot_count,
 				);
@@ -268,29 +241,8 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 			}
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Call(c),
-			} if self.program.functions[c.function].body.is_empty() => {
-				let args = c
-					.arguments
-					.iter()
-					.map(|arg| self.eval_value(arg))
-					.collect::<Vec<_>>();
-				if self.is_entry_point() {
-					self.nanozinc_mut().add_constraint(c.function, args);
-				} else {
-					let defined_vars = self.values_defined().to_vec();
-					for variable in defined_vars {
-						self.nanozinc_mut().add_defining_constraint(
-							c.function,
-							args.iter().cloned(),
-							variable.clone(),
-						);
-					}
-				}
-			}
-			Instruction::Constraint {
-				expression: shackle_ir::Expression::Call(c),
 			} => {
-				let annotations = c
+				let mut annotations = c
 					.annotations
 					.iter()
 					.map(|ann| match ann {
@@ -299,41 +251,65 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 						}
 						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
 					})
-					.collect();
-				self.stack.push_call_frame(
-					CallFrame {
-						return_address: self.pc,
-						return_slot: SlotIndex::first(),
-						halt_on_return: false,
-						annotations,
-					},
-					self.program.functions[c.function].slot_count,
-				);
-				for (i, arg) in c.arguments.iter().enumerate() {
-					let slot =
-						shackle_ir::SlotId::Relative(NonZeroU32::new((i + 1) as u32).unwrap());
-					let value = self.eval_value(arg);
-					self.stack[slot] = value;
+					.collect::<Vec<_>>();
+				if c.forward_annotations {
+					annotations.extend(self.stack.annotations().iter().cloned());
 				}
-				self.pc = Address {
-					function: c.function,
-					instruction: self.program.functions[c.function]
-						.body
-						.keys()
-						.next()
-						.unwrap(),
-				};
+				match c.kind {
+					shackle_ir::CallType::Predicate | shackle_ir::CallType::Delayed => {
+						let args = c
+							.arguments
+							.iter()
+							.map(|arg| self.eval_value(arg))
+							.collect::<Vec<_>>();
+						self.nanozinc_mut()
+							.add_constraint(c.function, args, annotations);
+					}
+					shackle_ir::CallType::Function => {
+						self.stack.push_call_frame(
+							CallFrame {
+								return_address: self.pc,
+								return_slot: SlotIndex::first(),
+								halt_on_return: false,
+								annotations,
+								nanozinc_pending_count: 0,
+							},
+							self.program.functions[c.function].slot_count,
+						);
+						for (i, arg) in c.arguments.iter().enumerate() {
+							let slot = shackle_ir::SlotId::Relative(
+								NonZeroU32::new((i + 1) as u32).unwrap(),
+							);
+							let value = self.eval_value(arg);
+							self.stack[slot] = value;
+						}
+						self.pc = Address {
+							function: c.function,
+							instruction: self.program.functions[c.function]
+								.body
+								.keys()
+								.next()
+								.unwrap(),
+						};
+					}
+				}
 			}
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Builtin(b),
 			} => {
-				let _ = self.eval_builtin(b);
+				let result = self.eval_builtin(b);
+				if result != 1.into() {
+					self.abort("Constraint evaluated to false");
+				}
 			}
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Value(_),
 			}
 			| Instruction::Constraint {
 				expression: shackle_ir::Expression::AnnotationCall(_),
+			}
+			| Instruction::Constraint {
+				expression: shackle_ir::Expression::FreshVariable(_),
 			} => {
 				unreachable!("Invalid constraint expression");
 			}
@@ -380,6 +356,9 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
 				self.stack[frame.return_slot] = value;
+				for _ in 0..frame.nanozinc_pending_count {
+					self.nanozinc_mut().pop_pending();
+				}
 				if frame.halt_on_return {
 					self.state = InterpreterState::Paused;
 				}
@@ -391,6 +370,23 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
 				self.stack[frame.return_slot] = value;
+				for _ in 0..frame.nanozinc_pending_count {
+					self.nanozinc_mut().pop_pending();
+				}
+				if frame.halt_on_return {
+					self.state = InterpreterState::Paused;
+				}
+			}
+			Instruction::Return {
+				expression: shackle_ir::Expression::FreshVariable(fv),
+			} => {
+				let value = self.eval_fresh_variable(fv);
+				let frame = self.stack.pop_call_frame();
+				self.pc = frame.return_address;
+				self.stack[frame.return_slot] = value;
+				for _ in 0..frame.nanozinc_pending_count {
+					self.nanozinc_mut().pop_pending();
+				}
 				if frame.halt_on_return {
 					self.state = InterpreterState::Paused;
 				}
@@ -408,8 +404,12 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
 					})
 					.collect::<Vec<_>>();
-				self.stack
-					.tail_call(self.program.functions[c.function].slot_count, annotations);
+				self.stack.tail_call(
+					self.program.functions[c.function].slot_count,
+					self.program.functions[c.function].promise_total,
+					!c.forward_annotations,
+					annotations,
+				);
 				for (i, arg) in c.arguments.iter().enumerate() {
 					let slot =
 						shackle_ir::SlotId::Relative(NonZeroU32::new((i + 1) as u32).unwrap());
@@ -432,6 +432,9 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
 				self.stack[frame.return_slot] = value;
+				for _ in 0..frame.nanozinc_pending_count {
+					self.nanozinc_mut().pop_pending();
+				}
 				if frame.halt_on_return {
 					self.state = InterpreterState::Paused;
 				}
@@ -449,11 +452,11 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 
 	pub(crate) fn abort(&mut self, reason: &str) {
 		println!("{}", reason);
-		println!("{}", self.stack.dump(self.db, self.program));
+		println!("{}", self.stack.dump(self.program));
 		self.state = InterpreterState::Aborted;
 	}
 
-	fn eval_value(&self, value: &shackle_ir::Value<'db>) -> Value {
+	fn eval_value(&self, value: &shackle_ir::Value) -> Value {
 		match value {
 			shackle_ir::Value::Literal(literal) => self.eval_literal(literal),
 			shackle_ir::Value::Tuple(tuple) => {
@@ -488,14 +491,12 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 		}
 	}
 
-	fn eval_literal(&self, literal: &shackle_ir::Literal<'db>) -> Value {
+	fn eval_literal(&self, literal: &shackle_ir::Literal) -> Value {
 		match literal {
 			shackle_ir::Literal::Boolean(boolean_literal) => Value::from(boolean_literal.0),
 			shackle_ir::Literal::Integer(integer_literal) => Value::from(integer_literal.0),
 			shackle_ir::Literal::Float(float_literal) => Value::from(float_literal.value()),
-			shackle_ir::Literal::String(string_literal) => {
-				Value::from(string_literal.value(self.db))
-			}
+			shackle_ir::Literal::String(s) => Value::from(&self.program.strings[*s][..]),
 			shackle_ir::Literal::Infinity => Value::from(IntVal::InfPos),
 			shackle_ir::Literal::InfiniteIntSet => INT_SET_INF.clone(),
 			shackle_ir::Literal::InfiniteFloatSet => FLOAT_SET_INF.clone(),
@@ -509,8 +510,26 @@ impl<'a, 'db> Interpreter<'a, 'db> {
 		}
 	}
 
-	fn eval_builtin(&mut self, builtin: &shackle_ir::Builtin<'db>) -> Value {
+	fn eval_builtin(&mut self, builtin: &shackle_ir::Builtin) -> Value {
 		builtin::eval_builtin(self, builtin.map(|value| self.eval_value(value)))
+	}
+
+	fn eval_fresh_variable(&mut self, fv: &FreshVariable<shackle_ir::Value>) -> Value {
+		match fv {
+			FreshVariable::VarBool { is_defined } => self.nanozinc_mut().add_var_bool(*is_defined),
+			FreshVariable::VarInt { domain, is_defined } => {
+				let domain = self.eval_value(domain);
+				self.nanozinc_mut().add_var_int(domain, *is_defined)
+			}
+			FreshVariable::VarFloat { domain, is_defined } => {
+				let domain = self.eval_value(domain);
+				self.nanozinc_mut().add_var_float(domain, *is_defined)
+			}
+			FreshVariable::VarSetOfInt { domain, is_defined } => {
+				let domain = self.eval_value(domain);
+				self.nanozinc_mut().add_var_set_of_int(domain, *is_defined)
+			}
+		}
 	}
 }
 
@@ -532,6 +551,7 @@ mod tests {
 			.set_ignore_stdlib(&mut db)
 			.to(true);
 		let source = r#"
+			annotation mzn_forward_annotations;
 			annotation output;
 			function int: '+'(int: a, int: b);
 			function int: foo() = 123 + 456;
@@ -541,7 +561,7 @@ mod tests {
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let function = program.functions.keys().next().unwrap();
-		let mut interpreter = Interpreter::new(&db, &program);
+		let mut interpreter = Interpreter::new(&program);
 		let result = interpreter.eval(function, &[]);
 		let DataView::Int(x) = result.deref() else {
 			panic!("expected result to be an integer");
@@ -565,13 +585,13 @@ mod tests {
 		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
-		let mut interpreter = Interpreter::new(&db, &program);
+		let mut interpreter = Interpreter::new(&program);
 		interpreter.run();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
     constraint foo(_X_INTRODUCED_0);
 "#]]
-		.assert_eq(&interpreter.nanozinc_mut().print(&db, &program));
+		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
 
 	#[test]
@@ -581,6 +601,7 @@ mod tests {
 			.set_ignore_stdlib(&mut db)
 			.to(true);
 		let source = r#"
+			annotation mzn_forward_annotations;
 			predicate foo(var int: x, var int: y);
 			function var int: foo_t(var int: x) :: promise_total = let {
 				var int: y;
@@ -589,19 +610,20 @@ mod tests {
 			test abort(string);
 			annotation promise_total;
 			annotation output;
+			annotation my_ann;
 			var {1, 3, 5}: x;
-			var int: y :: output = foo_t(x);
+			var int: y :: output = foo_t(x) :: my_ann;
 			"#;
 		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
-		let mut interpreter = Interpreter::new(&db, &program);
+		let mut interpreter = Interpreter::new(&program);
 		interpreter.run();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
     var int: _X_INTRODUCED_1;
-    constraint foo(_X_INTRODUCED_0, _X_INTRODUCED_1);
+    ⤷ constraint foo(_X_INTRODUCED_0, _X_INTRODUCED_1) :: my_ann;
 "#]]
-		.assert_eq(&interpreter.nanozinc_mut().print(&db, &program));
+		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
 }

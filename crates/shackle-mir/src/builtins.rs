@@ -10,28 +10,6 @@ use shackle_mir_derive::MirBuiltin;
 /// An interpreter builtin with arguments of type `T`.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, MirBuiltin)]
 pub enum Builtin<T> {
-	/// Fresh boolean variable
-	#[name(mzn_var_bool)]
-	VarBool,
-	/// Fresh integer variable
-	#[name(mzn_var_int)]
-	VarInt {
-		/// The domain of the variable
-		domain: T,
-	},
-	/// Fresh float variable
-	#[name(mzn_var_float)]
-	VarFloat {
-		/// The domain of the variable
-		domain: T,
-	},
-	/// Fresh set of integer variable
-	#[name(mzn_var_set_of_int)]
-	VarSetOfInt {
-		/// The domain of the variable
-		domain: T,
-	},
-
 	/// Coerce boolean to integer
 	#[name(bool2int)]
 	BoolToInt(T),
@@ -304,6 +282,14 @@ pub enum Builtin<T> {
 	/// Get length of string
 	#[name(string_length)]
 	StringLength(T),
+	/// Split a string by a separator
+	#[name(string_split)]
+	StringSplit {
+		/// String to split
+		string: T,
+		/// Separator
+		separator: T,
+	},
 	/// Par less than
 	#[name(lt)]
 	LessThan {
@@ -577,6 +563,17 @@ pub enum Builtin<T> {
 	/// Natural logarithm
 	#[name(ln)]
 	Ln(T),
+	/// Logarithm with the given base
+	#[name(log)]
+	Log {
+		/// Base
+		base: T,
+		/// Argument
+		argument: T,
+	},
+	/// Base 2 logarithm
+	#[name(log2)]
+	Log2(T),
 	/// Base 10 logarithm
 	#[name(log10)]
 	Log10(T),
@@ -667,8 +664,8 @@ mod tests {
 		assert_eq!(visited, [1, 2]);
 		assert_eq!(builtin, Builtin::Add { left: 1, right: 2 });
 		assert_eq!(
-			Builtin::<i32>::VarBool.map(|value| value * 10),
-			Builtin::VarBool
+			Builtin::<i32>::CheckDebugMode.map(|value| value * 10),
+			Builtin::CheckDebugMode
 		);
 	}
 

@@ -4,6 +4,7 @@ use varlen::prelude::FromIterPrefix;
 use crate::{
 	Value,
 	error::ValueError,
+	nanozinc::DefiningConstraints,
 	value::{DataView, InitEmpty, ValType, define_var_ref, value_storage},
 };
 
@@ -15,6 +16,7 @@ pub struct IntSetVar {
 	card: Option<Value>,
 	alias: Option<Value>,
 	binding_domain: bool,
+	defining_constraints: DefiningConstraints,
 }
 
 impl PartialEq for IntSetVar {
@@ -105,6 +107,16 @@ impl IntSetVar {
 			reason: "Variable is not fixed",
 		})
 	}
+
+	/// Get the defining constraints of the variable.
+	pub fn defining_constraints(&self) -> &DefiningConstraints {
+		&self.defining_constraints
+	}
+
+	/// Set the defining constraints of the variable.
+	pub fn set_defining_constraints(&mut self, defining_constraints: DefiningConstraints) {
+		self.defining_constraints = defining_constraints;
+	}
 }
 
 define_var_ref!(IntSetVar, IntSetVarRef);
@@ -130,6 +142,7 @@ impl Value {
 					card: None,
 					alias: None,
 					binding_domain: false,
+					defining_constraints: DefiningConstraints::default(),
 				})]
 				.into_iter(),
 			),

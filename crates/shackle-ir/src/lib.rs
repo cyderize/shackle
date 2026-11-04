@@ -9,9 +9,8 @@ use derive_more::{From, TryUnwrap, Unwrap};
 use expect_test as _;
 #[cfg(test)]
 use salsa as _;
-use shackle_hir::{self as _, BooleanLiteral, Db, FloatLiteral, IntegerLiteral, StringLiteral};
-use shackle_mir::Name;
-pub use shackle_mir::SetType;
+use shackle_hir::{self as _, BooleanLiteral, Db, FloatLiteral, IntegerLiteral};
+pub use shackle_mir::{FreshVariable, SetType};
 use shackle_thir as _;
 use shackle_utils::arena::{Arena, ArenaIndex, ArenaMap};
 pub mod lower;
@@ -25,63 +24,79 @@ pub enum SlotId {
 	Relative(NonZeroU32),
 }
 
+/// A string in the program
+pub type StringId = ArenaIndex<String>;
+
+/// Location in a source file
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Origin {
+	/// The file in which the instruction originated
+	pub file: StringId,
+	/// The line in the file
+	pub line: u32,
+	/// The column in the line
+	pub column: u32,
+}
+
 /// A program which can be executed
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Program<'db> {
+pub struct Program {
 	/// The number of slots in the program
 	pub global_slot_count: usize,
 	/// The functions
-	pub functions: Arena<Function<'db>>,
+	pub functions: Arena<Function>,
 	/// The annotations
-	pub annotations: Arena<Annotation<'db>>,
+	pub annotations: Arena<Annotation>,
 	/// The main entry point function
-	pub main_entry_point: FunctionId<'db>,
+	pub main_entry_point: FunctionId,
 	/// The output entry point function
-	pub output_entry_point: FunctionId<'db>,
+	pub output_entry_point: FunctionId,
+	/// Strings in the program
+	pub strings: Arena<String>,
 }
 
-impl<'db> Program<'db> {
+impl Program {
 	/// Get the IR of the program
-	pub fn lower_from_mir(db: &'db dyn Db) -> Program<'db> {
+	pub fn lower_from_mir(db: &dyn Db) -> Program {
 		let mir = shackle_mir::Model::lower_from_thir(db);
-		lower::lower_model(&mir)
+		lower::lower_model(db, &mir)
 	}
 }
 
 /// An instruction ID
-pub type InstructionId<'db> = ArenaIndex<Instruction<'db>>;
+pub type InstructionId = ArenaIndex<Instruction>;
 
 /// An instruction
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Instruction<'db> {
+pub enum Instruction {
 	/// Assign an expression to a slot
 	Assign {
 		/// Destination
 		slot: SlotId,
 		/// Expression to assign
-		expression: Expression<'db>,
+		expression: Expression,
 	},
 	/// Post a constraint
 	Constraint {
 		/// The constraint to post
-		expression: Expression<'db>,
+		expression: Expression,
 	},
 	/// Jump to a different instruction
 	Jump {
 		/// The target instruction ID
-		target: InstructionId<'db>,
+		target: InstructionId,
 	},
 	/// Jump to a different instruction if the condition is flase
 	JumpIfFalse {
 		/// The slot to check
-		condition: Value<'db>,
+		condition: Value,
 		/// The target instruction ID to jump to if the slot is false
-		target: InstructionId<'db>,
+		target: InstructionId,
 	},
 	/// Push an iterator onto the stack
 	IteratorStart {
 		/// The value to iterate over
-		value: Value<'db>,
+		value: Value,
 	},
 	/// Get the next value from the iterator on the stack and assign it to a slot
 	///
@@ -90,14 +105,14 @@ pub enum Instruction<'db> {
 		/// The slot to assign to
 		slot: SlotId,
 		/// The target instruction ID to jump to if the iterator is exhausted
-		done: InstructionId<'db>,
+		done: InstructionId,
 	},
 	/// Push a comprehension on to the stack
 	ComprehensionStart,
 	/// Append a value to the current comprehension
 	ComprehensionAppend {
 		/// Value to append
-		value: Value<'db>,
+		value: Value,
 	},
 	/// Pop the current comprehension from the stack and assign it to a slot
 	ComprehensionEnd {
@@ -107,7 +122,7 @@ pub enum Instruction<'db> {
 	/// Return from a function
 	Return {
 		/// Expression to return
-		expression: Expression<'db>,
+		expression: Expression,
 	},
 	/// Return no value from a function
 	ReturnRoot,
@@ -117,101 +132,120 @@ pub enum Instruction<'db> {
 
 /// A function
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Function<'db> {
+pub struct Function {
 	/// Function name
-	pub name: Name<'db>,
+	pub name: StringId,
 	/// Number of slots
 	pub slot_count: usize,
+	/// Whether the function is ::promise_total
+	pub promise_total: bool,
 	/// Body of the function (if empty, the function is external)
-	pub body: Arena<Instruction<'db>>,
-	/// Source map for instructions
-	pub origins: ArenaMap<Instruction<'db>, shackle_thir::source::Origin<'db>>,
+	pub body: Arena<Instruction>,
+	/// Location of instructions in the source file
+	pub origins: ArenaMap<Instruction, Origin>,
 }
 
 /// A function ID
-pub type FunctionId<'db> = ArenaIndex<Function<'db>>;
+pub type FunctionId = ArenaIndex<Function>;
 
 /// An expression
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Expression<'db> {
+pub enum Expression {
 	/// A call
-	Call(Call<'db>),
+	Call(Call),
 	/// An annotation call
-	AnnotationCall(AnnotationCall<'db>),
+	AnnotationCall(AnnotationCall),
 	/// An interpreter intrinsic builtin
-	Builtin(Builtin<'db>),
+	Builtin(Builtin),
+	/// A new fresh variable
+	FreshVariable(FreshVariable<Value>),
 	/// A value
-	Value(Value<'db>),
+	Value(Value),
 }
 
 /// A builtin whose arguments are IR values.
-pub type Builtin<'db, T = Box<Value<'db>>> = shackle_mir::builtins::Builtin<T>;
+pub type Builtin<T = Box<Value>> = shackle_mir::builtins::Builtin<T>;
+
+/// A call type
+#[derive(Copy, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CallType {
+	/// Add call to NanoZinc
+	Predicate,
+	/// Evaluate call body immediately
+	Function,
+	/// Delayed call added to NanoZinc which is evaluated in future iteration
+	Delayed,
+}
 
 /// A call
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Call<'db> {
+pub struct Call {
 	/// The function being called
-	pub function: FunctionId<'db>,
+	pub function: FunctionId,
+	/// The type of call
+	pub kind: CallType,
 	/// The arguments
-	pub arguments: Vec<Value<'db>>,
+	pub arguments: Vec<Value>,
 	/// The annotations
-	pub annotations: Vec<Identifier<'db>>,
+	pub annotations: Vec<Identifier>,
+	/// Whether to forward annotations from the call site
+	pub forward_annotations: bool,
 }
 
 /// An annotation call
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct AnnotationCall<'db> {
+pub struct AnnotationCall {
 	/// The annotation being called
-	pub annotation: AnnotationId<'db>,
+	pub annotation: AnnotationId,
 	/// The arguments
-	pub arguments: Vec<Value<'db>>,
+	pub arguments: Vec<Value>,
 }
 
 /// A value
 #[derive(Clone, Debug, Hash, PartialEq, Eq, From, Unwrap, TryUnwrap)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
-pub enum Value<'db> {
+pub enum Value {
 	/// A literal
-	Literal(Literal<'db>),
+	Literal(Literal),
 	/// A tuple
-	Tuple(Tuple<'db>),
+	Tuple(Tuple),
 	/// A set
-	Set(Set<'db>),
+	Set(Set),
 	/// An array
-	Array(Array<'db>),
+	Array(Array),
 	/// A tuple access
-	TupleAccess(TupleAccess<'db>),
+	TupleAccess(TupleAccess),
 }
 
 /// A tuple literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Tuple<'db> {
+pub struct Tuple {
 	/// Tuple members
-	pub members: Vec<Literal<'db>>,
+	pub members: Vec<Literal>,
 }
 
 /// An array literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Array<'db> {
+pub struct Array {
 	/// Array literal members
-	pub members: Vec<Literal<'db>>,
+	pub members: Vec<Literal>,
 }
 
 /// A set literal
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Set<'db> {
+pub struct Set {
 	/// Type of set literal
 	pub kind: SetType,
 	/// Set literal members
-	pub members: Vec<Literal<'db>>,
+	pub members: Vec<Literal>,
 }
 
 /// A tuple field access
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct TupleAccess<'db> {
+pub struct TupleAccess {
 	/// The tuple being accessed
-	pub tuple: Identifier<'db>,
+	pub tuple: Identifier,
 	/// The field
 	pub field: IntegerLiteral,
 }
@@ -220,7 +254,7 @@ pub struct TupleAccess<'db> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, From, Unwrap, TryUnwrap)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
-pub enum Literal<'db> {
+pub enum Literal {
 	/// A boolean
 	Boolean(BooleanLiteral),
 	/// An integer
@@ -228,7 +262,7 @@ pub enum Literal<'db> {
 	/// A floating point value
 	Float(FloatLiteral),
 	/// A string
-	String(StringLiteral<'db>),
+	String(StringId),
 	/// Infinity
 	Infinity,
 	/// Infinite integer set
@@ -236,24 +270,24 @@ pub enum Literal<'db> {
 	/// Infinite float set
 	InfiniteFloatSet,
 	/// An identifier
-	Identifier(Identifier<'db>),
+	Identifier(Identifier),
 }
 
 /// An identifier
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, From)]
-pub enum Identifier<'db> {
+pub enum Identifier {
 	/// An identifier pointing to a slot
 	Slot(SlotId),
 	/// An identifier pointing to an annotation
-	Annotation(AnnotationId<'db>),
+	Annotation(AnnotationId),
 }
 
 /// An annotation item
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Annotation<'db> {
+pub struct Annotation {
 	/// The name of the annotation
-	pub name: Name<'db>,
+	pub name: StringId,
 }
 
 /// An annotation ID
-pub type AnnotationId<'db> = ArenaIndex<Annotation<'db>>;
+pub type AnnotationId = ArenaIndex<Annotation>;

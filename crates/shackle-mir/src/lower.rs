@@ -10,14 +10,16 @@ use shackle_utils::{arena::Arena, hash::Map};
 
 use crate::{
 	Annotation, AnnotationCall, AnnotationId, Array, Builtin, Call, Comprehension, Constraint,
-	Declaration, Expression, ExpressionData, Function, FunctionData, FunctionId, Generator,
-	GlobalAssignment, GlobalVar, Identifier, IfThenElse, Let, LetItem, LetResult, Literal,
-	LiteralData, Model, Parameter, Set, SetType, Solve, Tuple, TupleAccess, Value, ValueData,
+	Declaration, Expression, ExpressionData, FreshVariable, Function, FunctionData, FunctionId,
+	Generator, GlobalAssignment, GlobalVar, Identifier, IfThenElse, Let, LetItem, LetResult,
+	Literal, LiteralData, Model, Parameter, Set, SetType, Solve, Tuple, TupleAccess, Value,
+	ValueData,
 };
 
 struct LoweringContext<'db> {
 	db: &'db dyn Db,
 	model: &'db shackle_thir::Model<'db>,
+	ids: &'db IdentifierRegistry<'db>,
 	tys: &'db TypeRegistry<'db>,
 	annotations: Arena<Annotation<'db>>,
 	functions: Arena<Function<'db>>,
@@ -29,10 +31,12 @@ struct LoweringContext<'db> {
 
 impl<'db> LoweringContext<'db> {
 	fn new(db: &'db dyn Db, model: &'db shackle_thir::Model<'db>) -> Self {
+		let ids = IdentifierRegistry::lookup(db);
 		let tys = TypeRegistry::lookup(db);
 		Self {
 			db,
 			model,
+			ids,
 			tys,
 			annotations: Arena::default(),
 			functions: Arena::default(),
@@ -81,8 +85,18 @@ impl<'db> LoweringContext<'db> {
 				let param = &self.model[*p];
 				let idx = data.parameters.insert(Parameter {
 					ty: param.ty(),
-					// TODO: lower annotations
-					annotations: Vec::new(),
+					annotations: param
+						.annotations()
+						.iter()
+						.map(|ann| match &**ann {
+							shackle_thir::ExpressionData::Identifier(
+								shackle_thir::ResolvedIdentifier::Annotation(a),
+							) => self.annotation_ids[a],
+							_ => unreachable!(
+								"Only identifier annotations are allowed on parameters"
+							),
+						})
+						.collect(),
 					name: param.name(),
 				});
 				params.push(idx);
@@ -90,8 +104,16 @@ impl<'db> LoweringContext<'db> {
 			let result = Function {
 				name: self.model[function].mangled_name(self.db),
 				ty: self.model[function].return_type(),
-				// TODO: lower annotations
-				annotations: Vec::new(),
+				annotations: self.model[function]
+					.annotations()
+					.iter()
+					.map(|ann| match &**ann {
+						shackle_thir::ExpressionData::Identifier(
+							shackle_thir::ResolvedIdentifier::Annotation(a),
+						) => self.annotation_ids[a],
+						_ => unreachable!("Only identifier annotations are allowed on functions"),
+					})
+					.collect(),
 				parameters: params,
 				body: None,
 				data,
@@ -113,7 +135,14 @@ impl<'db> LoweringContext<'db> {
 				.zip(self.functions[idx].parameters.iter())
 				.map(|(param, target)| ((*param).into(), (*target).into()))
 				.collect();
-			let mut fn_collector = Collector::new_with_data(self, data, resolutions);
+			let mut fn_collector = Collector::new_with_data(
+				self,
+				data,
+				resolutions,
+				self.model[function]
+					.annotations()
+					.has(self.model, self.ids.annotations.promise_total),
+			);
 			let mut items = LetItems::default();
 			let lowered = fn_collector
 				.lower_expression(fn_collector.model[function].body().unwrap(), &mut items);
@@ -139,7 +168,11 @@ impl<'db> LetItems<'db> {
 		let value = result.into();
 		let origin = value.origin();
 		Let {
-			result: value.into_expression().into(),
+			result: if let LoweredExpression::Root(_, _) = &value {
+				LetResult::Root
+			} else {
+				value.into_expression().into()
+			},
 			items: self.items,
 			origin,
 		}
@@ -174,6 +207,7 @@ struct Collector<'a, 'db> {
 	parent: &'a mut LoweringContext<'db>,
 	data: FunctionData<'db>,
 	resolutions: Map<shackle_thir::ResolvedIdentifier<'db>, Identifier<'db>>,
+	is_promise_total: bool,
 }
 
 impl<'a, 'db> Deref for Collector<'a, 'db> {
@@ -196,6 +230,7 @@ impl<'a, 'db> Collector<'a, 'db> {
 			parent,
 			data: FunctionData::default(),
 			resolutions: Map::default(),
+			is_promise_total: false,
 		}
 	}
 
@@ -203,11 +238,13 @@ impl<'a, 'db> Collector<'a, 'db> {
 		parent: &'a mut LoweringContext<'db>,
 		data: FunctionData<'db>,
 		resolutions: Map<shackle_thir::ResolvedIdentifier<'db>, Identifier<'db>>,
+		is_promise_total: bool,
 	) -> Self {
 		Self {
 			parent,
 			data,
 			resolutions,
+			is_promise_total,
 		}
 	}
 
@@ -230,6 +267,10 @@ impl<'a, 'db> Collector<'a, 'db> {
 		if let Some(g) = global_res {
 			// Place annotations on the global var
 			for ann in annotations.drain(..) {
+				if matches!(ann, Identifier::Annotation(_)) {
+					// Already added directly to global var
+					continue;
+				}
 				let constraint = Constraint {
 					expression: Box::new(Expression::new(
 						Builtin::Annotate {
@@ -257,10 +298,16 @@ impl<'a, 'db> Collector<'a, 'db> {
 			let ty = self.model[declaration].ty();
 			let origin = self.model[declaration].origin();
 			if ty == self.tys.var_bool {
-				Expression::new(Builtin::VarBool, ty, self.model[declaration].origin())
+				Expression::new(
+					FreshVariable::VarBool {
+						is_defined: self.is_promise_total,
+					},
+					ty,
+					self.model[declaration].origin(),
+				)
 			} else if ty == self.tys.var_int {
 				Expression::new(
-					Builtin::VarInt {
+					FreshVariable::VarInt {
 						domain: Box::new(match &**self.model[declaration].domain() {
 							shackle_thir::DomainData::Bounded(b) => self
 								.lower_expression(b, destination)
@@ -270,13 +317,14 @@ impl<'a, 'db> Collector<'a, 'db> {
 							}
 							_ => unreachable!(),
 						}),
+						is_defined: self.is_promise_total,
 					},
 					ty,
 					origin,
 				)
 			} else if ty == self.tys.var_float {
 				Expression::new(
-					Builtin::VarFloat {
+					FreshVariable::VarFloat {
 						domain: Box::new(match &**self.model[declaration].domain() {
 							shackle_thir::DomainData::Bounded(b) => self
 								.lower_expression(b, destination)
@@ -288,13 +336,14 @@ impl<'a, 'db> Collector<'a, 'db> {
 							),
 							_ => unreachable!(),
 						}),
+						is_defined: self.is_promise_total,
 					},
 					ty,
 					origin,
 				)
 			} else if ty == self.tys.var_set_of_int {
 				Expression::new(
-					Builtin::VarSetOfInt {
+					FreshVariable::VarSetOfInt {
 						domain: Box::new(match &**self.model[declaration].domain() {
 							shackle_thir::DomainData::Bounded(b) => self
 								.lower_expression(b, destination)
@@ -304,6 +353,7 @@ impl<'a, 'db> Collector<'a, 'db> {
 							}
 							_ => unreachable!(),
 						}),
+						is_defined: self.is_promise_total,
 					},
 					ty,
 					origin,
@@ -349,11 +399,40 @@ impl<'a, 'db> Collector<'a, 'db> {
 			})
 			.collect();
 		let expression = self.lower_expression(self.model[constraint].expression(), destination);
-		let constraint = Constraint {
-			expression: Box::new(expression.into_expression()),
-			annotations,
-		};
-		destination.push(constraint);
+
+		if expression.ty() == self.tys.var_bool && !expression.is_call() {
+			let value = expression.into_value(self, destination);
+			let origin = value.origin;
+			let function = self.function_ids[&self
+				.model
+				.lookup_function(
+					self.db,
+					self.ids.functions.mzn_post.into(),
+					&[self.tys.var_bool],
+				)
+				.unwrap()
+				.function];
+			let call = Expression::new(
+				Call {
+					function,
+					arguments: vec![value],
+					annotations: Vec::new(),
+				},
+				self.tys.var_bool,
+				origin,
+			);
+			let constraint = Constraint {
+				expression: Box::new(call),
+				annotations,
+			};
+			destination.push(constraint);
+		} else {
+			let constraint = Constraint {
+				expression: Box::new(expression.into_expression()),
+				annotations,
+			};
+			destination.push(constraint);
+		}
 	}
 
 	/// Lower a shackle_thir expression to MIR
@@ -393,6 +472,9 @@ impl<'a, 'db> Collector<'a, 'db> {
 			shackle_thir::ExpressionData::Identifier(
 				shackle_thir::ResolvedIdentifier::Annotation(a),
 			) => Value::new(LiteralData::from(self.annotation_ids[a]), ty, origin).into(),
+			shackle_thir::ExpressionData::Identifier(
+				shackle_thir::ResolvedIdentifier::Declaration(d),
+			) if self.model[*d].name() == Some(self.ids.names.root) => LoweredExpression::Root(ty, origin),
 			shackle_thir::ExpressionData::Identifier(ident) => Value::new(
 				LiteralData::from(
 					*self
@@ -691,11 +773,26 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 	let tys = TypeRegistry::lookup(db);
 
 	let mut ctx = LoweringContext::new(db, m);
+
+	for (ann, _) in m.annotations() {
+		ctx.lower_annotation(ann);
+	}
+
 	let global_vars = GlobalVariables::find(db, m);
 	for param in global_vars.input_parameters.iter() {
 		let idx = ctx.global_vars.insert(GlobalVar {
 			name: m[*param].name(),
 			ty: m[*param].ty(),
+			annotations: m[*param]
+				.annotations()
+				.iter()
+				.filter_map(|ann| match &**ann {
+					shackle_thir::ExpressionData::Identifier(
+						shackle_thir::ResolvedIdentifier::Annotation(a),
+					) => Some(ctx.annotation_ids[a]),
+					_ => None,
+				})
+				.collect(),
 		});
 		let _ = ctx.global_resolutions.insert((*param).into(), idx.into());
 	}
@@ -703,6 +800,16 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 		let idx = ctx.global_vars.insert(GlobalVar {
 			name: m[*var].name(),
 			ty: m[*var].ty(),
+			annotations: m[*var]
+				.annotations()
+				.iter()
+				.filter_map(|ann| match &**ann {
+					shackle_thir::ExpressionData::Identifier(
+						shackle_thir::ResolvedIdentifier::Annotation(a),
+					) => Some(ctx.annotation_ids[a]),
+					_ => None,
+				})
+				.collect(),
 		});
 		let _ = ctx.global_resolutions.insert((*var).into(), idx.into());
 	}
@@ -714,6 +821,16 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 			// name: m[obj].name(),
 			name: None, // TODO: Fix name clash with old minizinc
 			ty: m[obj].ty(),
+			annotations: m[obj]
+				.annotations()
+				.iter()
+				.filter_map(|ann| match &**ann {
+					shackle_thir::ExpressionData::Identifier(
+						shackle_thir::ResolvedIdentifier::Annotation(a),
+					) => Some(ctx.annotation_ids[a]),
+					_ => None,
+				})
+				.collect(),
 		});
 		let _ = ctx.global_resolutions.insert(obj.into(), idx.into());
 		if solve.is_maximize() {
@@ -730,8 +847,8 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 
 	for item in m.top_level_items() {
 		match item {
-			shackle_thir::ItemId::Annotation(a) => {
-				main_collector.lower_annotation(a);
+			shackle_thir::ItemId::Annotation(_) => {
+				// Already done
 			}
 			shackle_thir::ItemId::Function(f) => {
 				main_collector.lower_function_signature(f);
@@ -812,14 +929,27 @@ enum LoweredExpression<'db> {
 	Value(Value<'db>),
 	/// Complex expression
 	Expression(Expression<'db>),
+	/// Root true
+	#[from(skip)]
+	Root(Ty<'db>, Origin<'db>),
 }
 
 impl<'db> LoweredExpression<'db> {
+	fn ty(&self) -> Ty<'db> {
+		match self {
+			LoweredExpression::Value(v) => v.ty,
+			LoweredExpression::Expression(e) => e.ty,
+			LoweredExpression::Literal(l) => l.ty,
+			LoweredExpression::Root(ty, _) => *ty,
+		}
+	}
+
 	fn origin(&self) -> Origin<'db> {
 		match self {
 			LoweredExpression::Value(v) => v.origin,
 			LoweredExpression::Expression(e) => e.origin,
 			LoweredExpression::Literal(l) => l.origin,
+			LoweredExpression::Root(_, origin) => *origin,
 		}
 	}
 
@@ -828,6 +958,11 @@ impl<'db> LoweredExpression<'db> {
 			LoweredExpression::Expression(e) => e,
 			LoweredExpression::Value(v) => v.into(),
 			LoweredExpression::Literal(l) => l.into(),
+			LoweredExpression::Root(ty, origin) => Expression::new(
+				ValueData::from(LiteralData::Boolean(shackle_hir::BooleanLiteral(true))),
+				ty,
+				origin,
+			),
 		}
 	}
 
@@ -838,6 +973,11 @@ impl<'db> LoweredExpression<'db> {
 	) -> Value<'db> {
 		match self {
 			LoweredExpression::Literal(l) => l.into(),
+			LoweredExpression::Root(ty, origin) => Value::new(
+				LiteralData::Boolean(shackle_hir::BooleanLiteral(true)),
+				ty,
+				origin,
+			),
 			LoweredExpression::Value(v) => v,
 			LoweredExpression::Expression(e) => {
 				if e.is_value() {
@@ -865,6 +1005,11 @@ impl<'db> LoweredExpression<'db> {
 	) -> Literal<'db> {
 		match self {
 			LoweredExpression::Literal(l) => l,
+			LoweredExpression::Root(ty, origin) => Literal::new(
+				LiteralData::Boolean(shackle_hir::BooleanLiteral(true)),
+				ty,
+				origin,
+			),
 			LoweredExpression::Value(v) => {
 				if v.is_literal() {
 					v.into_literal()
@@ -905,23 +1050,37 @@ impl<'db> LoweredExpression<'db> {
 		collector: &mut Collector<'_, 'db>,
 		destination: &mut impl Items<'db>,
 	) -> Identifier<'db> {
+		self.get_identifier().unwrap_or_else(|| {
+			let e = self.into_expression();
+			let ty = e.ty;
+			let idx = collector.data.declarations.insert(Declaration {
+				ty,
+				name: None,
+				definition: e,
+				annotations: Vec::new(),
+			});
+			destination.push(idx);
+			idx.into()
+		})
+	}
+
+	fn is_call(&self) -> bool {
+		matches!(self, LoweredExpression::Expression(e) if matches!(&e.data, ExpressionData::Call(_)))
+	}
+
+	fn get_identifier(&self) -> Option<Identifier<'db>> {
 		match &self {
 			LoweredExpression::Value(v) => match &v.data {
-				ValueData::Literal(LiteralData::Identifier(ident)) => return *ident,
+				ValueData::Literal(LiteralData::Identifier(ident)) => return Some(*ident),
+				_ => (),
+			},
+			LoweredExpression::Literal(l) => match &l.data {
+				LiteralData::Identifier(ident) => return Some(*ident),
 				_ => (),
 			},
 			_ => (),
 		}
-		let e = self.into_expression();
-		let ty = e.ty;
-		let idx = collector.data.declarations.insert(Declaration {
-			ty,
-			name: None,
-			definition: e,
-			annotations: Vec::new(),
-		});
-		destination.push(idx);
-		idx.into()
+		None
 	}
 }
 
@@ -937,10 +1096,15 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, NamedModelFile},
 	};
 	use shackle_syntax::InputLang;
-	use shackle_thir::db::final_thir;
+	use shackle_thir::{
+		db::final_thir,
+		pretty_print::PrettyPrinter as ThirPrettyPrinter,
+		transform::{DEFAULT_TRANSFORMS, Transform, Transformer},
+	};
+	use shackle_ty::registry::TypeRegistry;
 
 	use super::lower_from_thir;
-	use crate::pretty_print::PrettyPrinter;
+	use crate::{Builtin, pretty_print::PrettyPrinter};
 
 	#[test]
 	fn test_mir_basic() {
@@ -980,6 +1144,10 @@ mod tests {
 		let model_file = InlineModelFile::new(
 			&db,
 			r#"
+			bool: mzn_root = true;
+			test abort(string: msg);
+			annotation mzn_no_remove;
+			predicate mzn_post(var bool: c) ::mzn_no_remove;
 			annotation 'output';
 			predicate foo(var bool: b) = b;
 			var bool: x;
@@ -996,13 +1164,18 @@ mod tests {
 		let model = final_thir(&db).unwrap();
 		let mir = lower_from_thir(&db, &model);
 		let expected = expect![[r#"
+    annotation mzn_no_remove;
     annotation 'output';
+    function var bool: mzn_post_reif(var bool: c, var bool: _PARAM_2) :: promise_total = let {
+
+    } in abort("mzn_post_reif required, but not supported by solver.");
+    function var bool: mzn_post(var bool: c) :: promise_total;
     function var bool: foo_root(var bool: b) :: promise_total = let {
     var bool: _DECL_1 = b;
-    constraint _DECL_1;
-    } in true;
-    var bool: x;
-    constraint annotate(x, 'output');
+    constraint mzn_post(_DECL_1);
+    } in mzn_root;
+    var bool: x :: 'output';
+    bool: mzn_root = true;
     x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
     constraint foo_root(x);
     solve satisfy;
@@ -1025,5 +1198,45 @@ mod tests {
 		let actual = format_str(printed, &MiniZincFormatOptions::default()).unwrap();
 		let expected = expect_file!["../tests/lower/fixtures/full_1.expected.mzn"];
 		expected.assert_eq(&actual);
+	}
+
+	#[test]
+	fn standard_library_bodyless_functions_are_lowerable() {
+		let mut db = CompilerDatabase::default();
+		let model_file = InlineModelFile::new(&db, String::new(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		Transformer::set_transforms(
+			&mut db,
+			DEFAULT_TRANSFORMS.iter().copied().filter(|transform| {
+				!matches!(
+					transform,
+					Transform::EliminateDeadCodeConservative | Transform::EliminateDeadCode
+				)
+			}),
+		);
+		let model = final_thir(&db).unwrap();
+		let tys = TypeRegistry::lookup(&db);
+		let builtin_signatures = Builtin::signatures(&db);
+		let printer = ThirPrettyPrinter::new(&db, &model);
+
+		let bad_functions = model
+			.all_functions()
+			.filter(|(_, function)| {
+				let is_mir_builtin = builtin_signatures.contains(&(
+					function.name().as_identifier(&db),
+					function.parameters().len(),
+				));
+				let is_solver_builtin_predicate =
+					function.return_type() == tys.var_bool && !function.is_polymorphic();
+				function.body().is_none() && !is_mir_builtin && !is_solver_builtin_predicate
+			})
+			.map(|(id, _)| printer.pretty_print_signature(id.into()))
+			.collect::<Vec<_>>();
+
+		assert!(
+			bad_functions.is_empty(),
+			"bodyless standard-library functions must be MIR builtins or solver builtin predicates:\n{}",
+			bad_functions.join("\n")
+		);
 	}
 }

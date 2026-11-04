@@ -14,13 +14,13 @@ rand = "0.10.3"
 rand_distr = "0.6.0"
 rangelist = "0.6.0"
 rustc-hash = {workspace = true}
-shackle-hir = {workspace = true}
 shackle-ir = {workspace = true}
 thiserror = {workspace = true}
 varlen = {version = "0.1.2", features = ["macro"]}
 
 [dev-dependencies]
 expect-test = {workspace = true}
+shackle-hir = {workspace = true}
 
 [lints]
 workspace = true

@@ -7,8 +7,8 @@ use shackle_utils::{
 };
 
 use crate::{
-	Comprehension, Declaration, DeclarationId, ExpressionData, Function, Generator, Identifier,
-	Let, LetItem, LetResult, LiteralData, ValueData,
+	Comprehension, Declaration, DeclarationId, ExpressionData, FreshVariable, Function, Generator,
+	Identifier, Let, LetItem, LetResult, LiteralData, ValueData,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +200,12 @@ impl<'a, 'db> Liveness<'a, 'db> {
 				for arg in builtin.arguments().iter() {
 					self.todo.push(TodoItem::Value(&arg.data));
 				}
+			}
+			ExpressionData::FreshVariable(FreshVariable::VarBool { .. }) => {}
+			ExpressionData::FreshVariable(FreshVariable::VarInt { domain, .. })
+			| ExpressionData::FreshVariable(FreshVariable::VarFloat { domain, .. })
+			| ExpressionData::FreshVariable(FreshVariable::VarSetOfInt { domain, .. }) => {
+				self.todo.push(TodoItem::Value(&domain.data));
 			}
 			ExpressionData::IfThenElse(if_then_else) => {
 				self.push_value(&if_then_else.condition.data);

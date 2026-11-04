@@ -2,39 +2,56 @@
 
 use std::num::NonZeroU32;
 
-use shackle_mir::liveness::{Liveness, SlotAllocator};
-use shackle_utils::arena::{Arena, ArenaMap};
+use shackle_hir::{Db, constants::IdentifierRegistry};
+use shackle_mir::{
+	FreshVariable,
+	liveness::{Liveness, SlotAllocator},
+};
+use shackle_utils::{
+	InternedString,
+	arena::{Arena, ArenaMap},
+	hash::Map,
+};
 
 use crate::{
-	Annotation, AnnotationCall, AnnotationId, Array, Call, Expression, Function, FunctionId,
-	Identifier, Instruction, InstructionId, Literal, Program, Set, SlotId, Tuple, TupleAccess,
-	Value,
+	Annotation, AnnotationCall, AnnotationId, Array, Call, CallType, Expression, Function,
+	FunctionId, Identifier, Instruction, InstructionId, Literal, Origin, Program, Set, SlotId,
+	StringId, Tuple, TupleAccess, Value,
 };
 
 /// Lower a model to IR
-pub fn lower_model<'db>(model: &shackle_mir::Model<'db>) -> Program<'db> {
+pub fn lower_model(db: &dyn Db, model: &shackle_mir::Model) -> Program {
 	let mut ctx = LoweringContext {
+		db,
+		ids: IdentifierRegistry::lookup(db),
+		mir: model,
 		functions: Arena::new(),
 		function_map: ArenaMap::new(),
 		annotations: Arena::new(),
 		annotation_map: ArenaMap::new(),
 		global_slots: ArenaMap::new(),
+		strings: Arena::new(),
+		string_map: Map::new(),
 	};
 
 	for (i, function) in model.functions.iter() {
+		let name = ctx.alloc_string(function.name);
 		let idx = ctx.functions.insert(Function {
-			name: function.name.clone(),
+			name,
 			origins: ArenaMap::new(),
 			slot_count: 0,
+			promise_total: function
+				.annotations
+				.iter()
+				.any(|ann| ctx.mir.annotations[*ann].name == ctx.ids.annotations.promise_total),
 			body: Arena::new(),
 		});
 		ctx.function_map.insert(i, idx);
 	}
 
 	for (i, annotation) in model.annotations.iter() {
-		let idx = ctx.annotations.insert(Annotation {
-			name: annotation.name,
-		});
+		let name = ctx.alloc_string(annotation.name);
+		let idx = ctx.annotations.insert(Annotation { name });
 		ctx.annotation_map.insert(i, idx);
 	}
 
@@ -83,21 +100,37 @@ pub fn lower_model<'db>(model: &shackle_mir::Model<'db>) -> Program<'db> {
 		annotations: ctx.annotations,
 		main_entry_point: ctx.function_map[model.main_entrypoint],
 		output_entry_point: ctx.function_map[model.output_entrypoint],
+		strings: ctx.strings,
 	}
 }
 
 struct LoweringContext<'db> {
-	functions: Arena<Function<'db>>,
-	function_map: ArenaMap<shackle_mir::Function<'db>, FunctionId<'db>>,
-	annotations: Arena<Annotation<'db>>,
-	annotation_map: ArenaMap<shackle_mir::Annotation<'db>, AnnotationId<'db>>,
+	db: &'db dyn Db,
+	ids: &'db IdentifierRegistry<'db>,
+	mir: &'db shackle_mir::Model<'db>,
+	functions: Arena<Function>,
+	function_map: ArenaMap<shackle_mir::Function<'db>, FunctionId>,
+	annotations: Arena<Annotation>,
+	annotation_map: ArenaMap<shackle_mir::Annotation<'db>, AnnotationId>,
 	global_slots: ArenaMap<shackle_mir::GlobalVar<'db>, SlotId>,
+	strings: Arena<String>,
+	string_map: Map<InternedString<'db>, StringId>,
+}
+
+impl<'db> LoweringContext<'db> {
+	fn alloc_string(&mut self, name: impl Into<InternedString<'db>>) -> StringId {
+		let s = name.into();
+		*self
+			.string_map
+			.entry(s)
+			.or_insert_with(|| self.strings.insert(s.lookup(self.db)))
+	}
 }
 
 struct FunctionLowerer<'a, 'db> {
 	parent: &'a mut LoweringContext<'db>,
-	instructions: Arena<Instruction<'db>>,
-	origins: ArenaMap<Instruction<'db>, shackle_thir::source::Origin<'db>>,
+	instructions: Arena<Instruction>,
+	origins: ArenaMap<Instruction, Origin>,
 	function: &'a shackle_mir::Function<'db>,
 	slots: ArenaMap<shackle_mir::Declaration<'db>, SlotId>,
 	parameter_slots: ArenaMap<shackle_mir::Parameter<'db>, SlotId>,
@@ -128,10 +161,13 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 				}
 			}
 		}
-		if let shackle_mir::LetResult::Expression(e) = &l.result {
-			self.lower_expression(destination, e);
-		} else if destination == Destination::Return {
-			let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
+		match &l.result {
+			shackle_mir::LetResult::Expression(e) => {
+				self.lower_expression(destination, e);
+			}
+			shackle_mir::LetResult::Root => {
+				let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
+			}
 		}
 	}
 
@@ -148,25 +184,48 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 
 	fn lower_expression(&mut self, destination: Destination, expr: &shackle_mir::Expression<'db>) {
 		let expression = match &expr.data {
-			shackle_mir::ExpressionData::Call(call) => Expression::Call(Call {
-				function: self.parent.function_map[call.function],
-				arguments: call
+			shackle_mir::ExpressionData::Call(call) => {
+				let function = self.parent.function_map[call.function];
+				let mir_fn = &self.parent.mir.functions[call.function];
+				let kind = if mir_fn.body.is_some() {
+					CallType::Function
+				} else {
+					CallType::Predicate
+				};
+				let arguments = call
 					.arguments
 					.iter()
 					.map(|arg| self.lower_value(&arg.data))
-					.collect(),
-				annotations: call
+					.collect();
+				let mut forward_annotations = false;
+				let annotations = call
 					.annotations
 					.iter()
-					.map(|ann| match &ann {
+					.filter_map(|ann| match &ann {
 						shackle_mir::Identifier::Annotation(a) => {
-							self.parent.annotation_map[*a].into()
+							if self.parent.mir.annotations[*a].name
+								== self.parent.ids.annotations.mzn_forward_annotations
+							{
+								forward_annotations = true;
+								None
+							} else {
+								Some(self.parent.annotation_map[*a].into())
+							}
 						}
-						shackle_mir::Identifier::Declaration(d) => Identifier::Slot(self.slots[*d]),
+						shackle_mir::Identifier::Declaration(d) => {
+							Some(Identifier::Slot(self.slots[*d]))
+						}
 						_ => unreachable!(),
 					})
-					.collect(),
-			}),
+					.collect();
+				Expression::Call(Call {
+					function,
+					kind,
+					arguments,
+					annotations,
+					forward_annotations,
+				})
+			}
 			shackle_mir::ExpressionData::AnnotationCall(call) => {
 				Expression::AnnotationCall(AnnotationCall {
 					annotation: self.parent.annotation_map[call.annotation],
@@ -180,6 +239,23 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 			shackle_mir::ExpressionData::Builtin(builtin) => {
 				Expression::Builtin(builtin.map(|arg| Box::new(self.lower_value(&arg.data))))
 			}
+			shackle_mir::ExpressionData::FreshVariable(fv) => Expression::FreshVariable(match fv {
+				FreshVariable::VarBool { is_defined } => FreshVariable::VarBool {
+					is_defined: *is_defined,
+				},
+				FreshVariable::VarInt { domain, is_defined } => FreshVariable::VarInt {
+					domain: self.lower_value(&domain.data),
+					is_defined: *is_defined,
+				},
+				FreshVariable::VarFloat { domain, is_defined } => FreshVariable::VarFloat {
+					domain: self.lower_value(&domain.data),
+					is_defined: *is_defined,
+				},
+				FreshVariable::VarSetOfInt { domain, is_defined } => FreshVariable::VarSetOfInt {
+					domain: self.lower_value(&domain.data),
+					is_defined: *is_defined,
+				},
+			}),
 			shackle_mir::ExpressionData::IfThenElse(if_then_else) => {
 				let condition = self.lower_value(&if_then_else.condition.data);
 				let condition_idx =
@@ -287,7 +363,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 		);
 	}
 
-	fn lower_value(&mut self, value: &shackle_mir::ValueData<'db>) -> Value<'db> {
+	fn lower_value(&mut self, value: &shackle_mir::ValueData<'db>) -> Value {
 		match value {
 			shackle_mir::ValueData::Literal(literal_data) => {
 				Value::Literal(self.lower_literal(literal_data))
@@ -330,7 +406,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 		}
 	}
 
-	fn lower_literal(&mut self, literal: &shackle_mir::LiteralData<'db>) -> Literal<'db> {
+	fn lower_literal(&mut self, literal: &shackle_mir::LiteralData<'db>) -> Literal {
 		match literal {
 			shackle_mir::LiteralData::Integer(integer_literal) => {
 				Literal::Integer(*integer_literal)
@@ -339,8 +415,8 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 			shackle_mir::LiteralData::Boolean(boolean_literal) => {
 				Literal::Boolean(*boolean_literal)
 			}
-			shackle_mir::LiteralData::String(string_literal) => {
-				Literal::String(string_literal.clone())
+			shackle_mir::LiteralData::String(shackle_hir::StringLiteral(s)) => {
+				Literal::String(self.parent.alloc_string(*s))
 			}
 			shackle_mir::LiteralData::Infinity => Literal::Infinity,
 			shackle_mir::LiteralData::InfiniteIntSet => Literal::InfiniteIntSet,
@@ -362,11 +438,11 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 
 	fn add_instruction(
 		&mut self,
-		instruction: Instruction<'db>,
-		origin: shackle_thir::source::Origin<'db>,
-	) -> InstructionId<'db> {
+		instruction: Instruction,
+		_origin: shackle_thir::source::Origin<'db>,
+	) -> InstructionId {
 		let idx = self.instructions.insert(instruction);
-		self.origins.insert(idx, origin);
+		// TODO: Add origins
 		idx
 	}
 }
@@ -396,7 +472,7 @@ mod tests {
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let thir = final_thir(&db).unwrap();
 		let mir = shackle_mir::lower::lower_from_thir(&db, thir);
-		let ir = lower_model(&mir);
+		let ir = lower_model(&db, &mir);
 		expected.assert_debug_eq(&ir.functions[ir.main_entry_point].body);
 	}
 
@@ -410,7 +486,7 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 2,
+        len: 3,
         data: {
             <Instruction::1>: Assign {
                 slot: Relative(
@@ -444,9 +520,11 @@ mod tests {
                                 ),
                             ),
                         ],
+                        annotations: [],
                     },
                 ),
             },
+            <Instruction::3>: ReturnRoot,
         },
     }
 "#]],
@@ -462,7 +540,7 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 5,
+        len: 6,
         data: {
             <Instruction::1>: Assign {
                 slot: Relative(
@@ -472,6 +550,7 @@ mod tests {
                     Call {
                         function: <Function::1>,
                         arguments: [],
+                        annotations: [],
                     },
                 ),
             },
@@ -518,6 +597,7 @@ mod tests {
                     ),
                 ),
             },
+            <Instruction::6>: ReturnRoot,
         },
     }
 "#]],
@@ -532,12 +612,13 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 6,
+        len: 7,
         data: {
             <Instruction::1>: ComprehensionStart,
             <Instruction::2>: IteratorStart {
                 value: Set(
                     Set {
+                        kind: Integer,
                         members: [
                             Integer(
                                 IntegerLiteral(
@@ -578,6 +659,7 @@ mod tests {
                     1,
                 ),
             },
+            <Instruction::7>: ReturnRoot,
         },
     }
 "#]],

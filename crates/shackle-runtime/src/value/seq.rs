@@ -241,8 +241,7 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 					unreachable!()
 				};
 				let sl_width = sl_max - sl_min + 1;
-				let (d_min, _) = seq.dim(i);
-				idxs[i - 1] = (cur_idx % sl_width) + d_min;
+				idxs[i - 1] = (cur_idx % sl_width) + sl_min;
 				cur_idx /= sl_width;
 			}
 			idxs
@@ -301,7 +300,11 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 					storage,
 				} => {
 					let idx = RESOLVE_DIM(&index, &dims);
-					index = vec![if idx <= repeat { 1 } else { idx - repeat + 1 }];
+					index = vec![if idx <= repeat + 1 {
+						1
+					} else {
+						idx - repeat + 1
+					}];
 					dv = storage.deref();
 				}
 			}
@@ -595,8 +598,9 @@ impl FromIterator<Value> for Value {
 		if v.is_empty() {
 			return EMPTY_SEQ.clone();
 		}
+		let v_len = v.len();
 		let mut eq_count = 0;
-		if v.len() >= 4 {
+		if v_len >= 4 {
 			eq_count = v.iter().skip(1).take_while(|&x| x == &v[0]).count();
 		}
 		let iter = v.into_iter().skip(if eq_count >= 3 { eq_count } else { 0 });
@@ -626,7 +630,7 @@ impl FromIterator<Value> for Value {
 				len: ViewType::new(InnerViewType::Compact, 1, 0).as_len(),
 				values: MoveFrom([val]),
 				idents: InitEmpty,
-				ints: MoveFrom([eq_count as i64, 1, len as i64]),
+				ints: MoveFrom([eq_count as i64, 1, v_len as i64]),
 				floats: InitEmpty,
 				bool_var: InitEmpty,
 				int_var: InitEmpty,

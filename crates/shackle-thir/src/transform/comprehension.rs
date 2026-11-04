@@ -14,10 +14,10 @@ use shackle_utils::maybe_grow_stack;
 use super::top_down_type::add_coercion;
 use crate::{
 	Absent, ArrayComprehension, ArrayLiteral, Branch, Call, Callable, Db, Declaration,
-	DeclarationId, Expression, ExpressionData, Generator, IfThenElse, IntegerLiteral, Item,
-	LookupCall, LookupIdentifier, Marker, Model, ResolvedIdentifier, SetComprehension,
+	DeclarationId, Expression, ExpressionData, FunctionId, Generator, IfThenElse, IntegerLiteral,
+	Item, LookupCall, LookupIdentifier, Marker, Model, ResolvedIdentifier, SetComprehension,
 	TupleLiteral, VarType,
-	traverse::{Folder, ReplacementMap, Visitor, fold_call, fold_expression},
+	traverse::{Folder, ReplacementMap, Visitor, add_function, fold_call, fold_expression},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +41,14 @@ impl<'db, Dst: Marker> Folder<'_, 'db, Dst> for ComprehensionRewriter<'db, Dst> 
 
 	fn replacement_map(&mut self) -> &mut ReplacementMap<'db, Dst> {
 		&mut self.replacement_map
+	}
+
+	fn add_function(&mut self, db: &'db dyn Db, model: &'_ Model<'db, ()>, f: FunctionId<'db, ()>) {
+		if model[f].name() == self.ids.functions.set2iter && model[f].body().is_none() {
+			// Remove unused set2iter
+			return;
+		}
+		let _ = add_function(self, db, model, f);
 	}
 
 	fn fold_call(

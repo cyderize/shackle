@@ -532,6 +532,7 @@ mod tests {
 			.set_ignore_stdlib(&mut db)
 			.to(true);
 		let source = r#"
+			annotation mzn_forward_annotations;
 			annotation output;
 			function int: '+'(int: a, int: b);
 			function int: foo() = 123 + 456;
@@ -581,6 +582,7 @@ mod tests {
 			.set_ignore_stdlib(&mut db)
 			.to(true);
 		let source = r#"
+			annotation mzn_forward_annotations;
 			predicate foo(var int: x, var int: y);
 			function var int: foo_t(var int: x) :: promise_total = let {
 				var int: y;

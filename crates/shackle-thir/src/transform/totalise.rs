@@ -100,6 +100,10 @@ impl<'a, 'db, Dst: Marker> Folder<'_, 'db, Dst> for Totaliser<'a, 'db, Dst> {
 			// `default` calls rewritten so function no longer needed
 			return;
 		}
+		if model[f].name() == self.ids.functions.mzn_in_root_context {
+			// Root context already detected, so function no longer needed
+			return;
+		}
 
 		let function_totality = self.totality[f];
 
@@ -2527,7 +2531,6 @@ mod tests {
     predicate forall(array [int] of var bool: _DECL_1);
     predicate forall_reif(array [int] of var bool: _DECL_2, var bool: _DECL_3);
     annotation promise_total;
-    function bool: mzn_in_root_context();
     predicate bar(var int: x);
     predicate bar_reif(var int: x, var bool: b);
     function var bool: foo_root(var int: x) = let {

@@ -6,9 +6,9 @@ use shackle_mir::liveness::{Liveness, SlotAllocator};
 use shackle_utils::arena::{Arena, ArenaMap};
 
 use crate::{
-	Annotation, AnnotationCall, AnnotationId, Array, Call, Expression, Function, FunctionId,
-	Identifier, Instruction, InstructionId, Literal, Program, Set, SlotId, Tuple, TupleAccess,
-	Value,
+	Annotation, AnnotationCall, AnnotationId, Array, Call, CallType, Expression, Function,
+	FunctionId, Identifier, Instruction, InstructionId, Literal, Program, Set, SlotId, Tuple,
+	TupleAccess, Value,
 };
 
 /// Lower a model to IR
@@ -150,6 +150,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 		let expression = match &expr.data {
 			shackle_mir::ExpressionData::Call(call) => Expression::Call(Call {
 				function: self.parent.function_map[call.function],
+				kind: CallType::Function,
 				arguments: call
 					.arguments
 					.iter()
@@ -410,7 +411,7 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 2,
+        len: 3,
         data: {
             <Instruction::1>: Assign {
                 slot: Relative(
@@ -444,9 +445,11 @@ mod tests {
                                 ),
                             ),
                         ],
+                        annotations: [],
                     },
                 ),
             },
+            <Instruction::3>: ReturnRoot,
         },
     }
 "#]],
@@ -462,7 +465,7 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 5,
+        len: 6,
         data: {
             <Instruction::1>: Assign {
                 slot: Relative(
@@ -472,6 +475,7 @@ mod tests {
                     Call {
                         function: <Function::1>,
                         arguments: [],
+                        annotations: [],
                     },
                 ),
             },
@@ -518,6 +522,7 @@ mod tests {
                     ),
                 ),
             },
+            <Instruction::6>: ReturnRoot,
         },
     }
 "#]],
@@ -532,12 +537,13 @@ mod tests {
 			"#,
 			expect![[r#"
     Arena {
-        len: 6,
+        len: 7,
         data: {
             <Instruction::1>: ComprehensionStart,
             <Instruction::2>: IteratorStart {
                 value: Set(
                     Set {
+                        kind: Integer,
                         members: [
                             Integer(
                                 IntegerLiteral(
@@ -578,6 +584,7 @@ mod tests {
                     1,
                 ),
             },
+            <Instruction::7>: ReturnRoot,
         },
     }
 "#]],

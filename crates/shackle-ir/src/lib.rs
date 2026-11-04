@@ -147,11 +147,24 @@ pub enum Expression<'db> {
 /// A builtin whose arguments are IR values.
 pub type Builtin<'db, T = Box<Value<'db>>> = shackle_mir::builtins::Builtin<T>;
 
+/// A call type
+#[derive(Copy, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CallType {
+	/// Add call to NanoZinc
+	Predicate,
+	/// Evaluate call body
+	Function,
+	/// Delayed call added to NanoZinc which is evaluated in future iteration
+	Delayed,
+}
+
 /// A call
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Call<'db> {
 	/// The function being called
 	pub function: FunctionId<'db>,
+	/// The type of call
+	pub kind: CallType,
 	/// The arguments
 	pub arguments: Vec<Value<'db>>,
 	/// The annotations

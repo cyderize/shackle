@@ -937,10 +937,15 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, NamedModelFile},
 	};
 	use shackle_syntax::InputLang;
-	use shackle_thir::db::final_thir;
+	use shackle_thir::{
+		db::final_thir,
+		pretty_print::PrettyPrinter as ThirPrettyPrinter,
+		transform::{DEFAULT_TRANSFORMS, Transform, Transformer},
+	};
+	use shackle_ty::registry::TypeRegistry;
 
 	use super::lower_from_thir;
-	use crate::pretty_print::PrettyPrinter;
+	use crate::{Builtin, pretty_print::PrettyPrinter};
 
 	#[test]
 	fn test_mir_basic() {
@@ -1025,5 +1030,45 @@ mod tests {
 		let actual = format_str(printed, &MiniZincFormatOptions::default()).unwrap();
 		let expected = expect_file!["../tests/lower/fixtures/full_1.expected.mzn"];
 		expected.assert_eq(&actual);
+	}
+
+	#[test]
+	fn standard_library_bodyless_functions_are_lowerable() {
+		let mut db = CompilerDatabase::default();
+		let model_file = InlineModelFile::new(&db, String::new(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		Transformer::set_transforms(
+			&mut db,
+			DEFAULT_TRANSFORMS.iter().copied().filter(|transform| {
+				!matches!(
+					transform,
+					Transform::EliminateDeadCodeConservative | Transform::EliminateDeadCode
+				)
+			}),
+		);
+		let model = final_thir(&db).unwrap();
+		let tys = TypeRegistry::lookup(&db);
+		let builtin_signatures = Builtin::signatures(&db);
+		let printer = ThirPrettyPrinter::new(&db, &model);
+
+		let bad_functions = model
+			.all_functions()
+			.filter(|(_, function)| {
+				let is_mir_builtin = builtin_signatures.contains(&(
+					function.name().as_identifier(&db),
+					function.parameters().len(),
+				));
+				let is_solver_builtin_predicate =
+					function.return_type() == tys.var_bool && !function.is_polymorphic();
+				function.body().is_none() && !is_mir_builtin && !is_solver_builtin_predicate
+			})
+			.map(|(id, _)| printer.pretty_print_signature(id.into()))
+			.collect::<Vec<_>>();
+
+		assert!(
+			bad_functions.is_empty(),
+			"bodyless standard-library functions must be MIR builtins or solver builtin predicates:\n{}",
+			bad_functions.join("\n")
+		);
 	}
 }

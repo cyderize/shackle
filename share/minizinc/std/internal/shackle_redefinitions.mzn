@@ -1048,10 +1048,10 @@ function array [int] of any $T: '++'(array [$$X] of any $T: x, array [$$Y] of an
 		i in 1..length(x) + length(y),
 ];
 
-function $$E: arg_val(array [$$E] of $T: xs, $T: value);
-
-function $$E: arg_min_internal(array [$$E] of $T: xs) = arg_val(xs, min(xs));
-function $$E: arg_max_internal(array [$$E] of $T: xs) = arg_val(xs, max(xs));
+function $$E: arg_min_internal(array [$$E] of $T: xs) =
+	let { any: matches = [i | i in index_set(xs) where xs[i] = min(xs)] } in matches[1];
+function $$E: arg_max_internal(array [$$E] of $T: xs) =
+	let { any: matches = [i | i in index_set(xs) where xs[i] = max(xs)] } in matches[1];
 
 function $T: min($T: x, $T: y) = if x < y then x else y endif;
 function $T: max($T: x, $T: y) = if x < y then y else x endif;

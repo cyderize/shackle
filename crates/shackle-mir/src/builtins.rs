@@ -304,6 +304,14 @@ pub enum Builtin<T> {
 	/// Get length of string
 	#[name(string_length)]
 	StringLength(T),
+	/// Split a string by a separator
+	#[name(string_split)]
+	StringSplit {
+		/// String to split
+		string: T,
+		/// Separator
+		separator: T,
+	},
 	/// Par less than
 	#[name(lt)]
 	LessThan {
@@ -577,6 +585,17 @@ pub enum Builtin<T> {
 	/// Natural logarithm
 	#[name(ln)]
 	Ln(T),
+	/// Logarithm with the given base
+	#[name(log)]
+	Log {
+		/// Base
+		base: T,
+		/// Argument
+		argument: T,
+	},
+	/// Base 2 logarithm
+	#[name(log2)]
+	Log2(T),
 	/// Base 10 logarithm
 	#[name(log10)]
 	Log10(T),

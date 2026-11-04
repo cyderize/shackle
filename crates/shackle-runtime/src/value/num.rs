@@ -357,6 +357,30 @@ impl FloatVal {
 		self.unary_operation(f64::ln)
 	}
 
+	/// Logarithm with this value as the base
+	pub fn log(&self, argument: FloatVal) -> Result<FloatVal, ArithmeticError> {
+		if !(self.is_finite() && argument.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = argument.0.log(self.0);
+		if z.is_nan() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_INVALID,
+			});
+		}
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+
+	/// Base 2 logarithm
+	pub fn log2(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::log2)
+	}
+
 	/// Base 10 logarithm
 	pub fn log10(&self) -> Result<FloatVal, ArithmeticError> {
 		self.unary_operation(f64::log10)
@@ -1014,6 +1038,8 @@ mod tests {
 
 		assert_eq!(zero.exp(), Ok(one));
 		assert_eq!(one.ln(), Ok(zero));
+		assert_eq!(FloatVal(2.0).log(FloatVal(8.0)), Ok(FloatVal(3.0)));
+		assert_eq!(FloatVal(2.0).log2(), Ok(one));
 		assert_eq!(one.log10(), Ok(zero));
 		assert_eq!(zero.sin(), Ok(zero));
 		assert_eq!(zero.cos(), Ok(one));
@@ -1029,6 +1055,7 @@ mod tests {
 		assert_eq!(zero.atanh(), Ok(zero));
 
 		assert!(FloatVal(-1.0).ln().is_err());
+		assert!(FloatVal(1.0).log(FloatVal(2.0)).is_err());
 		assert!(FloatVal(2.0).asin().is_err());
 		assert!(FloatVal(0.5).acosh().is_err());
 		assert!(FloatVal(1.0).atanh().is_err());

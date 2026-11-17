@@ -553,9 +553,11 @@ macro_rules! define_var_ref {
 			) -> Option<crate::nanozinc::DefiningConstraints> {
 				self.defining_constraints.downgrade()
 			}
+
 			pub(super) fn restore_definition(&mut self) -> bool {
 				self.defining_constraints.restore()
 			}
+
 			pub(super) fn definition_is_weak_for(
 				&self,
 				group: *const crate::nanozinc::DefinitionGroup,

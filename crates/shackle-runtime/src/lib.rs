@@ -544,6 +544,146 @@ mod tests {
 
 	use crate::{DataView, Interpreter};
 
+	fn value_test_program() -> shackle_ir::Program {
+		use shackle_utils::arena::Arena;
+
+		let mut strings = Arena::default();
+		let name = strings.insert(String::from("main"));
+		let mut body = Arena::default();
+		let _ = body.insert(shackle_ir::Instruction::ReturnRoot);
+		let mut functions = Arena::default();
+		let main = functions.insert(shackle_ir::Function {
+			name,
+			slot_count: 0,
+			promise_total: false,
+			body,
+			origins: Default::default(),
+		});
+		shackle_ir::Program {
+			global_slot_count: 2,
+			functions,
+			annotations: Default::default(),
+			main_entry_point: main,
+			output_entry_point: main,
+			strings,
+		}
+	}
+
+	#[test]
+	fn eval_value_literals_and_identifiers() {
+		use std::num::NonZeroU32;
+
+		use shackle_hir::{BooleanLiteral, FloatLiteral, IntegerLiteral};
+		use shackle_ir::{Identifier, Literal, SlotId};
+
+		let mut program = value_test_program();
+		let string = program.strings.insert(String::from("hello"));
+		let annotation = program
+			.annotations
+			.insert(shackle_ir::Annotation { name: string });
+		let mut interpreter = Interpreter::new(&program);
+		let slot = SlotId::Absolute(NonZeroU32::new(1).unwrap());
+		interpreter.stack[slot] = crate::Value::from(37);
+		let cases = [
+			(
+				Literal::Boolean(BooleanLiteral(true)),
+				crate::Value::from(true),
+			),
+			(
+				Literal::Integer(IntegerLiteral(-12)),
+				crate::Value::from(-12),
+			),
+			(
+				Literal::Float(FloatLiteral::new(1.5)),
+				crate::Value::from(1.5),
+			),
+			(Literal::String(string), crate::Value::from("hello")),
+			(Literal::Infinity, crate::Value::from(crate::IntVal::InfPos)),
+			(Literal::InfiniteIntSet, crate::value::INT_SET_INF.clone()),
+			(
+				Literal::InfiniteFloatSet,
+				crate::value::FLOAT_SET_INF.clone(),
+			),
+			(
+				Literal::Identifier(Identifier::Slot(slot)),
+				crate::Value::from(37),
+			),
+			(
+				Literal::Identifier(Identifier::Annotation(annotation)),
+				crate::Value::new_annotation(annotation.into(), []),
+			),
+		];
+		for (literal, expected) in cases {
+			assert_eq!(
+				interpreter.eval_value(&literal.clone().into()),
+				expected,
+				"{literal:?}"
+			);
+		}
+	}
+
+	#[test]
+	fn eval_value_collections_and_tuple_access() {
+		use std::num::NonZeroU32;
+
+		use shackle_hir::{FloatLiteral, IntegerLiteral};
+		use shackle_ir::{Identifier, Literal, SetType, SlotId};
+
+		let program = value_test_program();
+		let mut interpreter = Interpreter::new(&program);
+		let slot = SlotId::Absolute(NonZeroU32::new(1).unwrap());
+		interpreter.stack[slot] = crate::Value::from(7);
+		let int = |n| Literal::Integer(IntegerLiteral(n));
+		let slot_literal = Literal::Identifier(Identifier::Slot(slot));
+		let members = vec![int(3), slot_literal.clone(), int(3)];
+		let sequence = crate::Value::from_iter([3, 7, 3].map(crate::Value::from));
+		for value in [
+			shackle_ir::Value::Tuple(shackle_ir::Tuple {
+				members: members.clone(),
+			}),
+			shackle_ir::Value::Array(shackle_ir::Array {
+				members: members.clone(),
+			}),
+		] {
+			assert_eq!(interpreter.eval_value(&value), sequence);
+		}
+		let set = shackle_ir::Value::Set(shackle_ir::Set {
+			kind: SetType::Integer,
+			members: vec![int(3), slot_literal.clone()],
+		});
+		let expected = crate::Value::from_iter([
+			crate::IntVal::from(3)..=crate::IntVal::from(3),
+			crate::IntVal::from(7)..=crate::IntVal::from(7),
+		]);
+		assert_eq!(interpreter.eval_value(&set), expected);
+		let set = shackle_ir::Value::Set(shackle_ir::Set {
+			kind: SetType::Float,
+			members: vec![
+				Literal::Float(FloatLiteral::new(-1.0)),
+				Literal::Float(FloatLiteral::new(2.5)),
+			],
+		});
+		let expected = crate::Value::from_iter([
+			crate::FloatVal::from(-1.0)..=crate::FloatVal::from(-1.0),
+			crate::FloatVal::from(2.5)..=crate::FloatVal::from(2.5),
+		]);
+		assert_eq!(interpreter.eval_value(&set), expected);
+		let set = shackle_ir::Value::Set(shackle_ir::Set {
+			kind: SetType::Discrete,
+			members: vec![int(3), slot_literal, int(3)],
+		});
+		assert_eq!(
+			interpreter.eval_value(&set),
+			crate::Value::new_discrete_set([crate::Value::from(3), crate::Value::from(7)])
+		);
+		interpreter.stack[slot] = sequence;
+		let access = shackle_ir::Value::TupleAccess(shackle_ir::TupleAccess {
+			tuple: Identifier::Slot(slot),
+			field: IntegerLiteral(2),
+		});
+		assert_eq!(interpreter.eval_value(&access), crate::Value::from(7));
+	}
+
 	#[test]
 	fn test_interpreter_1() {
 		let mut db = CompilerDatabase::default();

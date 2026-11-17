@@ -486,7 +486,7 @@ impl<'a> Interpreter<'a> {
 				let DataView::Seq(view) = tuple.deref() else {
 					unreachable!()
 				};
-				view[&[tuple_access.field.0 - 1]].clone()
+				view[&[tuple_access.field.0]].clone()
 			}
 		}
 	}

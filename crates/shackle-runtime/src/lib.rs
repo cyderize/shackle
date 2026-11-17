@@ -589,6 +589,7 @@ mod tests {
 		interpreter.run();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
+
     constraint foo(_X_INTRODUCED_0);
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
@@ -621,8 +622,47 @@ mod tests {
 		interpreter.run();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
-    var int: _X_INTRODUCED_1;
-    ⤷ constraint foo(_X_INTRODUCED_0, _X_INTRODUCED_1) :: my_ann;
+    var int: _X_INTRODUCED_1; % defined by group 1
+
+    % defining group 1
+    constraint foo(_X_INTRODUCED_0, _X_INTRODUCED_1) :: my_ann;
+"#]]
+		.assert_eq(&interpreter.nanozinc_mut().print(&program));
+	}
+
+	#[test]
+	fn test_interpreter_4() {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = r#"
+			annotation mzn_forward_annotations;
+			predicate foo(var int: x, array [int] of var int: y);
+			function array [int] of var int: mzn_array_kd(tuple(set of int): d, array [int] of var int: x);
+			function array [int] of var int: foo_t(var int: x) :: promise_total = let {
+				array [{1, 2, 3}] of var int: y;
+				constraint foo(x, y);
+			} in y;
+			test abort(string);
+			annotation promise_total;
+			annotation output;
+			var {1, 3, 5}: x;
+			any: y :: output = foo_t(x);
+			"#;
+		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		let mut interpreter = Interpreter::new(&program);
+		interpreter.run();
+		expect![[r#"
+    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
+    var int: _X_INTRODUCED_1; % defined by group 1
+    var int: _X_INTRODUCED_2; % defined by group 1
+    var int: _X_INTRODUCED_3; % defined by group 1
+
+    % defining group 1
+    constraint foo(_X_INTRODUCED_0, [_X_INTRODUCED_1, _X_INTRODUCED_2, _X_INTRODUCED_3]);
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}

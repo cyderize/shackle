@@ -367,6 +367,11 @@ impl Value {
 		self.raw == c.raw
 	}
 
+	/// Compare the underlying representation, without following variable aliases.
+	pub(crate) fn same_identity(&self, other: &Value) -> bool {
+		self.raw == other.raw
+	}
+
 	fn new_box(init: impl Initializer<ValueStorage>) -> Value {
 		// Note: This code is inspired by the initialisation code of varlen::VBox::new
 		let layout = init
@@ -542,6 +547,22 @@ pub struct AnnotationView<'a> {
 
 macro_rules! define_var_ref {
 	($v:ident, $r:ident) => {
+		impl $v {
+			pub(super) fn downgrade_definition(
+				&mut self,
+			) -> Option<crate::nanozinc::DefiningConstraints> {
+				self.defining_constraints.downgrade()
+			}
+			pub(super) fn restore_definition(&mut self) -> bool {
+				self.defining_constraints.restore()
+			}
+			pub(super) fn definition_is_weak_for(
+				&self,
+				group: *const crate::nanozinc::DefinitionGroup,
+			) -> bool {
+				self.defining_constraints.is_weak_for(group)
+			}
+		}
 		/// A reference to a variable
 		#[derive(Debug)]
 		pub struct $r<'a> {
@@ -716,46 +737,56 @@ impl ValueStorage {
 	}
 
 	unsafe fn release_weak(mut slf: Pin<&mut ValueStorage>) {
-		let muts = slf.as_mut().muts();
-		if muts.weak_count.fetch_sub(1, Release) == 1 {
+		if slf.as_mut().muts().weak_count.fetch_sub(1, Release) == 1 {
 			atomic::fence(Acquire);
-			let needs_deinit = match muts.ty {
-				ValType::BoolVar => muts.bool_var[0].lock().unwrap().binding_domain(),
-				ValType::IntVar => muts.int_var[0].lock().unwrap().binding_domain(),
-				ValType::FloatVar => muts.float_var[0].lock().unwrap().binding_domain(),
-				ValType::IntSetVar => muts.int_set_var[0].lock().unwrap().binding_domain(),
-				_ => false,
-			};
-			unsafe {
-				if needs_deinit {
-					ValueStorage::deinit(slf.as_mut());
-				}
-				ValueStorage::drop(slf)
-			}
+			unsafe { ValueStorage::drop(slf) };
 		}
 	}
 
 	unsafe fn release_strong(mut slf: Pin<&mut ValueStorage>) {
 		debug_assert!(slf.refs().ref_count.load(Relaxed) > 0);
-		let muts = slf.as_mut().muts();
-		if muts.ref_count.fetch_sub(1, Release) == 1 {
-			atomic::fence(Acquire);
-			match muts.ty {
-				ValType::BoolVar if muts.bool_var[0].lock().unwrap().binding_domain() => {}
-				ValType::IntVar if muts.int_var[0].lock().unwrap().binding_domain() => {}
-				ValType::FloatVar if muts.float_var[0].lock().unwrap().binding_domain() => {}
-				ValType::IntSetVar if muts.int_set_var[0].lock().unwrap().binding_domain() => {}
-				_ => {
-					unsafe {
-						ValueStorage::deinit(slf.as_mut());
-					};
+		// A variable guard may be held while another strong handle is dropped.
+		// Avoid taking the mutex unless this might be the last handle.
+		if slf
+			.refs()
+			.ref_count
+			.fetch_update(Release, Relaxed, |count| (count > 1).then(|| count - 1))
+			.is_ok()
+		{
+			return;
+		}
+		macro_rules! release_variable {
+			($field:ident) => {{
+				let refs = slf.refs();
+				let mut variable = refs.$field[0].lock().unwrap();
+				if refs.ref_count.fetch_sub(1, Release) != 1 {
+					return;
 				}
-			}
-
-			unsafe {
-				// Release implicit weak reference
-				ValueStorage::release_weak(slf);
-			}
+				atomic::fence(Acquire);
+				let group = variable.downgrade_definition();
+				let contents = if group.is_none() {
+					variable.take_dead_contents()
+				} else {
+					Vec::new()
+				};
+				drop(variable);
+				drop(contents);
+				drop(group);
+				unsafe { ValueStorage::release_weak(slf) };
+				return;
+			}};
+		}
+		match slf.refs().ty {
+			ValType::BoolVar => release_variable!(bool_var),
+			ValType::IntVar => release_variable!(int_var),
+			ValType::FloatVar => release_variable!(float_var),
+			ValType::IntSetVar => release_variable!(int_set_var),
+			_ => {}
+		}
+		if slf.refs().ref_count.fetch_sub(1, Release) == 1 {
+			atomic::fence(Acquire);
+			unsafe { ValueStorage::deinit(slf.as_mut()) };
+			unsafe { ValueStorage::release_weak(slf) };
 		}
 	}
 }
@@ -803,66 +834,65 @@ pub struct WeakValue {
 impl WeakValue {
 	/// Check whether the value is still alive.
 	pub fn is_alive(&self) -> bool {
-		let slf = self.get_pin();
-		match slf.refs().ty {
-			ValType::BoolVar if slf.refs().bool_var[0].lock().unwrap().binding_domain() => true,
-			ValType::IntVar if slf.refs().int_var[0].lock().unwrap().binding_domain() => true,
-			ValType::FloatVar if slf.refs().float_var[0].lock().unwrap().binding_domain() => true,
-			ValType::IntSetVar if slf.refs().int_set_var[0].lock().unwrap().binding_domain() => {
-				true
-			}
-			_ => slf.refs().ref_count.load(Relaxed) > 0,
-		}
+		self.upgrade().is_some()
 	}
 
 	/// Upgrade to a strong reference, if the value is still alive.
 	pub fn upgrade(&self) -> Option<Value> {
 		let slf = self.get_pin();
-
-		match slf.refs().ty {
-			ValType::BoolVar => {
-				let var = slf.refs().bool_var[0].lock().unwrap();
-				if var.binding_domain() {
-					if increment_strong_count(&slf.refs().ref_count) == 0 {
-						increment_weak_count(&slf.refs().weak_count);
-					}
-					return Some(Value { raw: self.raw });
-				}
-			}
-			ValType::IntVar => {
-				let var = slf.refs().int_var[0].lock().unwrap();
-				if var.binding_domain() {
-					if increment_strong_count(&slf.refs().ref_count) == 0 {
-						increment_weak_count(&slf.refs().weak_count);
-					}
-					return Some(Value { raw: self.raw });
-				}
-			}
-			ValType::FloatVar => {
-				let var = slf.refs().float_var[0].lock().unwrap();
-				if var.binding_domain() {
-					if increment_strong_count(&slf.refs().ref_count) == 0 {
-						increment_weak_count(&slf.refs().weak_count);
-					}
-					return Some(Value { raw: self.raw });
-				}
-			}
-			ValType::IntSetVar => {
-				let var = slf.refs().int_set_var[0].lock().unwrap();
-				if var.binding_domain() {
-					if increment_strong_count(&slf.refs().ref_count) == 0 {
-						increment_weak_count(&slf.refs().weak_count);
-					}
-					return Some(Value { raw: self.raw });
-				}
-			}
-			_ => {}
-		}
-
 		if increment_strong_count_if_nonzero(&slf.refs().ref_count) {
-			Some(Value { raw: self.raw })
-		} else {
-			None
+			return Some(Value { raw: self.raw });
+		}
+		macro_rules! upgrade_variable {
+			($field:ident) => {{
+				let mut var = slf.refs().$field[0].lock().unwrap();
+				if slf.refs().ref_count.load(Relaxed) == 0 {
+					if !var.restore_definition() {
+						return None;
+					}
+					increment_weak_count(&slf.refs().weak_count);
+				}
+				let _ = increment_strong_count(&slf.refs().ref_count);
+				return Some(Value { raw: self.raw });
+			}};
+		}
+		match slf.refs().ty {
+			ValType::BoolVar => upgrade_variable!(bool_var),
+			ValType::IntVar => upgrade_variable!(int_var),
+			ValType::FloatVar => upgrade_variable!(float_var),
+			ValType::IntSetVar => upgrade_variable!(int_set_var),
+			_ => None,
+		}
+	}
+
+	/// Release dormant variable contents when their definition group dies.
+	pub(crate) fn cleanup_dead_definition(&self, group: *const crate::nanozinc::DefinitionGroup) {
+		let slf = self.get_pin();
+		// A live variable can have replaced its group while holding its own
+		// mutex. It cannot be a dormant member of the dying group.
+		if slf.refs().ref_count.load(Acquire) != 0 {
+			return;
+		}
+		macro_rules! cleanup_variable {
+			($field:ident) => {{
+				let mut var = slf.refs().$field[0].lock().unwrap();
+				let contents = if slf.refs().ref_count.load(Relaxed) == 0
+					&& var.definition_is_weak_for(group)
+				{
+					var.take_dead_contents()
+				} else {
+					Vec::new()
+				};
+				drop(var);
+				drop(contents);
+			}};
+		}
+		match slf.refs().ty {
+			ValType::BoolVar => cleanup_variable!(bool_var),
+			ValType::IntVar => cleanup_variable!(int_var),
+			ValType::FloatVar => cleanup_variable!(float_var),
+			ValType::IntSetVar => cleanup_variable!(int_set_var),
+			_ => unreachable!("defined output must be a variable"),
 		}
 	}
 
@@ -899,7 +929,7 @@ impl Drop for WeakValue {
 
 impl Debug for WeakValue {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_tuple("WeakValue").field(&self.upgrade()).finish()
+		f.debug_tuple("WeakValue").field(&self.raw).finish()
 	}
 }
 
@@ -977,51 +1007,6 @@ mod tests {
 		assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
 		drop(weak_clone);
 		assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
-	}
-
-	#[test]
-	fn binding_domain_retains_variables_until_cleared() {
-		let values = [
-			Value::new_bool_var(0),
-			Value::new_int_var(1, 1.into()),
-			Value::new_float_var(2, 1.into()),
-			Value::new_int_set_var(3, 1.into()),
-		];
-		for value in values {
-			let weak = value.downgrade();
-			match value.deref() {
-				DataView::BoolVar(mut variable) => variable.set_binding_domain(true),
-				DataView::IntVar(mut variable) => variable.set_binding_domain(true),
-				DataView::FloatVar(mut variable) => variable.set_binding_domain(true),
-				DataView::IntSetVar(mut variable) => variable.set_binding_domain(true),
-				_ => unreachable!("Expected variable"),
-			};
-
-			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 1);
-			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
-			drop(value);
-			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 0);
-			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
-
-			let retained_value = weak
-				.upgrade()
-				.expect("binding domain should retain the variable");
-			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 1);
-			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 2);
-
-			match retained_value.deref() {
-				DataView::BoolVar(mut retained) => retained.set_binding_domain(false),
-				DataView::IntVar(mut retained) => retained.set_binding_domain(false),
-				DataView::FloatVar(mut retained) => retained.set_binding_domain(false),
-				DataView::IntSetVar(mut retained) => retained.set_binding_domain(false),
-				_ => unreachable!("Expected variable"),
-			};
-			drop(retained_value);
-
-			assert!(weak.upgrade().is_none());
-			assert_eq!(weak.get_pin().refs().ref_count.load(Relaxed), 0);
-			assert_eq!(weak.get_pin().refs().weak_count.load(Relaxed), 1);
-		}
 	}
 
 	#[test]

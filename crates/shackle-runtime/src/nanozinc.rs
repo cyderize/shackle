@@ -3,14 +3,14 @@
 //! Represents the state of the instance
 
 use std::{
-	fmt::{Write, format},
+	fmt::Write,
 	sync::{
-		Arc,
+		Arc, Weak,
 		atomic::{AtomicU64, Ordering},
 	},
 };
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{DataView, Value, value::WeakValue};
 
@@ -18,11 +18,52 @@ use crate::{DataView, Value, value::WeakValue};
 #[derive(Debug, Default)]
 pub struct NanoZinc {
 	items: Vec<Item>,
+	// A domain can represent a subsumed non-defining constraint. Keep that
+	// variable alive until the restriction is known to be redundant.
+	domain_roots: Vec<Value>,
 	next_id: AtomicU64,
 	pending: Vec<PendingNanoZinc>,
 }
 
 impl NanoZinc {
+	/// Retain a variable whose domain represents a removed constraint.
+	///
+	/// Register the root before removing the constraint. Repeated registrations
+	/// of the same variable are idempotent.
+	pub fn retain_domain(&mut self, variable: &Value) {
+		let weak = variable.downgrade();
+		assert!(
+			self.items
+				.iter()
+				.any(|item| matches!(item, Item::Variable(v) if *v == weak)),
+			"domain root must be a variable in this model"
+		);
+		if !self
+			.domain_roots
+			.iter()
+			.any(|root| root.same_identity(variable))
+		{
+			self.domain_roots.push(variable.clone());
+		}
+	}
+
+	/// Release a domain root once the restrictions it represents are redundant.
+	///
+	/// The caller is responsible for proving redundancy without relying on the
+	/// restrictions being removed. Returns whether a root was present.
+	pub fn release_domain(&mut self, variable: &Value) -> bool {
+		if let Some(index) = self
+			.domain_roots
+			.iter()
+			.position(|root| root.same_identity(variable))
+		{
+			let _ = self.domain_roots.swap_remove(index);
+			true
+		} else {
+			false
+		}
+	}
+
 	/// Add a fresh boolean variable to the NanoZinc
 	pub fn add_var_bool(&mut self, is_defined: bool) -> Value {
 		let var = Value::new_bool_var(self.next_id.fetch_add(1, Ordering::Relaxed));
@@ -117,50 +158,23 @@ impl NanoZinc {
 		let cons = pending
 			.constraints
 			.into_iter()
-			.map(|c| {
-				let arguments = c
+			.map(|c| DefiningConstraint {
+				function: c.function,
+				arguments: c
 					.arguments
 					.iter()
-					.map(|arg| {
-						if let DataView::Seq(vs) = arg.deref() {
-							let mut had_defined = false;
-							let args = vs
-								.iter()
-								.map(|v| {
-									if pending.variables_defined.contains(v) {
-										had_defined = true;
-										ScalarArgument::DefinedVariable(v.downgrade())
-									} else {
-										ScalarArgument::Input(v.clone())
-									}
-								})
-								.collect();
-							return if had_defined {
-								DefiningConstraintArgument::Array(args)
-							} else {
-								DefiningConstraintArgument::Scalar(ScalarArgument::Input(
-									arg.clone(),
-								))
-							};
-						}
-						if pending.variables_defined.contains(arg) {
-							DefiningConstraintArgument::Scalar(ScalarArgument::DefinedVariable(
-								arg.downgrade(),
-							))
-						} else {
-							DefiningConstraintArgument::Scalar(ScalarArgument::Input(arg.clone()))
-						}
-					})
-					.collect();
-				DefiningConstraint {
-					function: c.function,
-					arguments,
-					annotations: c.annotations.clone(),
-				}
+					.map(|v| DefiningConstraintArgument::new(v, &pending.variables_defined))
+					.collect(),
+				annotations: c
+					.annotations
+					.iter()
+					.map(|v| DefiningConstraintArgument::new(v, &pending.variables_defined))
+					.collect(),
 			})
 			.collect();
 		let defining = DefiningConstraints {
-			constraints: Some(Arc::new(cons)),
+			constraints: Some(Arc::new(DefinitionGroup { constraints: cons })),
+			weak: None,
 		};
 		for v in pending.variables_defined {
 			match v.deref() {
@@ -194,6 +208,9 @@ impl NanoZinc {
 	/// Print the NanoZinc model as a string
 	pub fn print(&mut self, program: &shackle_ir::Program) -> String {
 		let mut s = String::new();
+		let mut constraints = String::new();
+		let mut seen_groups = FxHashMap::default();
+		let mut held_groups = Vec::new();
 		for item in self.items() {
 			match item {
 				Item::Variable(var) => {
@@ -203,7 +220,7 @@ impl NanoZinc {
 
 					let defining_constraints = match value.deref() {
 						DataView::BoolVar(v) => {
-							writeln!(
+							write!(
 								&mut s,
 								"var {}: _X_INTRODUCED_{};",
 								v.domain()
@@ -215,7 +232,7 @@ impl NanoZinc {
 							v.defining_constraints().clone()
 						}
 						DataView::IntVar(v) => {
-							writeln!(
+							write!(
 								&mut s,
 								"var {}: _X_INTRODUCED_{};",
 								v.domain()
@@ -227,7 +244,7 @@ impl NanoZinc {
 							v.defining_constraints().clone()
 						}
 						DataView::FloatVar(v) => {
-							writeln!(
+							write!(
 								&mut s,
 								"var {}: _X_INTRODUCED_{};",
 								v.domain()
@@ -239,7 +256,7 @@ impl NanoZinc {
 							v.defining_constraints().clone()
 						}
 						DataView::IntSetVar(v) => {
-							writeln!(
+							write!(
 								&mut s,
 								"var set of {}: _X_INTRODUCED_{};",
 								v.domain()
@@ -253,10 +270,31 @@ impl NanoZinc {
 						_ => unreachable!(),
 					};
 
+					let Some(group) = defining_constraints.constraints.as_ref() else {
+						writeln!(&mut s).unwrap();
+						continue;
+					};
+					let group_ptr = Arc::as_ptr(group);
+					let (group_id, is_new) = match seen_groups.get(&group_ptr) {
+						Some(&id) => (id, false),
+						None => {
+							let id = seen_groups.len() + 1;
+							let _ = seen_groups.insert(group_ptr, id);
+							(id, true)
+						}
+					};
+					writeln!(&mut s, " % defined by group {group_id}").unwrap();
+					if !is_new {
+						continue;
+					}
+					if !constraints.is_empty() {
+						writeln!(&mut constraints).unwrap();
+					}
+					writeln!(&mut constraints, "% defining group {group_id}").unwrap();
 					for constraint in defining_constraints.iter() {
 						writeln!(
-							&mut s,
-							"⤷ constraint {}({}){};",
+							&mut constraints,
+							"constraint {}({}){};",
 							program.strings[program.functions[constraint.function].name],
 							constraint
 								.arguments
@@ -269,27 +307,37 @@ impl NanoZinc {
 								.iter()
 								.map(|ann| format!(
 									" :: {}",
-									self.print_value(program, ann.clone())
+									self.print_value(program, ann.to_value())
 								))
 								.collect::<Vec<_>>()
 								.join("")
 						)
 						.unwrap();
 					}
+					held_groups.push(defining_constraints);
 				}
-				Item::Constraint(constraint) => writeln!(
-					&mut s,
-					"constraint {}({});",
-					program.strings[program.functions[constraint.function].name],
-					constraint
-						.arguments
-						.iter()
-						.map(|arg| self.print_value(program, arg.clone()))
-						.collect::<Vec<_>>()
-						.join(", ")
-				)
-				.unwrap(),
+				Item::Constraint(constraint) => {
+					if !constraints.is_empty() {
+						writeln!(&mut constraints).unwrap();
+					}
+					writeln!(
+						&mut constraints,
+						"constraint {}({});",
+						program.strings[program.functions[constraint.function].name],
+						constraint
+							.arguments
+							.iter()
+							.map(|arg| self.print_value(program, arg.clone()))
+							.collect::<Vec<_>>()
+							.join(", ")
+					)
+					.unwrap();
+				}
 			}
+		}
+		if !constraints.is_empty() {
+			writeln!(&mut s).unwrap();
+			s.push_str(&constraints);
 		}
 		s
 	}
@@ -361,71 +409,160 @@ pub struct Constraint<T = Value> {
 }
 
 /// A constraint which defines a variable (or variables)
-type DefiningConstraint = Constraint<DefiningConstraintArgument>;
-
-/// Defining constraints for a variable (or variables)
-///
-/// Can be shared by multiple variables if they are all defined by these constraints
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct DefiningConstraints {
-	constraints: Option<Arc<Vec<DefiningConstraint>>>,
-}
-
-impl<T: IntoIterator<Item = DefiningConstraint>> From<T> for DefiningConstraints {
-	fn from(constraints: T) -> Self {
-		Self {
-			constraints: Some(Arc::new(constraints.into_iter().collect())),
-		}
-	}
-}
-
-impl DefiningConstraints {
-	/// Iterate over the defining constraints (if any)
-	fn iter(&self) -> impl Iterator<Item = &DefiningConstraint> {
-		self.constraints
-			.as_ref()
-			.map(|arc| arc.iter())
-			.into_iter()
-			.flatten()
-	}
-}
-
-/// Argument to a defining constraint
 #[derive(Debug, Clone, PartialEq)]
-enum DefiningConstraintArgument {
-	/// A single argument which may be defined by the constraint
-	///
-	/// May also be a sequence of arguments which are all outputs
-	Scalar(ScalarArgument),
-	// An array of arguments for which
-	Array(Vec<ScalarArgument>),
+struct DefiningConstraint {
+	function: shackle_ir::FunctionId,
+	arguments: Vec<DefiningConstraintArgument>,
+	annotations: Vec<DefiningConstraintArgument>,
 }
 
-impl DefiningConstraintArgument {
-	fn to_value(&self) -> Value {
-		match self {
-			DefiningConstraintArgument::Scalar(scalar) => scalar.to_value(),
-			DefiningConstraintArgument::Array(array) => {
-				let values: Vec<Value> = array.iter().map(|arg| arg.to_value()).collect();
-				Value::from_iter(values)
+/// The constraints shared by a set of defined variables.
+#[derive(Debug)]
+pub(crate) struct DefinitionGroup {
+	constraints: Vec<DefiningConstraint>,
+}
+
+impl Drop for DefinitionGroup {
+	fn drop(&mut self) {
+		for constraint in &self.constraints {
+			for argument in constraint.arguments.iter().chain(&constraint.annotations) {
+				argument.cleanup_dead_outputs(self);
 			}
 		}
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum ScalarArgument {
-	/// Input value kept alive by this constraint
-	Input(Value),
-	/// Output variable defined by this constraint
-	DefinedVariable(WeakValue),
+/// Defining constraints for a variable (or variables).
+#[derive(Clone, Debug, Default)]
+pub struct DefiningConstraints {
+	constraints: Option<Arc<DefinitionGroup>>,
+	weak: Option<Weak<DefinitionGroup>>,
 }
 
-impl ScalarArgument {
+impl PartialEq for DefiningConstraints {
+	fn eq(&self, other: &Self) -> bool {
+		match (&self.constraints, &other.constraints) {
+			(Some(a), Some(b)) => a.constraints == b.constraints,
+			(None, None) => match (&self.weak, &other.weak) {
+				(Some(a), Some(b)) => Weak::ptr_eq(a, b),
+				(None, None) => true,
+				_ => false,
+			},
+			_ => false,
+		}
+	}
+}
+
+impl<T: IntoIterator<Item = DefiningConstraint>> From<T> for DefiningConstraints {
+	fn from(constraints: T) -> Self {
+		Self {
+			constraints: Some(Arc::new(DefinitionGroup {
+				constraints: constraints.into_iter().collect(),
+			})),
+			weak: None,
+		}
+	}
+}
+
+impl DefiningConstraints {
+	pub(crate) fn downgrade(&mut self) -> Option<Self> {
+		let strong = self.constraints.take()?;
+		self.weak = Some(Arc::downgrade(&strong));
+		Some(Self {
+			constraints: Some(strong),
+			weak: None,
+		})
+	}
+
+	pub(crate) fn restore(&mut self) -> bool {
+		if self.constraints.is_some() {
+			return true;
+		}
+		if let Some(strong) = self.weak.as_ref().and_then(Weak::upgrade) {
+			self.constraints = Some(strong);
+			self.weak = None;
+			true
+		} else {
+			false
+		}
+	}
+
+	pub(crate) fn is_weak_for(&self, group: *const DefinitionGroup) -> bool {
+		self.weak
+			.as_ref()
+			.is_some_and(|weak| std::ptr::eq(weak.as_ptr(), group))
+	}
+
+	/// Iterate over the defining constraints (if any).
+	fn iter(&self) -> impl Iterator<Item = &DefiningConstraint> {
+		self.constraints
+			.as_ref()
+			.map(|arc| arc.constraints.iter())
+			.into_iter()
+			.flatten()
+	}
+}
+
+/// A structured constraint value whose defined outputs are weak references.
+#[derive(Debug, Clone, PartialEq)]
+enum DefiningConstraintArgument {
+	Input(Value),
+	DefinedVariable(WeakValue),
+	Seq(Vec<Self>),
+	Annotation {
+		annotation: shackle_ir::AnnotationId,
+		arguments: Vec<Self>,
+	},
+}
+
+impl DefiningConstraintArgument {
+	fn new(value: &Value, outputs: &FxHashSet<Value>) -> Self {
+		if outputs.iter().any(|output| output.same_identity(value)) {
+			return Self::DefinedVariable(value.downgrade());
+		}
+		match value.deref() {
+			DataView::Seq(seq) => Self::Seq(seq.iter().map(|v| Self::new(v, outputs)).collect()),
+			DataView::Set(_) => panic!("discrete sets are not supported in NanoZinc"),
+			DataView::Annotation(annotation) => Self::Annotation {
+				annotation: annotation.annotation,
+				arguments: annotation
+					.arguments
+					.iter()
+					.map(|v| Self::new(v, outputs))
+					.collect(),
+			},
+			_ => Self::Input(value.clone()),
+		}
+	}
+
 	fn to_value(&self) -> Value {
 		match self {
-			ScalarArgument::Input(v) => v.clone(),
-			ScalarArgument::DefinedVariable(v) => v.upgrade().unwrap(),
+			Self::Input(value) => value.clone(),
+			Self::DefinedVariable(value) => value
+				.upgrade()
+				.expect("live definition retains its outputs"),
+			Self::Seq(values) => values.iter().map(Self::to_value).collect(),
+			Self::Annotation {
+				annotation,
+				arguments,
+			} => Value::new_annotation(*annotation, arguments.iter().map(Self::to_value)),
+		}
+	}
+
+	fn cleanup_dead_outputs(&self, group: *const DefinitionGroup) {
+		match self {
+			Self::Input(_) => {}
+			Self::DefinedVariable(value) => value.cleanup_dead_definition(group),
+			Self::Seq(values) => {
+				for value in values {
+					value.cleanup_dead_outputs(group);
+				}
+			}
+			Self::Annotation { arguments, .. } => {
+				for value in arguments {
+					value.cleanup_dead_outputs(group);
+				}
+			}
 		}
 	}
 }
@@ -434,4 +571,283 @@ impl ScalarArgument {
 struct PendingNanoZinc {
 	variables_defined: FxHashSet<Value>,
 	constraints: Vec<Constraint>,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn defining_constraint_sequences_are_one_based_and_one_dimensional() {
+		let sequence: Value = (1..=4).map(Value::from).collect();
+		let sequence = sequence.with_dim([(0, 1), (3, 4)]);
+		let argument = DefiningConstraintArgument::new(&sequence, &FxHashSet::default());
+		let reconstructed = argument.to_value();
+		let DataView::Seq(seq) = reconstructed.deref() else {
+			panic!("expected a sequence");
+		};
+		assert_eq!(seq.dims(), 1);
+		assert_eq!(seq.dim(1), (1, 4));
+		assert_eq!(
+			seq.iter().cloned().collect::<Vec<_>>(),
+			vec![1.into(), 2.into(), 3.into(), 4.into()]
+		);
+	}
+
+	#[test]
+	#[should_panic(expected = "discrete sets are not supported in NanoZinc")]
+	fn defining_constraints_reject_discrete_sets() {
+		let set = Value::new_discrete_set([Value::from("element")]);
+		let _ = DefiningConstraintArgument::new(&set, &FxHashSet::default());
+	}
+
+	#[test]
+	fn domain_roots_are_model_owned_and_idempotent() {
+		let mut model = NanoZinc::default();
+		let variable = model.add_var_bool(false);
+		let weak = variable.downgrade();
+		model.retain_domain(&variable);
+		model.retain_domain(&variable);
+		drop(variable);
+		let value = weak.upgrade().expect("domain root retains the variable");
+		assert!(model.release_domain(&value));
+		assert!(!model.release_domain(&value));
+		drop(value);
+		assert!(weak.upgrade().is_none());
+	}
+
+	#[test]
+	fn shared_definition_revives_outputs_and_releases_contents() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let domain = Value::from("domain");
+		let weak_domain = domain.downgrade();
+		let values = [
+			model.add_var_bool(true),
+			model.add_var_int(domain.clone(), true),
+			model.add_var_float(domain.clone(), true),
+			model.add_var_set_of_int(domain.clone(), true),
+		];
+		let weak: Vec<_> = values.iter().map(Value::downgrade).collect();
+		let input = Value::from("input");
+		let weak_input = input.downgrade();
+		model.add_constraint(
+			shackle_ir::FunctionId::new(1),
+			values.iter().cloned().chain([input.clone()]),
+			[],
+		);
+		model.pop_pending();
+		drop(input);
+		drop(domain);
+		let [survivor, a, b, c] = values;
+		drop((a, b, c));
+		for value in &weak[1..] {
+			assert!(value.is_alive());
+			let revived = value.upgrade().expect("live group retains its output");
+			assert!(matches!(
+				revived.deref(),
+				DataView::IntVar(_) | DataView::FloatVar(_) | DataView::IntSetVar(_)
+			));
+		}
+		assert!(weak_domain.is_alive());
+		assert!(weak_input.is_alive());
+		drop(survivor);
+		assert!(weak.iter().all(|value| !value.is_alive()));
+		assert!(!weak_input.is_alive());
+		assert!(
+			!weak_domain.is_alive(),
+			"dead outputs release their domains despite model weak references"
+		);
+	}
+
+	#[test]
+	fn nested_outputs_and_annotations_do_not_form_cycles() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		let weak_a = a.downgrade();
+		let weak_b = b.downgrade();
+		let inner: Value = [b.clone()].into_iter().collect();
+		let outer: Value = [inner].into_iter().collect();
+		let annotation =
+			Value::new_annotation(shackle_ir::AnnotationId::new(1), [a.clone(), b.clone()]);
+		model.add_constraint(shackle_ir::FunctionId::new(1), [outer], [annotation]);
+		model.pop_pending();
+		drop(b);
+		assert!(weak_b.upgrade().is_some());
+		drop(a);
+		assert!(!weak_a.is_alive());
+		assert!(!weak_b.is_alive());
+	}
+
+	#[test]
+	#[ignore = "definition groups with cyclic input dependencies are not yet collected"]
+	fn cyclic_definition_groups_are_released() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let outer = model.add_var_bool(true);
+		model.push_pending();
+		let inner = model.add_var_bool(true);
+		let weak_outer = outer.downgrade();
+		let weak_inner = inner.downgrade();
+		model.add_constraint(
+			shackle_ir::FunctionId::new(1),
+			[outer.clone(), inner.clone()],
+			[],
+		);
+		model.pop_pending();
+		model.add_constraint(
+			shackle_ir::FunctionId::new(1),
+			[outer.clone(), inner.clone()],
+			[],
+		);
+		model.pop_pending();
+		drop((outer, inner, model));
+		assert!(!weak_outer.is_alive());
+		assert!(!weak_inner.is_alive());
+	}
+
+	#[test]
+	fn model_drop_releases_domain_roots_but_not_external_handles() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		let weak_a = a.downgrade();
+		let weak_b = b.downgrade();
+		model.add_constraint(shackle_ir::FunctionId::new(1), [a.clone(), b.clone()], []);
+		model.pop_pending();
+		model.retain_domain(&a);
+		drop(a);
+		drop(model);
+		assert!(weak_a.is_alive(), "external sibling retains the group");
+		drop(b);
+		assert!(!weak_a.is_alive());
+		assert!(!weak_b.is_alive());
+	}
+
+	#[test]
+	fn domain_root_keeps_shared_definition_and_can_be_removed() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		let weak_a = a.downgrade();
+		let weak_b = b.downgrade();
+		model.add_constraint(shackle_ir::FunctionId::new(1), [a.clone(), b.clone()], []);
+		model.pop_pending();
+		model.retain_domain(&a);
+		drop((a, b));
+		assert!(weak_b.is_alive());
+		let rooted = weak_a.upgrade().unwrap();
+		assert!(model.release_domain(&rooted));
+		drop(rooted);
+		assert!(!weak_a.is_alive());
+		assert!(!weak_b.is_alive());
+	}
+
+	#[test]
+	fn dropping_a_clone_under_variable_guard_does_not_deadlock() {
+		let mut model = NanoZinc::default();
+		let variable = model.add_var_bool(false);
+		let clone = variable.clone();
+		let guard = variable.as_bool_var();
+		drop(clone);
+		drop(guard);
+	}
+
+	#[test]
+	fn concurrent_last_release_and_revival() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		let weak = b.downgrade();
+		model.add_constraint(shackle_ir::FunctionId::new(1), [a.clone(), b.clone()], []);
+		model.pop_pending();
+		std::thread::scope(|scope| {
+			for _ in 0..4 {
+				let weak = weak.clone();
+				let _ = scope.spawn(move || {
+					for _ in 0..5_000 {
+						drop(weak.upgrade().expect("live group retains output"));
+					}
+				});
+			}
+			drop(b);
+		});
+		drop(a);
+		assert!(!weak.is_alive());
+	}
+
+	#[test]
+	fn concurrent_group_destruction_and_weak_upgrades() {
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		let weak = b.downgrade();
+		model.add_constraint(shackle_ir::FunctionId::new(1), [a.clone(), b.clone()], []);
+		model.pop_pending();
+		drop(b);
+		std::thread::scope(|scope| {
+			for _ in 0..4 {
+				let weak = weak.clone();
+				let _ = scope.spawn(move || {
+					for _ in 0..5_000 {
+						drop(weak.upgrade());
+					}
+				});
+			}
+			drop(a);
+		});
+		assert!(!weak.is_alive());
+	}
+
+	#[test]
+	fn printing_declares_dormant_outputs_and_emits_group_once() {
+		let function_id = shackle_ir::FunctionId::new(1);
+		let mut program = shackle_ir::Program {
+			global_slot_count: 0,
+			functions: Default::default(),
+			annotations: Default::default(),
+			main_entry_point: function_id,
+			output_entry_point: function_id,
+			strings: Default::default(),
+		};
+		let name = program.strings.insert("f".to_owned());
+		let _ = program.functions.insert(shackle_ir::Function {
+			name,
+			slot_count: 0,
+			promise_total: false,
+			body: Default::default(),
+			origins: Default::default(),
+		});
+		let mut model = NanoZinc::default();
+		model.push_pending();
+		let a = model.add_var_bool(true);
+		let b = model.add_var_bool(true);
+		model.add_constraint(function_id, [a.clone(), b.clone()], []);
+		model.pop_pending();
+		model.push_pending();
+		let c = model.add_var_bool(true);
+		model.add_constraint(function_id, [c.clone()], []);
+		model.pop_pending();
+		drop(b);
+		assert_eq!(
+			model.print(&program),
+			concat!(
+				"var bool: _X_INTRODUCED_0; % defined by group 1\n",
+				"var bool: _X_INTRODUCED_1; % defined by group 1\n",
+				"var bool: _X_INTRODUCED_2; % defined by group 2\n",
+				"\n% defining group 1\n",
+				"constraint f(_X_INTRODUCED_0, _X_INTRODUCED_1);\n",
+				"\n% defining group 2\n",
+				"constraint f(_X_INTRODUCED_2);\n",
+			)
+		);
+		drop(a);
+		drop(c);
+	}
 }

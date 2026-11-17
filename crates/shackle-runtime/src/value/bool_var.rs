@@ -13,7 +13,6 @@ pub struct BoolVar {
 	ident: u64,
 	domain: Option<bool>,
 	alias: Option<Value>,
-	binding_domain: bool,
 	defining_constraints: DefiningConstraints,
 }
 
@@ -50,16 +49,6 @@ impl BoolVar {
 		self.domain = None;
 	}
 
-	/// Whether the domain has been tightened by a non-defining constraint.
-	pub fn binding_domain(&self) -> bool {
-		self.binding_domain
-	}
-
-	/// Whether the domain has been tightened by a non-defining constraint.
-	pub fn set_binding_domain(&mut self, binding_domain: bool) {
-		self.binding_domain = binding_domain;
-	}
-
 	/// Whether the variable is fixed (i.e., has a domain).
 	pub fn is_fixed(&self) -> bool {
 		self.domain.is_some()
@@ -74,6 +63,14 @@ impl BoolVar {
 				reason: "Variable is not fixed",
 			})
 		}
+	}
+
+	pub(super) fn take_dead_contents(&mut self) -> Vec<Value> {
+		let mut values = Vec::new();
+		if let Some(value) = self.alias.take() {
+			values.push(value);
+		}
+		values
 	}
 
 	/// Get the defining constraints of the variable.
@@ -105,7 +102,6 @@ impl Value {
 					ident,
 					domain: None,
 					alias: None,
-					binding_domain: false,
 					defining_constraints: DefiningConstraints::default(),
 				})]
 				.into_iter(),

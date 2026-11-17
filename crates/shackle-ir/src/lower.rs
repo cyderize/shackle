@@ -32,6 +32,7 @@ pub fn lower_model(db: &dyn Db, model: &shackle_mir::Model) -> Program {
 		global_slots: ArenaMap::new(),
 		strings: Arena::new(),
 		string_map: Map::new(),
+		file_map: Map::new(),
 	};
 
 	for (i, function) in model.functions.iter() {
@@ -115,6 +116,7 @@ struct LoweringContext<'db> {
 	global_slots: ArenaMap<shackle_mir::GlobalVar<'db>, SlotId>,
 	strings: Arena<String>,
 	string_map: Map<InternedString<'db>, StringId>,
+	file_map: Map<String, StringId>,
 }
 
 impl<'db> LoweringContext<'db> {
@@ -439,10 +441,19 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 	fn add_instruction(
 		&mut self,
 		instruction: Instruction,
-		_origin: shackle_thir::source::Origin<'db>,
+		origin: shackle_thir::source::Origin<'db>,
 	) -> InstructionId {
 		let idx = self.instructions.insert(instruction);
-		// TODO: Add origins
+		let name = origin.name(self.parent.db);
+		let file = if let Some(idx) = self.parent.file_map.get(&name) {
+			*idx
+		} else {
+			let idx = self.parent.strings.insert(name.clone());
+			let _ = self.parent.file_map.insert(name, idx);
+			idx
+		};
+		let span = origin.line_char(self.parent.db);
+		self.origins.insert(idx, Origin { file, span });
 		idx
 	}
 }

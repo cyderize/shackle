@@ -11,7 +11,7 @@ use expect_test as _;
 use salsa as _;
 use shackle_hir::{self as _, BooleanLiteral, Db, FloatLiteral, IntegerLiteral};
 pub use shackle_mir::{FreshVariable, SetType};
-use shackle_thir as _;
+pub use shackle_thir::source::LineCharSpan;
 use shackle_utils::arena::{Arena, ArenaIndex, ArenaMap};
 pub mod lower;
 
@@ -32,10 +32,8 @@ pub type StringId = ArenaIndex<String>;
 pub struct Origin {
 	/// The file in which the instruction originated
 	pub file: StringId,
-	/// The line in the file
-	pub line: u32,
-	/// The column in the line
-	pub column: u32,
+	/// The span
+	pub span: LineCharSpan,
 }
 
 /// A program which can be executed

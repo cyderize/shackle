@@ -129,12 +129,18 @@ impl Stack {
 	}
 
 	/// Print the call stack to a string
-	pub fn dump(&self, program: &shackle_ir::Program) -> String {
+	pub fn dump(&self, program: &shackle_ir::Program, current_address: Address) -> String {
 		let mut s = String::new();
-		for entry in self.call_stack.iter() {
-			// let origin = program.functions[entry.inner.return_address.function].origins
-			// [entry.inner.return_address.instruction];
-			// writeln!(&mut s, "{}", origin.pretty_print(db)).unwrap();
+		let origin = &program.functions[current_address.function].origins[current_address
+			.instruction
+			.prev()
+			.unwrap_or(current_address.instruction)];
+		writeln!(&mut s, "{}:{}", program.strings[origin.file], origin.span).unwrap();
+		for entry in self.call_stack.iter().rev() {
+			let address = entry.inner.return_address;
+			let origin = &program.functions[address.function].origins
+				[address.instruction.prev().unwrap_or(address.instruction)];
+			writeln!(&mut s, "{}:{}", program.strings[origin.file], origin.span).unwrap();
 		}
 		s
 	}

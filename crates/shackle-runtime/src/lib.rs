@@ -452,7 +452,7 @@ impl<'a> Interpreter<'a> {
 
 	pub(crate) fn abort(&mut self, reason: &str) {
 		println!("{}", reason);
-		println!("{}", self.stack.dump(self.program));
+		println!("{}", self.stack.dump(self.program, self.pc));
 		self.state = InterpreterState::Aborted;
 	}
 
@@ -542,7 +542,7 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
 	};
 
-	use crate::{DataView, Interpreter};
+	use crate::{DataView, Interpreter, InterpreterState};
 
 	fn value_test_program() -> shackle_ir::Program {
 		use shackle_utils::arena::Arena;
@@ -805,5 +805,26 @@ mod tests {
     constraint foo(_X_INTRODUCED_0, [_X_INTRODUCED_1, _X_INTRODUCED_2, _X_INTRODUCED_3]);
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
+	}
+
+	#[test]
+	fn test_abort() {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = r#"annotation mzn_forward_annotations;
+test abort(string: msg);
+function int: foo() = let {
+  constraint abort("This is an abort message");
+} in 1;
+any: x = foo();
+			"#;
+		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		let mut interpreter = Interpreter::new(&program);
+		interpreter.run();
+		assert_eq!(interpreter.state, InterpreterState::Aborted);
 	}
 }

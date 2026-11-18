@@ -125,24 +125,29 @@ impl Stack {
 			.unwrap_or(&[])
 	}
 
-	/// Print the call stack
-	pub fn dump(
+	/// Collect source locations for the failing instruction and its callers.
+	pub fn trace(
 		&self,
-		stream: &mut impl std::io::Write,
 		program: &shackle_ir::Program,
 		current_address: Address,
-	) {
-		let origin = &program.functions[current_address.function].origins[current_address
-			.instruction
-			.prev()
-			.unwrap_or(current_address.instruction)];
-		writeln!(stream, "{}:{}", program.strings[origin.file], origin.span).unwrap();
+	) -> Vec<crate::error::RuntimeLocation> {
+		let location = |address: Address| {
+			let origin = &program.functions[address.function].origins[address.instruction];
+			crate::error::RuntimeLocation {
+				file: program.strings[origin.file].clone(),
+				span: origin.span.clone(),
+			}
+		};
+		let mut trace = vec![location(current_address)];
 		for entry in self.call_stack.iter().rev() {
-			let address = entry.inner.return_address;
-			let origin = &program.functions[address.function].origins
-				[address.instruction.prev().unwrap_or(address.instruction)];
-			writeln!(stream, "{}:{}", program.strings[origin.file], origin.span).unwrap();
+			if entry.inner.halt_on_return {
+				continue;
+			}
+			let mut address = entry.inner.return_address;
+			address.instruction = address.instruction.prev().unwrap_or(address.instruction);
+			trace.push(location(address));
 		}
+		trace
 	}
 }
 

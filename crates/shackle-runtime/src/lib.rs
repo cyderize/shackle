@@ -10,6 +10,7 @@ use std::{
 	num::NonZeroU32,
 };
 
+pub use error::{RuntimeError, RuntimeErrorKind, RuntimeLocation};
 use shackle_ir::{FreshVariable, FunctionId, Instruction, InstructionId, Program};
 pub use value::{AnnotationView, DataView, FloatVal, IntVal, Value};
 
@@ -145,13 +146,12 @@ impl<'a> Interpreter<'a> {
 			|| self.pc.function == self.program.output_entry_point
 	}
 
-	/// Run the interpreter until it halts
-	pub fn run(&mut self) {
-		assert_ne!(
-			self.state,
-			InterpreterState::Aborted,
-			"Cannot run an aborted interpreter"
-		);
+	/// Run the interpreter until it halts. An error permanently aborts this interpreter.
+	/// Side effects completed before the error are not rolled back.
+	pub fn run(&mut self) -> Result<(), RuntimeError> {
+		if self.state == InterpreterState::Aborted {
+			return Err(RuntimeError::already_aborted());
+		}
 		if self.stack.call_frame_count() == 0 {
 			self.stack.push_call_frame(
 				CallFrame {
@@ -168,12 +168,21 @@ impl<'a> Interpreter<'a> {
 			self.state = InterpreterState::Running;
 		}
 		while self.state == InterpreterState::Running {
-			self.step();
+			self.step()?;
 		}
+		Ok(())
 	}
 
-	/// Evaluate a function
-	pub fn eval(&mut self, function: FunctionId, arguments: &[Value]) -> Value {
+	/// Evaluate a function. An error permanently aborts this interpreter.
+	/// Side effects completed before the error are not rolled back.
+	pub fn eval(
+		&mut self,
+		function: FunctionId,
+		arguments: &[Value],
+	) -> Result<Value, RuntimeError> {
+		if self.state == InterpreterState::Aborted {
+			return Err(RuntimeError::already_aborted());
+		}
 		let old_state = self.state;
 		self.state = InterpreterState::Running;
 		let old_pc = self.pc;
@@ -198,15 +207,30 @@ impl<'a> Interpreter<'a> {
 		};
 		self.state = InterpreterState::Running;
 		while self.state == InterpreterState::Running {
-			self.step();
+			self.step()?;
 		}
 		assert_eq!(self.pc, old_pc);
 		self.state = old_state;
-		self.stack[return_slot].clone()
+		Ok(self.stack[return_slot].clone())
 	}
 
-	/// Step the interpreter forward one instruction
-	pub fn step(&mut self) {
+	/// Step the interpreter forward one instruction. An error permanently aborts this interpreter.
+	pub fn step(&mut self) -> Result<(), RuntimeError> {
+		if self.state == InterpreterState::Aborted {
+			return Err(RuntimeError::already_aborted());
+		}
+		let address = self.pc;
+		match self.execute_step() {
+			Ok(()) => Ok(()),
+			Err(kind) => {
+				let stack_trace = self.stack.trace(self.program, address);
+				self.state = InterpreterState::Aborted;
+				Err(RuntimeError { kind, stack_trace })
+			}
+		}
+	}
+
+	fn execute_step(&mut self) -> Result<(), RuntimeErrorKind> {
 		let instruction = &self.program.functions[self.pc.function].body[self.pc.instruction];
 		self.pc = self.pc.next();
 		match instruction {
@@ -224,7 +248,7 @@ impl<'a> Interpreter<'a> {
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::Builtin(b),
-			} => self.stack[*slot] = self.eval_builtin(b),
+			} => self.stack[*slot] = self.eval_builtin(b)?,
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::FreshVariable(fv),
@@ -343,9 +367,9 @@ impl<'a> Interpreter<'a> {
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Builtin(b),
 			} => {
-				let result = self.eval_builtin(b);
+				let result = self.eval_builtin(b)?;
 				if result != 1.into() {
-					self.abort("Constraint evaluated to false");
+					return Err(RuntimeErrorKind::ConstraintFalse);
 				}
 			}
 			Instruction::Constraint {
@@ -412,7 +436,7 @@ impl<'a> Interpreter<'a> {
 			Instruction::Return {
 				expression: shackle_ir::Expression::Builtin(b),
 			} => {
-				let value = self.eval_builtin(b);
+				let value = self.eval_builtin(b)?;
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
 				self.stack[frame.return_slot] = value;
@@ -494,13 +518,7 @@ impl<'a> Interpreter<'a> {
 			}
 			Instruction::NoOp => (),
 		}
-	}
-
-	pub(crate) fn abort(&mut self, reason: &str) {
-		writeln!(&mut self.output.stderr(), "{}", reason).unwrap();
-		self.stack
-			.dump(&mut self.output.stderr(), self.program, self.pc);
-		self.state = InterpreterState::Aborted;
+		Ok(())
 	}
 
 	fn eval_value(&self, value: &shackle_ir::Value) -> Value {
@@ -557,7 +575,7 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
-	fn eval_builtin(&mut self, builtin: &shackle_ir::Builtin) -> Value {
+	fn eval_builtin(&mut self, builtin: &shackle_ir::Builtin) -> Result<Value, RuntimeErrorKind> {
 		builtin::eval_builtin(self, builtin.map(|value| self.eval_value(value)))
 	}
 
@@ -594,7 +612,7 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
 	};
 
-	use crate::{DataView, Interpreter, InterpreterState, IoStreams};
+	use crate::{DataView, Interpreter, InterpreterState, IoStreams, RuntimeErrorKind};
 
 	#[derive(Default)]
 	struct MemoryStreams {
@@ -779,7 +797,7 @@ mod tests {
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let function = program.functions.keys().next().unwrap();
 		let mut interpreter = Interpreter::new(&program);
-		let result = interpreter.eval(function, &[]);
+		let result = interpreter.eval(function, &[]).unwrap();
 		let DataView::Int(x) = result.deref() else {
 			panic!("expected result to be an integer");
 		};
@@ -803,7 +821,7 @@ mod tests {
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let mut interpreter = Interpreter::new(&program);
-		interpreter.run();
+		interpreter.run().unwrap();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
 
@@ -836,7 +854,7 @@ mod tests {
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let mut interpreter = Interpreter::new(&program);
-		interpreter.run();
+		interpreter.run().unwrap();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
     var int: _X_INTRODUCED_1; % defined by group 1
@@ -871,7 +889,7 @@ mod tests {
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let mut interpreter = Interpreter::new(&program);
-		interpreter.run();
+		interpreter.run().unwrap();
 		expect![[r#"
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
     var int: _X_INTRODUCED_1; % defined by group 1
@@ -901,14 +919,95 @@ any: x = foo();
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
 		let mut interpreter = Interpreter::with_output(&program, MemoryStreams::default());
-		interpreter.run();
+		let error = interpreter.run().unwrap_err();
+		assert_eq!(
+			error.kind,
+			RuntimeErrorKind::Abort("This is an abort message".into())
+		);
 		assert_eq!(interpreter.state, InterpreterState::Aborted);
+		assert_eq!(
+			error
+				.stack_trace
+				.iter()
+				.map(ToString::to_string)
+				.collect::<Vec<_>>(),
+			vec!["<unnamed file>:4.14-47", "<unnamed file>:6.10-15"]
+		);
+		assert_eq!(
+			interpreter.run().unwrap_err().kind,
+			RuntimeErrorKind::AlreadyAborted
+		);
+		assert_eq!(
+			interpreter.step().unwrap_err().kind,
+			RuntimeErrorKind::AlreadyAborted
+		);
+		assert_eq!(
+			interpreter
+				.eval(program.main_entry_point, &[])
+				.unwrap_err()
+				.kind,
+			RuntimeErrorKind::AlreadyAborted
+		);
 		expect![[r#"
     MemoryStreams {
         stdout: "",
-        stderr: "Abort: This is an abort message\n<unnamed file>:4.14-47\n<unnamed file>:6.10-15\n<unnamed file>:6.10-15\n",
+        stderr: "",
     }
-"#]].assert_debug_eq(&interpreter.output());
+"#]]
+		.assert_debug_eq(&interpreter.output());
+	}
+
+	#[test]
+	fn eval_failure_aborts_interpreter() {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = r#"annotation mzn_forward_annotations;
+ test abort(string: msg);
+ function int: foo() = let { constraint abort("failed"); } in 1;
+ any: x = foo();"#;
+		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		let function = program
+			.functions
+			.iter()
+			.find(|(_, f)| program.strings[f.name] == "foo")
+			.unwrap()
+			.0;
+		let mut interpreter = Interpreter::with_output(&program, MemoryStreams::default());
+		let error = interpreter.eval(function, &[]).unwrap_err();
+		assert_eq!(error.kind, RuntimeErrorKind::Abort("failed".into()));
+		assert_eq!(interpreter.state, InterpreterState::Aborted);
+		assert_eq!(
+			interpreter.eval(function, &[]).unwrap_err().kind,
+			RuntimeErrorKind::AlreadyAborted
+		);
+	}
+
+	#[test]
+	fn builtin_errors_preserve_kind() {
+		let program = value_test_program();
+		let mut interpreter = Interpreter::new(&program);
+		let error = crate::builtin::eval_builtin(
+			&mut interpreter,
+			shackle_ir::Builtin::DivInt {
+				dividend: 1.into(),
+				divisor: 0.into(),
+			},
+		)
+		.unwrap_err();
+		assert!(matches!(error, RuntimeErrorKind::Arithmetic(_)));
+		let error = crate::builtin::eval_builtin(
+			&mut interpreter,
+			shackle_ir::Builtin::UniformInt {
+				lower: 2.into(),
+				upper: 1.into(),
+			},
+		)
+		.unwrap_err();
+		assert!(matches!(error, RuntimeErrorKind::InvalidDistribution(_)));
 	}
 
 	#[test]
@@ -919,7 +1018,7 @@ any: x = foo();
 			&mut interpreter,
 			shackle_ir::Builtin::Warn(crate::Value::from("careful")),
 		);
-		assert_eq!(result, true.into());
+		assert_eq!(result.unwrap(), true.into());
 		expect![[r#"
     MemoryStreams {
         stdout: "",

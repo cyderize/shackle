@@ -10,87 +10,40 @@ use rangelist::IntervalIterator;
 
 use crate::{
 	FloatVal, IntVal, Interpreter, Value,
-	error::{ArithmeticError, FloatSetCoercionError, InvalidIndexSet, ValueError},
+	error::{
+		ArithmeticError, FloatSetCoercionError, InvalidIndexSet, RuntimeErrorKind, ValueError,
+	},
 	value::{DataView, INT_SET_EMPTY, INT_SET_INF},
 };
 
 /// Builtin call with evaluated arguments
 pub type Builtin = shackle_ir::Builtin<Value>;
 
-/// Evaluate a builtin call
-pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Value {
-	macro_rules! float_math {
-		($value:expr, $operation:expr) => {
-			float_math($value, $operation).unwrap_or_else(|e| {
-				interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-				0.into()
-			})
-		};
-	}
-	macro_rules! sample {
-		($distribution:expr) => {
-			$distribution.unwrap_or_else(|e: ValueError| {
-				interpreter.abort(&format!("Invalid distribution parameters: {}", e.reason));
-				0.into()
-			})
-		};
-	}
-
-	match builtin {
+/// Evaluate a builtin call. The caller is responsible for interpreter state transitions.
+pub fn eval_builtin(
+	interpreter: &mut Interpreter<'_>,
+	builtin: Builtin,
+) -> Result<Value, RuntimeErrorKind> {
+	Ok(match builtin {
 		Builtin::Abort(message) => {
-			interpreter.abort(&format!("Abort: {}", message.as_str()));
-			true.into()
+			return Err(RuntimeErrorKind::Abort(message.as_str().to_owned()));
 		}
 		Builtin::BoolToInt(v) => v, // Same representation, so no-op
-		Builtin::IntToFloat(v) => int_to_float(v).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Float set coercion error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Annotate { variable, ann } => true.into(),
-		Builtin::Add { left, right } => plus(left, right).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Sub { left, right } => minus(left, right).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
+		Builtin::IntToFloat(v) => int_to_float(v)?,
+		Builtin::Annotate { .. } => true.into(),
+		Builtin::Add { left, right } => plus(left, right)?,
+		Builtin::Sub { left, right } => minus(left, right)?,
 		Builtin::Neg(value) => negate(value),
-		Builtin::Times { left, right } => times(left, right).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::DivInt { dividend, divisor } => int_div(dividend, divisor).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::DivFloat { dividend, divisor } => {
-			float_div(dividend, divisor).unwrap_or_else(|e| {
-				interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-				0.into()
-			})
-		}
+		Builtin::Times { left, right } => times(left, right)?,
+		Builtin::DivInt { dividend, divisor } => int_div(dividend, divisor)?,
+		Builtin::DivFloat { dividend, divisor } => float_div(dividend, divisor)?,
 		Builtin::SetUnionInt { left, right } => int_set_union(left, right),
 		Builtin::SetIntersectInt { left, right } => int_set_intersection(left, right),
 		Builtin::SetDiffInt { left, right } => int_set_difference(left, right),
-		Builtin::SetUnionFloat { left, right } => {
-			float_set_union(left, right).unwrap_or_else(|e| {
-				interpreter.abort(&format!("Float set coercion error: {}", e.reason));
-				0.into()
-			})
-		}
-		Builtin::SetIntersectFloat { left, right } => float_set_intersection(left, right)
-			.unwrap_or_else(|e| {
-				interpreter.abort(&format!("Float set coercion error: {}", e.reason));
-				0.into()
-			}),
+		Builtin::SetUnionFloat { left, right } => float_set_union(left, right)?,
+		Builtin::SetIntersectFloat { left, right } => float_set_intersection(left, right)?,
 		Builtin::IndexedArray(_) => todo!("Builtin::IndexedArray"),
-		Builtin::ArrayAccess { array, indices } => {
-			array_access(array, indices).unwrap_or_else(|e| {
-				interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-				0.into()
-			})
-		}
+		Builtin::ArrayAccess { array, indices } => array_access(array, indices)?,
 		Builtin::ArraySlice { array, slices } => array_slice(array, slices),
 		Builtin::ArrayToIntSet(x) => array_to_int_set(x),
 		Builtin::ArrayToFloatSet(x) => array_to_float_set(x),
@@ -98,44 +51,52 @@ pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Valu
 		Builtin::ArrayLength(x) => array_len(x),
 		Builtin::IndexSets(x) => index_sets(x),
 		Builtin::ArrayXd { source, array } => array_xd(source, array),
-		Builtin::ArrayKd { index_sets, array } => array_kd(index_sets, array).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Invalid index set: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Normal { mean, std } => {
-			sample!(sample_float(Normal::new(float_arg(mean), float_arg(std))))
-		}
+		Builtin::ArrayKd { index_sets, array } => array_kd(index_sets, array)?,
+		Builtin::Normal { mean, std } => sample_float(Normal::new(float_arg(mean), float_arg(std)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
 		Builtin::UniformFloat { lower, upper } => {
-			sample!(sample_float(Uniform::new(
-				float_arg(lower),
-				float_arg(upper)
-			)))
+			sample_float(Uniform::new(float_arg(lower), float_arg(upper)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
 		}
-		Builtin::UniformInt { lower, upper } => sample!(uniform_int(lower, upper)),
-		Builtin::Poisson { mean } => sample!(sample_float(Poisson::new(float_arg(mean)))),
+		Builtin::UniformInt { lower, upper } => {
+			uniform_int(lower, upper).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Poisson { mean } => sample_float(Poisson::new(float_arg(mean)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
 		Builtin::Gamma { alpha, beta } => {
-			sample!(sample_float(Gamma::new(float_arg(alpha), float_arg(beta))))
+			sample_float(Gamma::new(float_arg(alpha), float_arg(beta)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
 		}
-		Builtin::Weibull { shape, scale } => sample!(sample_float(Weibull::new(
-			float_arg(scale),
-			float_arg(shape)
-		))),
-		Builtin::Exponential { lambda } => sample!(sample_float(Exp::new(float_arg(lambda)))),
-		Builtin::LogNormal { mean, std } => sample!(sample_float(LogNormal::new(
-			float_arg(mean),
-			float_arg(std)
-		))),
-		Builtin::ChiSquared { dof } => sample!(sample_float(ChiSquared::new(float_arg(dof)))),
+		Builtin::Weibull { shape, scale } => {
+			sample_float(Weibull::new(float_arg(scale), float_arg(shape)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Exponential { lambda } => sample_float(Exp::new(float_arg(lambda)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::LogNormal { mean, std } => {
+			sample_float(LogNormal::new(float_arg(mean), float_arg(std)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::ChiSquared { dof } => sample_float(ChiSquared::new(float_arg(dof)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
 		Builtin::Cauchy { mean, scale } => {
-			sample!(sample_float(Cauchy::new(float_arg(mean), float_arg(scale))))
+			sample_float(Cauchy::new(float_arg(mean), float_arg(scale)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
 		}
 		Builtin::FDistribution { dof1, dof2 } => {
-			sample!(sample_float(FisherF::new(float_arg(dof1), float_arg(dof2))))
+			sample_float(FisherF::new(float_arg(dof1), float_arg(dof2)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
 		}
-		Builtin::TDistribution { size } => sample!(sample_float(StudentT::new(float_arg(size)))),
-		Builtin::DiscreteDistribution { weights } => sample!(discrete_distribution(weights)),
-		Builtin::Bernoulli { prob } => sample!(sample_bool(Bernoulli::new(float_arg(prob)))),
-		Builtin::Binomial { n, p } => sample!(binomial(n, p)),
+		Builtin::TDistribution { size } => sample_float(StudentT::new(float_arg(size)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::DiscreteDistribution { weights } => {
+			discrete_distribution(weights).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Bernoulli { prob } => sample_bool(Bernoulli::new(float_arg(prob)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::Binomial { n, p } => {
+			binomial(n, p).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
 		Builtin::Warn(message) => {
 			writeln!(interpreter.output.stderr(), "Warning: {}", message.as_str())
 				.expect("failed to write interpreter diagnostic");
@@ -155,10 +116,7 @@ pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Valu
 		Builtin::HasBounds(_) => todo!("Builtin::HasBounds"),
 		Builtin::HasUpperBoundSet(_) => todo!("Builtin::HasUpperBoundSet"),
 		Builtin::IsFixed(x) => is_fixed(x).into(),
-		Builtin::Fix(x) => fix(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Value error: {}", e.reason));
-			0.into()
-		}),
+		Builtin::Fix(x) => fix(x)?,
 		Builtin::HasAnn { .. } => todo!("Builtin::HasAnn"),
 		Builtin::IsSame { variable, other } => (variable == other).into(),
 		Builtin::CompilerVersion => compiler_version(),
@@ -168,10 +126,7 @@ pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Valu
 		Builtin::LessThan { left, right } => (left < right).into(),
 		Builtin::Equal { left, right } => (left == right).into(),
 		Builtin::Sort(x) => array_sort(x),
-		Builtin::SortBy { array, sort_by } => array_sort_by(array, sort_by).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Invalid value: {}", e.reason));
-			0.into()
-		}),
+		Builtin::SortBy { array, sort_by } => array_sort_by(array, sort_by)?,
 		Builtin::Show(_) => todo!("Builtin::Show"),
 		Builtin::ShowDzn(_) => todo!("Builtin::ShowDzn"),
 		Builtin::ShowDznId(_) => todo!("Builtin::ShowDznId"),
@@ -188,70 +143,38 @@ pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Valu
 		Builtin::SetRangeInt { min, max } => range_int(min, max),
 		Builtin::SetRangeFloat { min, max } => range_float(min, max),
 		Builtin::SetToRangesInt(x) => set_to_ranges_int(x),
-		Builtin::SetToRangesFloat(x) => set_to_ranges_float(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Float set coercion error: {}", e.reason));
-			0.into()
-		}),
+		Builtin::SetToRangesFloat(x) => set_to_ranges_float(x)?,
 		Builtin::SetCard(x) => card(x),
-		Builtin::SetDiffFloat { left, right } => {
-			float_set_difference(left, right).unwrap_or_else(|e| {
-				interpreter.abort(&format!("Float set coercion error: {}", e.reason));
-				0.into()
-			})
-		}
-		Builtin::Ceil(x) => ceil(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Floor(x) => floor(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Round(x) => round(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::SetToArray(x) => set_to_array(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Value error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::PowInt { base, exponent } => int_pow(base, exponent).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::PowFloat { base, exponent } => float_pow(base, exponent).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
+		Builtin::SetDiffFloat { left, right } => float_set_difference(left, right)?,
+		Builtin::Ceil(x) => ceil(x)?,
+		Builtin::Floor(x) => floor(x)?,
+		Builtin::Round(x) => round(x)?,
+		Builtin::SetToArray(x) => set_to_array(x)?,
+		Builtin::PowInt { base, exponent } => int_pow(base, exponent)?,
+		Builtin::PowFloat { base, exponent } => float_pow(base, exponent)?,
 		Builtin::MinArray(x) => min(x),
 		Builtin::MinSet(x) => min(x),
 		Builtin::MaxArray(x) => max(x),
 		Builtin::MaxSet(x) => max(x),
-		Builtin::Sqrt(x) => sqrt(x).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Exp(x) => float_math!(x, FloatVal::exp),
-		Builtin::Ln(x) => float_math!(x, FloatVal::ln),
-		Builtin::Log { base, argument } => float_log(base, argument).unwrap_or_else(|e| {
-			interpreter.abort(&format!("Arithmetic error: {}", e.reason));
-			0.into()
-		}),
-		Builtin::Log2(x) => float_math!(x, FloatVal::log2),
-		Builtin::Log10(x) => float_math!(x, FloatVal::log10),
-		Builtin::Sin(x) => float_math!(x, FloatVal::sin),
-		Builtin::Cos(x) => float_math!(x, FloatVal::cos),
-		Builtin::Tan(x) => float_math!(x, FloatVal::tan),
-		Builtin::ASin(x) => float_math!(x, FloatVal::asin),
-		Builtin::ACos(x) => float_math!(x, FloatVal::acos),
-		Builtin::ATan(x) => float_math!(x, FloatVal::atan),
-		Builtin::SinH(x) => float_math!(x, FloatVal::sinh),
-		Builtin::CosH(x) => float_math!(x, FloatVal::cosh),
-		Builtin::TanH(x) => float_math!(x, FloatVal::tanh),
-		Builtin::ASinH(x) => float_math!(x, FloatVal::asinh),
-		Builtin::ACosH(x) => float_math!(x, FloatVal::acosh),
-		Builtin::ATanH(x) => float_math!(x, FloatVal::atanh),
-	}
+		Builtin::Sqrt(x) => sqrt(x)?,
+		Builtin::Exp(x) => float_math(x, FloatVal::exp)?,
+		Builtin::Ln(x) => float_math(x, FloatVal::ln)?,
+		Builtin::Log { base, argument } => float_log(base, argument)?,
+		Builtin::Log2(x) => float_math(x, FloatVal::log2)?,
+		Builtin::Log10(x) => float_math(x, FloatVal::log10)?,
+		Builtin::Sin(x) => float_math(x, FloatVal::sin)?,
+		Builtin::Cos(x) => float_math(x, FloatVal::cos)?,
+		Builtin::Tan(x) => float_math(x, FloatVal::tan)?,
+		Builtin::ASin(x) => float_math(x, FloatVal::asin)?,
+		Builtin::ACos(x) => float_math(x, FloatVal::acos)?,
+		Builtin::ATan(x) => float_math(x, FloatVal::atan)?,
+		Builtin::SinH(x) => float_math(x, FloatVal::sinh)?,
+		Builtin::CosH(x) => float_math(x, FloatVal::cosh)?,
+		Builtin::TanH(x) => float_math(x, FloatVal::tanh)?,
+		Builtin::ASinH(x) => float_math(x, FloatVal::asinh)?,
+		Builtin::ACosH(x) => float_math(x, FloatVal::acosh)?,
+		Builtin::ATanH(x) => float_math(x, FloatVal::atanh)?,
+	})
 }
 
 const INVALID_DISTRIBUTION: &str = "invalid distribution parameters";

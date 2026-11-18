@@ -5,7 +5,10 @@ pub mod error;
 pub mod nanozinc;
 pub mod stack;
 pub mod value;
-use std::num::NonZeroU32;
+use std::{
+	io::{self, Write},
+	num::NonZeroU32,
+};
 
 use shackle_ir::{FreshVariable, FunctionId, Instruction, InstructionId, Program};
 pub use value::{AnnotationView, DataView, FloatVal, IntVal, Value};
@@ -56,11 +59,53 @@ pub struct Interpreter<'a> {
 	stack: Stack,
 	comprehensions: ComprehensionState,
 	nanozinc: NanoZinc,
+	output: Box<dyn IoStreams + 'a>,
+}
+
+/// Trait for IO streams
+pub trait IoStreams: std::fmt::Debug {
+	/// Get a mutable reference to the standard output stream
+	fn stdout(&mut self) -> &mut dyn Write;
+	/// Get a mutable reference to the standard error stream
+	fn stderr(&mut self) -> &mut dyn Write;
+}
+
+#[derive(Debug)]
+struct StdIoStreams {
+	stdout: io::Stdout,
+	stderr: io::Stderr,
+}
+
+impl IoStreams for StdIoStreams {
+	fn stdout(&mut self) -> &mut dyn Write {
+		&mut self.stdout
+	}
+
+	fn stderr(&mut self) -> &mut dyn Write {
+		&mut self.stderr
+	}
+}
+
+impl Default for StdIoStreams {
+	fn default() -> Self {
+		Self {
+			stdout: io::stdout(),
+			stderr: io::stderr(),
+		}
+	}
 }
 
 impl<'a> Interpreter<'a> {
 	/// Create a new interpreter for the given program
 	pub fn new(program: &'a Program) -> Self {
+		Self::with_output(program, StdIoStreams::default())
+	}
+
+	/// Create an interpreter with custom output streams.
+	///
+	/// The streams can be borrowed buffers, allowing callers to inspect output
+	/// after the interpreter is dropped. Write failures panic, as with `println!`.
+	pub fn with_output(program: &'a Program, outputs: impl IoStreams + 'a) -> Self {
 		Self {
 			program,
 			pc: Address {
@@ -75,6 +120,7 @@ impl<'a> Interpreter<'a> {
 			stack: Stack::new(program.global_slot_count),
 			comprehensions: ComprehensionState::default(),
 			nanozinc: NanoZinc::default(),
+			output: Box::new(outputs),
 		}
 	}
 
@@ -451,8 +497,9 @@ impl<'a> Interpreter<'a> {
 	}
 
 	pub(crate) fn abort(&mut self, reason: &str) {
-		println!("{}", reason);
-		println!("{}", self.stack.dump(self.program, self.pc));
+		writeln!(&mut self.output.stderr(), "{}", reason).unwrap();
+		self.stack
+			.dump(&mut self.output.stderr(), self.program, self.pc);
 		self.state = InterpreterState::Aborted;
 	}
 
@@ -531,6 +578,11 @@ impl<'a> Interpreter<'a> {
 			}
 		}
 	}
+
+	/// Get the output streams
+	pub fn output(&mut self) -> &mut dyn IoStreams {
+		self.output.as_mut()
+	}
 }
 
 #[cfg(test)]
@@ -542,7 +594,32 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
 	};
 
-	use crate::{DataView, Interpreter, InterpreterState};
+	use crate::{DataView, Interpreter, InterpreterState, IoStreams};
+
+	#[derive(Default)]
+	struct MemoryStreams {
+		stdout: Vec<u8>,
+		stderr: Vec<u8>,
+	}
+
+	impl IoStreams for MemoryStreams {
+		fn stdout(&mut self) -> &mut dyn std::io::prelude::Write {
+			&mut self.stdout
+		}
+
+		fn stderr(&mut self) -> &mut dyn std::io::prelude::Write {
+			&mut self.stderr
+		}
+	}
+
+	impl std::fmt::Debug for MemoryStreams {
+		fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			f.debug_struct("MemoryStreams")
+				.field("stdout", &String::from_utf8(self.stdout.clone()).unwrap())
+				.field("stderr", &String::from_utf8(self.stderr.clone()).unwrap())
+				.finish()
+		}
+	}
 
 	fn value_test_program() -> shackle_ir::Program {
 		use shackle_utils::arena::Arena;
@@ -823,8 +900,32 @@ any: x = foo();
 		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
 		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
 		let program = shackle_ir::Program::lower_from_mir(&db);
-		let mut interpreter = Interpreter::new(&program);
+		let mut interpreter = Interpreter::with_output(&program, MemoryStreams::default());
 		interpreter.run();
 		assert_eq!(interpreter.state, InterpreterState::Aborted);
+		expect![[r#"
+    MemoryStreams {
+        stdout: "",
+        stderr: "Abort: This is an abort message\n<unnamed file>:4.14-47\n<unnamed file>:6.10-15\n<unnamed file>:6.10-15\n",
+    }
+"#]].assert_debug_eq(&interpreter.output());
+	}
+
+	#[test]
+	fn warning_uses_diagnostic_stream() {
+		let program = value_test_program();
+		let mut interpreter = Interpreter::with_output(&program, MemoryStreams::default());
+		let result = crate::builtin::eval_builtin(
+			&mut interpreter,
+			shackle_ir::Builtin::Warn(crate::Value::from("careful")),
+		);
+		assert_eq!(result, true.into());
+		expect![[r#"
+    MemoryStreams {
+        stdout: "",
+        stderr: "Warning: careful\n",
+    }
+"#]]
+		.assert_debug_eq(&interpreter.output());
 	}
 }

@@ -1,10 +1,7 @@
 //! Implementation of the stack
 //!
 
-use std::{
-	fmt::Write,
-	ops::{Index, IndexMut},
-};
+use std::ops::{Index, IndexMut};
 
 use crate::{Address, IntVal, Value};
 
@@ -128,21 +125,24 @@ impl Stack {
 			.unwrap_or(&[])
 	}
 
-	/// Print the call stack to a string
-	pub fn dump(&self, program: &shackle_ir::Program, current_address: Address) -> String {
-		let mut s = String::new();
+	/// Print the call stack
+	pub fn dump(
+		&self,
+		stream: &mut impl std::io::Write,
+		program: &shackle_ir::Program,
+		current_address: Address,
+	) {
 		let origin = &program.functions[current_address.function].origins[current_address
 			.instruction
 			.prev()
 			.unwrap_or(current_address.instruction)];
-		writeln!(&mut s, "{}:{}", program.strings[origin.file], origin.span).unwrap();
+		writeln!(stream, "{}:{}", program.strings[origin.file], origin.span).unwrap();
 		for entry in self.call_stack.iter().rev() {
 			let address = entry.inner.return_address;
 			let origin = &program.functions[address.function].origins
 				[address.instruction.prev().unwrap_or(address.instruction)];
-			writeln!(&mut s, "{}:{}", program.strings[origin.file], origin.span).unwrap();
+			writeln!(stream, "{}:{}", program.strings[origin.file], origin.span).unwrap();
 		}
-		s
 	}
 }
 

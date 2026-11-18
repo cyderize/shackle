@@ -137,7 +137,8 @@ pub fn eval_builtin(interpreter: &mut Interpreter<'_>, builtin: Builtin) -> Valu
 		Builtin::Bernoulli { prob } => sample!(sample_bool(Bernoulli::new(float_arg(prob)))),
 		Builtin::Binomial { n, p } => sample!(binomial(n, p)),
 		Builtin::Warn(message) => {
-			eprintln!("Warning: {}", message.as_str());
+			writeln!(interpreter.output.stderr(), "Warning: {}", message.as_str())
+				.expect("failed to write interpreter diagnostic");
 			true.into()
 		}
 		Builtin::TraceExp(_) => todo!("Builtin::TraceExp"),

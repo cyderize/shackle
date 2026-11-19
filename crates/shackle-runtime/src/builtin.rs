@@ -13,6 +13,7 @@ use crate::{
 	error::{
 		ArithmeticError, FloatSetCoercionError, InvalidIndexSet, RuntimeErrorKind, ValueError,
 	},
+	nanozinc::Solve,
 	value::{DataView, INT_SET_EMPTY, INT_SET_INF},
 };
 
@@ -25,6 +26,38 @@ pub fn eval_builtin(
 	builtin: Builtin,
 ) -> Result<Value, RuntimeErrorKind> {
 	Ok(match builtin {
+		Builtin::SolveMinimize {
+			annotations,
+			objective,
+		} => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter.nanozinc_mut().set_solve(Solve::Minimize {
+				annotations: anns,
+				objective,
+			});
+			true.into()
+		}
+		Builtin::SolveMaximize {
+			annotations,
+			objective,
+		} => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter.nanozinc_mut().set_solve(Solve::Maximize {
+				annotations: anns,
+				objective,
+			});
+			true.into()
+		}
+		Builtin::SolveSatisfy { annotations } => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter
+				.nanozinc_mut()
+				.set_solve(Solve::Satisfy { annotations: anns });
+			true.into()
+		}
 		Builtin::Abort(message) => {
 			return Err(RuntimeErrorKind::Abort(message.as_str().to_owned()));
 		}

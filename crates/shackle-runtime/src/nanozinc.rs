@@ -23,6 +23,7 @@ pub struct NanoZinc {
 	domain_roots: Vec<Value>,
 	next_id: AtomicU64,
 	pending: Vec<PendingNanoZinc>,
+	solve: Solve,
 }
 
 impl NanoZinc {
@@ -205,6 +206,16 @@ impl NanoZinc {
 		self.items.iter_mut()
 	}
 
+	/// Get the solve item
+	pub fn solve(&self) -> &Solve {
+		&self.solve
+	}
+
+	/// Set the solve item for the model.
+	pub fn set_solve(&mut self, solve: Solve) {
+		self.solve = solve;
+	}
+
 	/// Print the NanoZinc model as a string
 	pub fn print(&mut self, program: &shackle_ir::Program) -> String {
 		let mut s = String::new();
@@ -339,6 +350,29 @@ impl NanoZinc {
 			writeln!(&mut s).unwrap();
 			s.push_str(&constraints);
 		}
+
+		if !s.is_empty() {
+			writeln!(&mut s).unwrap();
+		}
+		writeln!(
+			&mut s,
+			"solve{} {};",
+			self.solve
+				.annotations()
+				.iter()
+				.map(|ann| format!(" :: {}", self.print_value(program, ann.clone())))
+				.collect::<Vec<_>>()
+				.join(""),
+			match &self.solve {
+				Solve::Maximize { objective, .. } =>
+					format!("maximize {}", self.print_value(program, objective.clone())),
+				Solve::Minimize { objective, .. } =>
+					format!("minimize {}", self.print_value(program, objective.clone())),
+				Solve::Satisfy { .. } => "satisfy".to_owned(),
+			}
+		)
+		.unwrap();
+
 		s
 	}
 
@@ -567,6 +601,49 @@ impl DefiningConstraintArgument {
 	}
 }
 
+/// Solve item
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Solve {
+	/// Maximization
+	Maximize {
+		/// Search annotations
+		annotations: Vec<Value>,
+		/// Objective
+		objective: Value,
+	},
+	/// Minimization
+	Minimize {
+		/// Search annotations
+		annotations: Vec<Value>,
+		/// Objective
+		objective: Value,
+	},
+	/// Satisfaction
+	Satisfy {
+		/// Search annotations
+		annotations: Vec<Value>,
+	},
+}
+
+impl Solve {
+	/// Get the annotations
+	pub fn annotations(&self) -> &[Value] {
+		match self {
+			Solve::Maximize { annotations, .. } => annotations,
+			Solve::Minimize { annotations, .. } => annotations,
+			Solve::Satisfy { annotations } => annotations,
+		}
+	}
+}
+
+impl Default for Solve {
+	fn default() -> Self {
+		Solve::Satisfy {
+			annotations: Vec::new(),
+		}
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 struct PendingNanoZinc {
 	variables_defined: FxHashSet<Value>,
@@ -575,6 +652,8 @@ struct PendingNanoZinc {
 
 #[cfg(test)]
 mod tests {
+	use expect_test::expect;
+
 	use super::*;
 
 	#[test]
@@ -835,18 +914,21 @@ mod tests {
 		model.add_constraint(function_id, [c.clone()], []);
 		model.pop_pending();
 		drop(b);
-		assert_eq!(
-			model.print(&program),
-			concat!(
-				"var bool: _X_INTRODUCED_0; % defined by group 1\n",
-				"var bool: _X_INTRODUCED_1; % defined by group 1\n",
-				"var bool: _X_INTRODUCED_2; % defined by group 2\n",
-				"\n% defining group 1\n",
-				"constraint f(_X_INTRODUCED_0, _X_INTRODUCED_1);\n",
-				"\n% defining group 2\n",
-				"constraint f(_X_INTRODUCED_2);\n",
-			)
-		);
+		let expected = expect![[r#"
+    var bool: _X_INTRODUCED_0; % defined by group 1
+    var bool: _X_INTRODUCED_1; % defined by group 1
+    var bool: _X_INTRODUCED_2; % defined by group 2
+
+    % defining group 1
+    constraint f(_X_INTRODUCED_0, _X_INTRODUCED_1);
+
+    % defining group 2
+    constraint f(_X_INTRODUCED_2);
+
+    solve satisfy;
+"#]];
+		let actual = model.print(&program);
+		expected.assert_eq(&actual);
 		drop(a);
 		drop(c);
 	}

@@ -7,8 +7,7 @@ use shackle_hir::Db;
 
 use crate::{
 	Annotation, Constraint, DeclarationId, Expression, ExpressionData, FreshVariable, Function,
-	Generator, Identifier, Let, LetItem, LetResult, Literal, LiteralData, Model, Solve, Value,
-	ValueData,
+	Generator, Identifier, Let, LetItem, LetResult, Literal, LiteralData, Model, Value, ValueData,
 };
 
 /// Pretty printing for MIR
@@ -87,28 +86,6 @@ impl<'db> PrettyPrinter<'db> {
 			)
 			.unwrap();
 		}
-		writeln!(
-			&mut w,
-			"solve {};",
-			match &self.model.solve {
-				Solve::Satisfy => "satisfy".to_owned(),
-				Solve::Minimize(obj) => format!(
-					"minimize {}",
-					self.model.global_vars[*obj]
-						.name
-						.map(|n| n.pretty_print(db))
-						.unwrap_or_else(|| format!("_GLOBAL_{}", Into::<u32>::into(*obj)))
-				),
-				Solve::Maximize(obj) => format!(
-					"maximize {}",
-					self.model.global_vars[*obj]
-						.name
-						.map(|n| n.pretty_print(db))
-						.unwrap_or_else(|| format!("_GLOBAL_{}", Into::<u32>::into(*obj)))
-				),
-			}
-		)
-		.unwrap();
 		w
 	}
 

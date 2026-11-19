@@ -41,8 +41,6 @@ pub struct Model<'db> {
 	pub main_entrypoint: FunctionId<'db>,
 	/// Output entry point
 	pub output_entrypoint: FunctionId<'db>,
-	/// Solve method
-	pub solve: Solve<'db>,
 }
 
 impl<'db> Model<'db> {
@@ -51,17 +49,6 @@ impl<'db> Model<'db> {
 		let thir = final_thir(db).unwrap();
 		lower::lower_from_thir(db, &thir)
 	}
-}
-
-/// Solve method
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum Solve<'db> {
-	/// Solve satisfy
-	Satisfy,
-	/// Minimize objective
-	Minimize(GlobalVarId<'db>),
-	/// Maximize objectice
-	Maximize(GlobalVarId<'db>),
 }
 
 /// An identifier
@@ -86,6 +73,8 @@ pub struct GlobalVar<'db> {
 	pub name: Option<Name<'db>>,
 	/// The annotations on the global
 	pub annotations: Vec<AnnotationId<'db>>,
+	/// The origin of the global var
+	pub origin: Origin<'db>,
 }
 
 /// A parameter for a function or annotation

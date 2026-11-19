@@ -180,7 +180,7 @@ function var int: 'sum<array [int] of var int>'(array [int] of var int: x) :: pr
 function var int: mzn_sum_t(array [int] of var int: x) :: promise_total =
 	let {
 		var int: r :: promise_total = (
-			let { var (-infinity..infinity): _FRESH_VAR } in _FRESH_VAR
+			let { var (-infinity..infinity): _FRESH_VAR :: is_defined_var } in _FRESH_VAR
 		);
 		array [int] of int: _DECL_3 = [1 | x_i in x];
 		int: _DECL_4 = '-'(1);
@@ -468,22 +468,22 @@ function tuple(bool, int): 'deopt<opt int>'(tuple(bool, int): x) :: promise_tota
 	endif;
 function string: mzn_version_to_string_root(int: v) :: promise_total =
 	let {
-		int: _DECL_1 = 'div_root<int, int>'(v, 10000);
+		int: _DECL_1 = 'div_root<int, int>'(v, 1000000);
 		string: _DECL_2 = show_internal(_DECL_1);
 		string: _DECL_3 = '++'(_DECL_2, ".");
 		int: _DECL_4 = 'div_root<int, int>'(v, 1000);
-		int: _DECL_5 = 'mod_root<int, int>'(_DECL_4, 10);
+		int: _DECL_5 = 'mod_root<int, int>'(_DECL_4, 1000);
 		string: _DECL_6 = show_internal(_DECL_5);
 		string: _DECL_7 = '++'(_DECL_3, _DECL_6);
 		string: _DECL_8 = '++'(_DECL_7, ".");
-		int: _DECL_9 = 'mod_root<int, int>'(v, 100);
+		int: _DECL_9 = 'mod_root<int, int>'(v, 1000);
 		string: _DECL_10 = show_internal(_DECL_9);
 	} in '++'(_DECL_8, _DECL_10);
 function var int: div_t(var int: x, var int: y) :: promise_total =
 	let {
 		set of int: _DECL_1 = compute_div_bounds_root(x, y);
 		var int: z :: is_defined_var :: promise_total = (
-			let { var _DECL_1: _FRESH_VAR } in _FRESH_VAR
+			let { var _DECL_1: _FRESH_VAR :: is_defined_var } in _FRESH_VAR
 		);
 		constraint '!=_root<var int, int>'(y, 0) :: mzn_forward_annotations;
 		ann: _DECL_3 = 'defines_var<var int>'(z) :: mzn_forward_annotations;
@@ -575,4 +575,4 @@ x = (let { var _DECL_38: _FRESH_VAR } in _FRESH_VAR);
 var int: _DECL_39 = foo_root(x);
 constraint '=_root<var int, var int>'(x, _DECL_39);
 _GLOBAL_12 = '+<var int, var int>'(x, 2);
-solve maximize _GLOBAL_12;
+constraint mzn_solve_maximize([], _GLOBAL_12);

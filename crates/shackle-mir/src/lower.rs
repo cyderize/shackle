@@ -12,8 +12,7 @@ use crate::{
 	Annotation, AnnotationCall, AnnotationId, Array, Builtin, Call, Comprehension, Constraint,
 	Declaration, Expression, ExpressionData, FreshVariable, Function, FunctionData, FunctionId,
 	Generator, GlobalAssignment, GlobalVar, Identifier, IfThenElse, Let, LetItem, LetResult,
-	Literal, LiteralData, Model, Parameter, Set, SetType, Solve, Tuple, TupleAccess, Value,
-	ValueData,
+	Literal, LiteralData, Model, Parameter, Set, SetType, Tuple, TupleAccess, Value, ValueData,
 };
 
 struct LoweringContext<'db> {
@@ -765,6 +764,54 @@ impl<'a, 'db> Collector<'a, 'db> {
 
 		lowered
 	}
+
+	fn lower_solve(&mut self, destination: &mut impl Items<'db>) {
+		let solve = self.model.solve().unwrap();
+		let annotations = Box::new(Value::new(
+			Array {
+				members: solve
+					.annotations()
+					.iter()
+					.map(|ann| {
+						self.lower_expression(ann, destination)
+							.into_literal(self, destination)
+					})
+					.collect(),
+			},
+			self.tys.array_of_ann,
+			solve.origin(),
+		));
+		let builtin = if let Some(obj) = solve.objective() {
+			let Identifier::GlobalVar(g) = self.global_resolutions[&obj.into()] else {
+				unreachable!()
+			};
+			let objective = Box::new(Value::new(
+				LiteralData::Identifier(g.into()),
+				self.global_vars[g].ty,
+				self.global_vars[g].origin,
+			));
+
+			if solve.is_maximize() {
+				Builtin::SolveMaximize {
+					annotations,
+					objective,
+				}
+			} else {
+				Builtin::SolveMinimize {
+					annotations,
+					objective,
+				}
+			}
+		} else {
+			Builtin::SolveSatisfy { annotations }
+		};
+
+		let constraint = Constraint {
+			expression: Box::new(Expression::new(builtin, self.tys.par_bool, solve.origin())),
+			annotations: Vec::new(),
+		};
+		destination.push(constraint);
+	}
 }
 
 /// Create MIR from shackle_thir
@@ -793,6 +840,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 					_ => None,
 				})
 				.collect(),
+			origin: m[*param].origin(),
 		});
 		let _ = ctx.global_resolutions.insert((*param).into(), idx.into());
 	}
@@ -810,37 +858,23 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 					_ => None,
 				})
 				.collect(),
+			origin: m[*var].origin(),
 		});
 		let _ = ctx.global_resolutions.insert((*var).into(), idx.into());
 	}
 
-	let solve = if let Some(solve) = m.solve()
+	if let Some(solve) = m.solve()
 		&& let Some(obj) = solve.objective()
 	{
 		let idx = ctx.global_vars.insert(GlobalVar {
 			// name: m[obj].name(),
 			name: None, // TODO: Fix name clash with old minizinc
 			ty: m[obj].ty(),
-			annotations: m[obj]
-				.annotations()
-				.iter()
-				.filter_map(|ann| match &**ann {
-					shackle_thir::ExpressionData::Identifier(
-						shackle_thir::ResolvedIdentifier::Annotation(a),
-					) => Some(ctx.annotation_ids[a]),
-					_ => None,
-				})
-				.collect(),
+			annotations: Vec::new(),
+			origin: m[obj].origin(),
 		});
 		let _ = ctx.global_resolutions.insert(obj.into(), idx.into());
-		if solve.is_maximize() {
-			Solve::Maximize(idx)
-		} else {
-			Solve::Minimize(idx)
-		}
-	} else {
-		Solve::Satisfy
-	};
+	}
 	let mut main_collector = Collector::new(&mut ctx);
 	let mut main_items = LetItems::default();
 	let mut output_declarations = Vec::new();
@@ -863,7 +897,9 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 					main_collector.lower_declaration(d, &mut main_items);
 				}
 			}
-			shackle_thir::ItemId::Solve => (),
+			shackle_thir::ItemId::Solve => {
+				main_collector.lower_solve(&mut main_items);
+			}
 			_ => unreachable!("Illegal item {:?}", item),
 		}
 	}
@@ -917,7 +953,6 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 		global_vars: ctx.global_vars,
 		annotations: ctx.annotations,
 		functions: ctx.functions,
-		solve,
 	}
 }
 
@@ -1133,7 +1168,6 @@ mod tests {
     var bool: p = false;
     var bool: _DECL_2 = p;
     var bool: q = _DECL_2;
-    solve satisfy;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}
@@ -1178,7 +1212,6 @@ mod tests {
     bool: mzn_root = true;
     x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
     constraint foo_root(x);
-    solve satisfy;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}

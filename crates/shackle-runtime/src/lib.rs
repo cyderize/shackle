@@ -826,6 +826,8 @@ mod tests {
     var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
 
     constraint foo(_X_INTRODUCED_0);
+
+    solve satisfy;
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
@@ -861,6 +863,8 @@ mod tests {
 
     % defining group 1
     constraint foo(_X_INTRODUCED_0, _X_INTRODUCED_1) :: my_ann;
+
+    solve satisfy;
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
@@ -898,6 +902,8 @@ mod tests {
 
     % defining group 1
     constraint foo(_X_INTRODUCED_0, [_X_INTRODUCED_1, _X_INTRODUCED_2, _X_INTRODUCED_3]);
+
+    solve satisfy;
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
@@ -1026,5 +1032,30 @@ any: x = foo();
     }
 "#]]
 		.assert_debug_eq(&interpreter.output());
+	}
+
+	#[test]
+	fn test_interpreter_solve_item() {
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = r#"
+			annotation 'output';
+			annotation foo(var int: x);
+			var int: x;
+			solve :: foo(x) minimize x;
+			"#;
+		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		let mut interpreter = Interpreter::new(&program);
+		interpreter.run().unwrap();
+		expect![[r#"
+    var int: _X_INTRODUCED_0;
+
+    solve :: foo(_X_INTRODUCED_0) minimize _X_INTRODUCED_0;
+"#]]
+		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}
 }

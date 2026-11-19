@@ -10,6 +10,28 @@ use shackle_mir_derive::MirBuiltin;
 /// An interpreter builtin with arguments of type `T`.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, MirBuiltin)]
 pub enum Builtin<T> {
+	/// Solve minimize
+	#[name(mzn_solve_minimize)]
+	SolveMinimize {
+		/// The search annotations
+		annotations: T,
+		/// The objective variable
+		objective: T,
+	},
+	/// Solve minimize
+	#[name(mzn_solve_maximize)]
+	SolveMaximize {
+		/// The search annotations
+		annotations: T,
+		/// The objective variable
+		objective: T,
+	},
+	/// Solve satisfy
+	#[name(mzn_solve_satisfy)]
+	SolveSatisfy {
+		/// The search annotations
+		annotations: T,
+	},
 	/// Coerce boolean to integer
 	#[name(bool2int)]
 	BoolToInt(T),

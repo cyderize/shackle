@@ -60,6 +60,7 @@ type_registry!(
 	array_of_opt_bottom: Ty::array(db, par_int, opt_bottom).unwrap(),
 	array_of_int: Ty::array(db, par_int, par_int).unwrap(),
 	array_of_tuple_int_set_of_int: Ty::array(db, par_int, Ty::tuple(db, [par_int, set_of_int])).unwrap(),
+	array_of_ann: Ty::array(db, par_int, ann).unwrap(),
 	mzn_enum: Ty::tuple(db, [par_int, Ty::array(db, par_int, Ty::tuple(db, [string, array_of_tuple_int_set_of_int, par_int])).unwrap()]),
 	mzn_enum_definition: Ty::array(db, par_int, Ty::tuple(db, [string, Ty::array(db, par_int, Ty::tuple(db, [par_int, set_of_int])).unwrap()])).unwrap(),
 	mzn_enum_param: Ty::tuple(db, [par_int, Ty::array(db, par_int, Ty::tuple(db, [par_int, par_int])).unwrap()])

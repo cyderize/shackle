@@ -520,6 +520,7 @@ mod tests {
                 expression: Call(
                     Call {
                         function: <Function::1>,
+                        kind: Function,
                         arguments: [
                             Literal(
                                 Identifier(
@@ -532,6 +533,7 @@ mod tests {
                             ),
                         ],
                         annotations: [],
+                        forward_annotations: false,
                     },
                 ),
             },
@@ -546,26 +548,43 @@ mod tests {
 	fn lowers_if_then_else_to_jumps() {
 		check(
 			r#"
+				bool: mzn_root = true;
 				function bool: condition() = true;
 				int: value = if condition() then 1 else 2 endif;
 			"#,
 			expect![[r#"
     Arena {
-        len: 6,
+        len: 7,
         data: {
             <Instruction::1>: Assign {
+                slot: Relative(
+                    1,
+                ),
+                expression: Value(
+                    Literal(
+                        Boolean(
+                            BooleanLiteral(
+                                true,
+                            ),
+                        ),
+                    ),
+                ),
+            },
+            <Instruction::2>: Assign {
                 slot: Relative(
                     1,
                 ),
                 expression: Call(
                     Call {
                         function: <Function::1>,
+                        kind: Function,
                         arguments: [],
                         annotations: [],
+                        forward_annotations: false,
                     },
                 ),
             },
-            <Instruction::2>: JumpIfFalse {
+            <Instruction::3>: JumpIfFalse {
                 condition: Literal(
                     Identifier(
                         Slot(
@@ -575,9 +594,9 @@ mod tests {
                         ),
                     ),
                 ),
-                target: <Instruction::5>,
+                target: <Instruction::6>,
             },
-            <Instruction::3>: Assign {
+            <Instruction::4>: Assign {
                 slot: Relative(
                     1,
                 ),
@@ -591,10 +610,10 @@ mod tests {
                     ),
                 ),
             },
-            <Instruction::4>: Jump {
-                target: <Instruction::6>,
+            <Instruction::5>: Jump {
+                target: <Instruction::7>,
             },
-            <Instruction::5>: Assign {
+            <Instruction::6>: Assign {
                 slot: Relative(
                     1,
                 ),
@@ -608,7 +627,7 @@ mod tests {
                     ),
                 ),
             },
-            <Instruction::6>: ReturnRoot,
+            <Instruction::7>: ReturnRoot,
         },
     }
 "#]],

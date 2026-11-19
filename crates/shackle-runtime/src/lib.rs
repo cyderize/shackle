@@ -10,7 +10,7 @@ use std::{
 	num::NonZeroU32,
 };
 
-pub use error::{RuntimeError, RuntimeErrorKind, RuntimeLocation};
+pub use error::{InputBindingError, RuntimeError, RuntimeErrorKind, RuntimeLocation};
 use shackle_ir::{FreshVariable, FunctionId, Instruction, InstructionId, Program};
 pub use value::{AnnotationView, DataView, FloatVal, IntVal, Value};
 
@@ -61,6 +61,8 @@ pub struct Interpreter<'a> {
 	comprehensions: ComprehensionState,
 	nanozinc: NanoZinc,
 	output: Box<dyn IoStreams + 'a>,
+	bound_inputs: Vec<bool>,
+	started: bool,
 }
 
 /// Trait for IO streams
@@ -122,7 +124,49 @@ impl<'a> Interpreter<'a> {
 			comprehensions: ComprehensionState::default(),
 			nanozinc: NanoZinc::default(),
 			output: Box::new(outputs),
+			bound_inputs: vec![false; program.inputs.len()],
+			started: false,
 		}
+	}
+
+	/// Bind an input before execution. Rebinding replaces its previous value.
+	/// Callers must provide values in the lowered runtime representation; values
+	/// are not validated. After optional-type erasure, an absent optional value
+	/// is a sequence containing `false` and a dummy value of the erased type.
+	pub fn set_input(&mut self, name: &str, value: Value) -> Result<(), InputBindingError> {
+		if self.started || self.state == InterpreterState::Aborted {
+			return Err(InputBindingError::ExecutionStarted);
+		}
+		let index = self
+			.program
+			.inputs
+			.iter()
+			.position(|input| input.name == name)
+			.ok_or_else(|| InputBindingError::UnknownInput(name.to_owned()))?;
+		self.stack[self.program.inputs[index].slot] = value;
+		self.bound_inputs[index] = true;
+		Ok(())
+	}
+
+	fn start_execution(&mut self) -> Result<(), RuntimeError> {
+		if !self.started {
+			let missing: Vec<_> = self
+				.program
+				.inputs
+				.iter()
+				.zip(&self.bound_inputs)
+				.filter(|(_, bound)| !**bound)
+				.map(|(input, _)| input.name.clone())
+				.collect();
+			if !missing.is_empty() {
+				return Err(RuntimeError {
+					kind: RuntimeErrorKind::MissingInputs(missing),
+					stack_trace: Vec::new(),
+				});
+			}
+			self.started = true;
+		}
+		Ok(())
 	}
 
 	/// Get a reference to the NanoZinc model
@@ -146,12 +190,14 @@ impl<'a> Interpreter<'a> {
 			|| self.pc.function == self.program.output_entry_point
 	}
 
-	/// Run the interpreter until it halts. An error permanently aborts this interpreter.
+	/// Run the interpreter until it halts. Missing inputs can be bound and retried;
+	/// an error during execution permanently aborts this interpreter.
 	/// Side effects completed before the error are not rolled back.
 	pub fn run(&mut self) -> Result<(), RuntimeError> {
 		if self.state == InterpreterState::Aborted {
 			return Err(RuntimeError::already_aborted());
 		}
+		self.start_execution()?;
 		if self.stack.call_frame_count() == 0 {
 			self.stack.push_call_frame(
 				CallFrame {
@@ -173,7 +219,8 @@ impl<'a> Interpreter<'a> {
 		Ok(())
 	}
 
-	/// Evaluate a function. An error permanently aborts this interpreter.
+	/// Evaluate a function. Missing inputs can be bound and retried;
+	/// an error during execution permanently aborts this interpreter.
 	/// Side effects completed before the error are not rolled back.
 	pub fn eval(
 		&mut self,
@@ -183,6 +230,7 @@ impl<'a> Interpreter<'a> {
 		if self.state == InterpreterState::Aborted {
 			return Err(RuntimeError::already_aborted());
 		}
+		self.start_execution()?;
 		let old_state = self.state;
 		self.state = InterpreterState::Running;
 		let old_pc = self.pc;
@@ -214,11 +262,14 @@ impl<'a> Interpreter<'a> {
 		Ok(self.stack[return_slot].clone())
 	}
 
-	/// Step the interpreter forward one instruction. An error permanently aborts this interpreter.
+	/// Step forward one instruction. Missing inputs can be bound and retried;
+	/// an error during execution permanently aborts this interpreter.
+	/// The current instruction must have a call frame if it uses one.
 	pub fn step(&mut self) -> Result<(), RuntimeError> {
 		if self.state == InterpreterState::Aborted {
 			return Err(RuntimeError::already_aborted());
 		}
+		self.start_execution()?;
 		let address = self.pc;
 		match self.execute_step() {
 			Ok(()) => Ok(()),
@@ -656,12 +707,146 @@ mod tests {
 		});
 		shackle_ir::Program {
 			global_slot_count: 2,
+			inputs: Vec::new(),
 			functions,
 			annotations: Default::default(),
 			main_entry_point: main,
 			output_entry_point: main,
 			strings,
 		}
+	}
+
+	#[test]
+	fn input_binding_and_execution() {
+		use crate::{InputBindingError, Value};
+		use shackle_hir::{
+			CompilerDatabase,
+			db::Setter,
+			input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
+		};
+
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = "annotation output; test abort(string); int: capacity; predicate limit(var int: x, int: n); var int: x; constraint limit(x, capacity); solve satisfy;";
+		let file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		assert_eq!(
+			program
+				.inputs()
+				.map(|i| i.name.as_str())
+				.collect::<Vec<_>>(),
+			["capacity"]
+		);
+		assert!(program.input("capacity").is_some());
+		for entry in 0..3 {
+			let mut interpreter = Interpreter::new(&program);
+			let error = match entry {
+				0 => interpreter.run().unwrap_err(),
+				1 => interpreter.step().unwrap_err(),
+				_ => interpreter.eval(program.main_entry_point, &[]).unwrap_err(),
+			};
+			assert_eq!(
+				error.kind,
+				RuntimeErrorKind::MissingInputs(vec!["capacity".into()])
+			);
+			assert_eq!(interpreter.call_frame_count(), 0);
+			assert_eq!(
+				interpreter.set_input("missing", Value::from(1)),
+				Err(InputBindingError::UnknownInput("missing".into()))
+			);
+			interpreter.set_input("capacity", Value::from(1)).unwrap();
+			interpreter.set_input("capacity", Value::from(7)).unwrap();
+			interpreter.run().unwrap();
+			assert!(
+				interpreter
+					.nanozinc_mut()
+					.print(&program)
+					.contains("constraint limit(_X_INTRODUCED_0, 7);")
+			);
+			assert_eq!(
+				interpreter.set_input("capacity", Value::from(2)),
+				Err(InputBindingError::ExecutionStarted)
+			);
+		}
+		let mut second = Interpreter::new(&program);
+		second.set_input("capacity", Value::from(9)).unwrap();
+		second.run().unwrap();
+		assert!(
+			second
+				.nanozinc_mut()
+				.print(&program)
+				.contains("constraint limit(_X_INTRODUCED_0, 9);")
+		);
+	}
+
+	#[test]
+	fn optional_input_is_explicitly_bound() {
+		use shackle_hir::{
+			CompilerDatabase,
+			db::Setter,
+			input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
+		};
+		let mut db = CompilerDatabase::default();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let source = "annotation output; test abort(string); opt int: maybe; predicate use(opt int: x); constraint use(maybe); solve satisfy;";
+		let file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		assert_eq!(
+			program
+				.inputs()
+				.map(|input| input.name())
+				.collect::<Vec<_>>(),
+			["maybe"]
+		);
+		let mut interpreter = Interpreter::new(&program);
+		let error = interpreter.run().unwrap_err();
+		assert!(
+			matches!(error.kind, RuntimeErrorKind::MissingInputs(ref names) if names.contains(&"maybe".to_owned()))
+		);
+		let absent = [crate::Value::from(false), crate::Value::from(0)]
+			.into_iter()
+			.collect();
+		interpreter.set_input("maybe", absent).unwrap();
+		interpreter.run().unwrap();
+	}
+
+	#[test]
+	fn input_binding_freezes_for_eval_and_step() {
+		use crate::{InputBindingError, Value};
+		use shackle_ir::{Input, Instruction, SlotId};
+		use std::num::NonZeroU32;
+		let mut program = value_test_program();
+		program.inputs.push(Input {
+			name: "n".into(),
+			slot: SlotId::Absolute(NonZeroU32::new(1).unwrap()),
+		});
+		let mut eval = Interpreter::new(&program);
+		eval.set_input("n", Value::from(1)).unwrap();
+		let _ = eval.eval(program.main_entry_point, &[]).unwrap();
+		assert_eq!(
+			eval.set_input("n", Value::from(2)),
+			Err(InputBindingError::ExecutionStarted)
+		);
+		drop(eval);
+		let first = program.functions[program.main_entry_point]
+			.body
+			.keys()
+			.next()
+			.unwrap();
+		program.functions[program.main_entry_point].body[first] = Instruction::NoOp;
+		let mut step = Interpreter::new(&program);
+		step.set_input("n", Value::from(1)).unwrap();
+		step.step().unwrap();
+		assert_eq!(
+			step.set_input("n", Value::from(2)),
+			Err(InputBindingError::ExecutionStarted)
+		);
 	}
 
 	#[test]
@@ -931,6 +1116,10 @@ any: x = foo();
 			RuntimeErrorKind::Abort("This is an abort message".into())
 		);
 		assert_eq!(interpreter.state, InterpreterState::Aborted);
+		assert_eq!(
+			interpreter.set_input("anything", crate::Value::from(1)),
+			Err(crate::InputBindingError::ExecutionStarted)
+		);
 		assert_eq!(
 			error
 				.stack_trace

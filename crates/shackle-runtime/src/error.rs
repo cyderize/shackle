@@ -41,6 +41,9 @@ pub struct ValueError {
 /// The reason interpretation stopped.
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 pub enum RuntimeErrorKind {
+	/// External inputs have not been bound; execution has not started.
+	#[error("Missing inputs: {}", .0.join(", "))]
+	MissingInputs(Vec<String>),
 	/// The program explicitly aborted.
 	#[error("Abort: {0}")]
 	Abort(String),
@@ -65,6 +68,17 @@ pub enum RuntimeErrorKind {
 	/// The interpreter has already aborted.
 	#[error("Interpreter has already aborted")]
 	AlreadyAborted,
+}
+
+/// Failure to bind an interpreter input.
+#[derive(Error, Debug, PartialEq, Eq, Clone)]
+pub enum InputBindingError {
+	/// No external input has this name.
+	#[error("Unknown input: {0}")]
+	UnknownInput(String),
+	/// Inputs cannot be changed after execution starts.
+	#[error("Cannot bind inputs after execution has started")]
+	ExecutionStarted,
 }
 
 /// An owned source location in a runtime stack trace.

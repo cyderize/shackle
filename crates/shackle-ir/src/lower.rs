@@ -95,7 +95,26 @@ pub fn lower_model(db: &dyn Db, model: &shackle_mir::Model) -> Program {
 		}
 	}
 
+	let mut inputs: Vec<_> = model
+		.inputs
+		.iter()
+		.map(|id| {
+			let name = model.global_vars[*id]
+				.name
+				.expect("input parameter must have a name");
+			crate::Input {
+				name: name.0.lookup(db).to_string(),
+				slot: ctx.global_slots[*id],
+			}
+		})
+		.collect();
+	inputs.sort_by(|a, b| a.name.cmp(&b.name));
+	assert!(
+		inputs.windows(2).all(|pair| pair[0].name != pair[1].name),
+		"duplicate input name"
+	);
 	Program {
+		inputs,
 		global_slot_count: global_slot_count as usize,
 		functions: ctx.functions,
 		annotations: ctx.annotations,

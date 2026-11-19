@@ -889,6 +889,7 @@ mod tests {
 		let function_id = shackle_ir::FunctionId::new(1);
 		let mut program = shackle_ir::Program {
 			global_slot_count: 0,
+			inputs: Vec::new(),
 			functions: Default::default(),
 			annotations: Default::default(),
 			main_entry_point: function_id,

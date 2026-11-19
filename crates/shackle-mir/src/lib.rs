@@ -37,6 +37,8 @@ pub struct Model<'db> {
 	pub functions: Arena<Function<'db>>,
 	/// Input parameters and global variables
 	pub global_vars: Arena<GlobalVar<'db>>,
+	/// Global variables representing external inputs.
+	pub inputs: Vec<GlobalVarId<'db>>,
 	/// Main entry point
 	pub main_entrypoint: FunctionId<'db>,
 	/// Output entry point

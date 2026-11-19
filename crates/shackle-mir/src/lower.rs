@@ -826,6 +826,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 	}
 
 	let global_vars = GlobalVariables::find(db, m);
+	let mut inputs = Vec::new();
 	for param in global_vars.input_parameters.iter() {
 		let idx = ctx.global_vars.insert(GlobalVar {
 			name: m[*param].name(),
@@ -843,6 +844,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 			origin: m[*param].origin(),
 		});
 		let _ = ctx.global_resolutions.insert((*param).into(), idx.into());
+		inputs.push(idx);
 	}
 	for var in global_vars.referred_variables.iter() {
 		let idx = ctx.global_vars.insert(GlobalVar {
@@ -948,6 +950,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 	let output_entrypoint = ctx.functions.insert(output_fn);
 
 	Model {
+		inputs,
 		main_entrypoint,
 		output_entrypoint,
 		global_vars: ctx.global_vars,

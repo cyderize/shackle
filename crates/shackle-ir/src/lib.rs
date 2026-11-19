@@ -41,6 +41,8 @@ pub struct Origin {
 pub struct Program {
 	/// The number of slots in the program
 	pub global_slot_count: usize,
+	/// External inputs in deterministic order.
+	pub inputs: Vec<Input>,
 	/// The functions
 	pub functions: Arena<Function>,
 	/// The annotations
@@ -53,7 +55,33 @@ pub struct Program {
 	pub strings: Arena<String>,
 }
 
+/// A named external input and its global slot.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Input {
+	/// External input name.
+	pub name: String,
+	/// Absolute global slot used by the input.
+	pub slot: SlotId,
+}
+
+impl Input {
+	/// External input name.
+	pub fn name(&self) -> &str {
+		&self.name
+	}
+}
+
 impl Program {
+	/// Enumerate external inputs.
+	pub fn inputs(&self) -> impl Iterator<Item = &Input> {
+		self.inputs.iter()
+	}
+
+	/// Find an external input by name.
+	pub fn input(&self, name: &str) -> Option<&Input> {
+		self.inputs.iter().find(|input| input.name == name)
+	}
+
 	/// Get the IR of the program
 	pub fn lower_from_mir(db: &dyn Db) -> Program {
 		let mir = shackle_mir::Model::lower_from_thir(db);

@@ -567,7 +567,7 @@ impl Value {
 	/// Get value as a sequence
 	pub fn as_seq(&self) -> SeqView<'_> {
 		let DataView::Seq(seq) = self.deref() else {
-			panic!("not a sequence");
+			panic!("{:?} is not a sequence", self);
 		};
 		seq
 	}

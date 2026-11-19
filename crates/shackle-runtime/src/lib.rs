@@ -325,6 +325,8 @@ impl<'a> Interpreter<'a> {
 				if c.forward_annotations {
 					annotations.extend(self.stack.annotations().iter().cloned());
 				}
+				let arguments: Vec<_> =
+					c.arguments.iter().map(|arg| self.eval_value(arg)).collect();
 				let promise_total = self.program.functions[c.function].promise_total;
 				if promise_total {
 					self.nanozinc_mut().push_pending();
@@ -339,10 +341,9 @@ impl<'a> Interpreter<'a> {
 					},
 					self.program.functions[c.function].slot_count,
 				);
-				for (i, arg) in c.arguments.iter().enumerate() {
+				for (i, value) in arguments.into_iter().enumerate() {
 					let slot =
 						shackle_ir::SlotId::Relative(NonZeroU32::new((i + 1) as u32).unwrap());
-					let value = self.eval_value(arg);
 					self.stack[slot] = value;
 				}
 				self.pc = Address {
@@ -387,6 +388,8 @@ impl<'a> Interpreter<'a> {
 							.add_constraint(c.function, args, annotations);
 					}
 					shackle_ir::CallType::Function => {
+						let arguments: Vec<_> =
+							c.arguments.iter().map(|arg| self.eval_value(arg)).collect();
 						self.stack.push_call_frame(
 							CallFrame {
 								return_address: self.pc,
@@ -397,11 +400,10 @@ impl<'a> Interpreter<'a> {
 							},
 							self.program.functions[c.function].slot_count,
 						);
-						for (i, arg) in c.arguments.iter().enumerate() {
+						for (i, value) in arguments.into_iter().enumerate() {
 							let slot = shackle_ir::SlotId::Relative(
 								NonZeroU32::new((i + 1) as u32).unwrap(),
 							);
-							let value = self.eval_value(arg);
 							self.stack[slot] = value;
 						}
 						self.pc = Address {
@@ -525,16 +527,17 @@ impl<'a> Interpreter<'a> {
 						shackle_ir::Identifier::Slot(slot) => self.stack[*slot].clone(),
 					})
 					.collect::<Vec<_>>();
+				let arguments: Vec<_> =
+					c.arguments.iter().map(|arg| self.eval_value(arg)).collect();
 				self.stack.tail_call(
 					self.program.functions[c.function].slot_count,
 					self.program.functions[c.function].promise_total,
 					!c.forward_annotations,
 					annotations,
 				);
-				for (i, arg) in c.arguments.iter().enumerate() {
+				for (i, value) in arguments.into_iter().enumerate() {
 					let slot =
 						shackle_ir::SlotId::Relative(NonZeroU32::new((i + 1) as u32).unwrap());
-					let value = self.eval_value(arg);
 					self.stack[slot] = value;
 				}
 				self.pc = Address {
@@ -599,9 +602,7 @@ impl<'a> Interpreter<'a> {
 					unreachable!()
 				};
 				let tuple = &self.stack[*s];
-				let DataView::Seq(view) = tuple.deref() else {
-					unreachable!()
-				};
+				let view = tuple.as_seq();
 				view[&[tuple_access.field.0]].clone()
 			}
 		}
@@ -663,7 +664,7 @@ mod tests {
 		input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
 	};
 
-	use crate::{DataView, Interpreter, InterpreterState, IoStreams, RuntimeErrorKind};
+	use crate::{DataView, Interpreter, InterpreterState, IoStreams, RuntimeErrorKind, Value};
 
 	#[derive(Default)]
 	struct MemoryStreams {
@@ -718,12 +719,13 @@ mod tests {
 
 	#[test]
 	fn input_binding_and_execution() {
-		use crate::{InputBindingError, Value};
 		use shackle_hir::{
 			CompilerDatabase,
 			db::Setter,
 			input::{CompilerSettings, InlineModelFile, InputFiles, InputLang},
 		};
+
+		use crate::{InputBindingError, Value};
 
 		let mut db = CompilerDatabase::default();
 		let _ = CompilerSettings::get(&db)
@@ -809,18 +811,18 @@ mod tests {
 		assert!(
 			matches!(error.kind, RuntimeErrorKind::MissingInputs(ref names) if names.contains(&"maybe".to_owned()))
 		);
-		let absent = [crate::Value::from(false), crate::Value::from(0)]
-			.into_iter()
-			.collect();
+		let absent = [Value::from(false), Value::from(0)].into_iter().collect();
 		interpreter.set_input("maybe", absent).unwrap();
 		interpreter.run().unwrap();
 	}
 
 	#[test]
 	fn input_binding_freezes_for_eval_and_step() {
-		use crate::{InputBindingError, Value};
-		use shackle_ir::{Input, Instruction, SlotId};
 		use std::num::NonZeroU32;
+
+		use shackle_ir::{Input, Instruction, SlotId};
+
+		use crate::{InputBindingError, Value};
 		let mut program = value_test_program();
 		program.inputs.push(Input {
 			name: "n".into(),
@@ -850,6 +852,113 @@ mod tests {
 	}
 
 	#[test]
+	fn call_arguments_are_evaluated_in_the_caller_frame() {
+		use std::num::NonZeroU32;
+
+		use shackle_hir::IntegerLiteral;
+		use shackle_ir::{
+			Call, CallType, Expression, Function, Identifier, Instruction, Literal, SlotId,
+			TupleAccess, Value as IrValue,
+		};
+
+		let relative = |index| SlotId::Relative(NonZeroU32::new(index).unwrap());
+		let slot = |index| IrValue::Literal(Literal::Identifier(Identifier::Slot(relative(index))));
+		let mut program = value_test_program();
+		let name = program.strings.insert("callee");
+		let mut body: shackle_utils::arena::Arena<Instruction> = Default::default();
+		let _ = body.insert(Instruction::Return {
+			expression: Expression::Value(slot(2)),
+		});
+		let callee = program.functions.insert(Function {
+			name,
+			slot_count: 2,
+			promise_total: false,
+			body,
+			origins: Default::default(),
+		});
+		let call = Call {
+			function: callee,
+			kind: CallType::Function,
+			arguments: vec![slot(2), slot(1)],
+			annotations: vec![],
+			forward_annotations: false,
+		};
+		let name = program.strings.insert("caller");
+		for tail in [false, true] {
+			let mut body: shackle_utils::arena::Arena<Instruction> = Default::default();
+			if tail {
+				let _ = body.insert(Instruction::Return {
+					expression: Expression::Call(call.clone()),
+				});
+			} else {
+				let _ = body.insert(Instruction::Assign {
+					slot: relative(3),
+					expression: Expression::Call(call.clone()),
+				});
+				let _ = body.insert(Instruction::Return {
+					expression: Expression::Value(slot(3)),
+				});
+			}
+			let caller = program.functions.insert(Function {
+				name,
+				slot_count: 3,
+				promise_total: false,
+				body,
+				origins: Default::default(),
+			});
+			let mut interpreter = Interpreter::new(&program);
+			assert_eq!(
+				interpreter
+					.eval(caller, &[Value::from(11), Value::from(22)])
+					.unwrap(),
+				Value::from(11)
+			);
+		}
+		let mut body: shackle_utils::arena::Arena<Instruction> = Default::default();
+		let result_slot = SlotId::Absolute(NonZeroU32::new(2).unwrap());
+		let _ = body.insert(Instruction::Assign {
+			slot: result_slot,
+			expression: Expression::Value(slot(1)),
+		});
+		let _ = body.insert(Instruction::ReturnRoot);
+		let predicate = program.functions.insert(Function {
+			name,
+			slot_count: 1,
+			promise_total: false,
+			body,
+			origins: Default::default(),
+		});
+		let argument = IrValue::TupleAccess(TupleAccess {
+			tuple: Identifier::Slot(relative(1)),
+			field: IntegerLiteral(1),
+		});
+		let mut body: shackle_utils::arena::Arena<Instruction> = Default::default();
+		let _ = body.insert(Instruction::Constraint {
+			expression: Expression::Call(Call {
+				function: predicate,
+				kind: CallType::Function,
+				arguments: vec![argument],
+				annotations: vec![],
+				forward_annotations: false,
+			}),
+		});
+		let _ = body.insert(Instruction::Return {
+			expression: Expression::Value(slot(1)),
+		});
+		let caller = program.functions.insert(Function {
+			name,
+			slot_count: 1,
+			promise_total: false,
+			body,
+			origins: Default::default(),
+		});
+		let tuple = Value::from_iter([Value::from(true), Value::from(99)]);
+		let mut interpreter = Interpreter::new(&program);
+		assert_eq!(interpreter.eval(caller, &[tuple.clone()]).unwrap(), tuple);
+		assert_eq!(interpreter.stack[result_slot], Value::from(true));
+	}
+
+	#[test]
 	fn eval_value_literals_and_identifiers() {
 		use std::num::NonZeroU32;
 
@@ -863,34 +972,22 @@ mod tests {
 			.insert(shackle_ir::Annotation { name: string });
 		let mut interpreter = Interpreter::new(&program);
 		let slot = SlotId::Absolute(NonZeroU32::new(1).unwrap());
-		interpreter.stack[slot] = crate::Value::from(37);
+		interpreter.stack[slot] = Value::from(37);
 		let cases = [
-			(
-				Literal::Boolean(BooleanLiteral(true)),
-				crate::Value::from(true),
-			),
-			(
-				Literal::Integer(IntegerLiteral(-12)),
-				crate::Value::from(-12),
-			),
-			(
-				Literal::Float(FloatLiteral::new(1.5)),
-				crate::Value::from(1.5),
-			),
-			(Literal::String(string), crate::Value::from("hello")),
-			(Literal::Infinity, crate::Value::from(crate::IntVal::InfPos)),
+			(Literal::Boolean(BooleanLiteral(true)), Value::from(true)),
+			(Literal::Integer(IntegerLiteral(-12)), Value::from(-12)),
+			(Literal::Float(FloatLiteral::new(1.5)), Value::from(1.5)),
+			(Literal::String(string), Value::from("hello")),
+			(Literal::Infinity, Value::from(crate::IntVal::InfPos)),
 			(Literal::InfiniteIntSet, crate::value::INT_SET_INF.clone()),
 			(
 				Literal::InfiniteFloatSet,
 				crate::value::FLOAT_SET_INF.clone(),
 			),
-			(
-				Literal::Identifier(Identifier::Slot(slot)),
-				crate::Value::from(37),
-			),
+			(Literal::Identifier(Identifier::Slot(slot)), Value::from(37)),
 			(
 				Literal::Identifier(Identifier::Annotation(annotation)),
-				crate::Value::new_annotation(annotation.into(), []),
+				Value::new_annotation(annotation.into(), []),
 			),
 		];
 		for (literal, expected) in cases {
@@ -912,11 +1009,11 @@ mod tests {
 		let program = value_test_program();
 		let mut interpreter = Interpreter::new(&program);
 		let slot = SlotId::Absolute(NonZeroU32::new(1).unwrap());
-		interpreter.stack[slot] = crate::Value::from(7);
+		interpreter.stack[slot] = Value::from(7);
 		let int = |n| Literal::Integer(IntegerLiteral(n));
 		let slot_literal = Literal::Identifier(Identifier::Slot(slot));
 		let members = vec![int(3), slot_literal.clone(), int(3)];
-		let sequence = crate::Value::from_iter([3, 7, 3].map(crate::Value::from));
+		let sequence = Value::from_iter([3, 7, 3].map(Value::from));
 		for value in [
 			shackle_ir::Value::Tuple(shackle_ir::Tuple {
 				members: members.clone(),
@@ -931,7 +1028,7 @@ mod tests {
 			kind: SetType::Integer,
 			members: vec![int(3), slot_literal.clone()],
 		});
-		let expected = crate::Value::from_iter([
+		let expected = Value::from_iter([
 			crate::IntVal::from(3)..=crate::IntVal::from(3),
 			crate::IntVal::from(7)..=crate::IntVal::from(7),
 		]);
@@ -943,7 +1040,7 @@ mod tests {
 				Literal::Float(FloatLiteral::new(2.5)),
 			],
 		});
-		let expected = crate::Value::from_iter([
+		let expected = Value::from_iter([
 			crate::FloatVal::from(-1.0)..=crate::FloatVal::from(-1.0),
 			crate::FloatVal::from(2.5)..=crate::FloatVal::from(2.5),
 		]);
@@ -954,14 +1051,14 @@ mod tests {
 		});
 		assert_eq!(
 			interpreter.eval_value(&set),
-			crate::Value::new_discrete_set([crate::Value::from(3), crate::Value::from(7)])
+			Value::new_discrete_set([Value::from(3), Value::from(7)])
 		);
 		interpreter.stack[slot] = sequence;
 		let access = shackle_ir::Value::TupleAccess(shackle_ir::TupleAccess {
 			tuple: Identifier::Slot(slot),
 			field: IntegerLiteral(2),
 		});
-		assert_eq!(interpreter.eval_value(&access), crate::Value::from(7));
+		assert_eq!(interpreter.eval_value(&access), Value::from(7));
 	}
 
 	#[test]
@@ -1117,7 +1214,7 @@ any: x = foo();
 		);
 		assert_eq!(interpreter.state, InterpreterState::Aborted);
 		assert_eq!(
-			interpreter.set_input("anything", crate::Value::from(1)),
+			interpreter.set_input("anything", Value::from(1)),
 			Err(crate::InputBindingError::ExecutionStarted)
 		);
 		assert_eq!(
@@ -1211,7 +1308,7 @@ any: x = foo();
 		let mut interpreter = Interpreter::with_output(&program, MemoryStreams::default());
 		let result = crate::builtin::eval_builtin(
 			&mut interpreter,
-			shackle_ir::Builtin::Warn(crate::Value::from("careful")),
+			shackle_ir::Builtin::Warn(Value::from("careful")),
 		);
 		assert_eq!(result.unwrap(), true.into());
 		expect![[r#"
@@ -1244,6 +1341,37 @@ any: x = foo();
     var int: _X_INTRODUCED_0;
 
     solve :: foo(_X_INTRODUCED_0) minimize _X_INTRODUCED_0;
+"#]]
+		.assert_eq(&interpreter.nanozinc_mut().print(&program));
+	}
+
+	#[test]
+	fn test_interpreter_5() {
+		let mut db = CompilerDatabase::default();
+		let source = r#""#;
+		let model_file = InlineModelFile::new(&db, source.to_owned(), InputLang::MiniZinc).into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let program = shackle_ir::Program::lower_from_mir(&db);
+		let mut interpreter = Interpreter::new(&program);
+		let absent = Value::from_iter([Value::from(0), Value::from(0)]);
+		let opt_inputs = [
+			"mzn_absent_zero",
+			"mzn_min_version_required",
+			"mzn_max_version_required",
+			"mzn_opt_only_range_domains",
+			"mzn_opt_annotate_defines_var",
+			"mzn_opt_annotate_computed_domains",
+			"mzn_ignore_symmetry_breaking_constraints",
+			"mzn_ignore_redundant_constraints",
+			"mzn_half_reify_clause",
+			"mzn_opt_eager_linear_aggregation",
+		];
+		for input in opt_inputs {
+			interpreter.set_input(input, absent.clone()).unwrap();
+		}
+		interpreter.run().unwrap();
+		expect![[r#"
+    solve satisfy;
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
 	}

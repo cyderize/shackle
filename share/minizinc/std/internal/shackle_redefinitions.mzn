@@ -2092,3 +2092,6 @@ function array [int] of tuple(float, float): mzn_set_to_ranges(set of float: S) 
 
 predicate mzn_post(var bool: c) :: promise_total :: mzn_no_remove =
 	let { constraint bool_eq(c, true) } in true;
+
+function set of $$E: dom_array(array [$T] of var $$E: x) = array_union([dom(x_i) | x_i in x]);
+function set of $$E: dom_bounds_array(array [$T] of var $$E: x) = lb_array(x)..ub_array(x);

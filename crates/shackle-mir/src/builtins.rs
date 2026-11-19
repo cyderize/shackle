@@ -242,12 +242,6 @@ pub enum Builtin<T> {
 	/// Get domain
 	#[name(dom)]
 	Domain(T),
-	/// Union of domains of array elements
-	#[name(dom_array)]
-	DomainArray(T),
-	/// Approximation of union of domains of array elements
-	#[name(dom_bounds_array)]
-	DomainBoundsArray(T),
 
 	/// Whether variable has declared, finite bounds
 	#[name(has_bounds)]
@@ -356,6 +350,24 @@ pub enum Builtin<T> {
 	/// Show in JSON format
 	#[name(show_json_internal)]
 	ShowJson(T),
+	#[name(show_int)]
+	/// Show formatted integer
+	ShowInt {
+		/// Width
+		width: T,
+		/// Value
+		value: T,
+	},
+	/// Show formatted float
+	#[name(show_float)]
+	ShowFloat {
+		/// Width
+		width: T,
+		/// Precision
+		precision: T,
+		/// Value
+		value: T,
+	},
 
 	/// Format value as string
 	#[name(format)]

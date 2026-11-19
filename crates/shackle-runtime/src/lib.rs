@@ -169,6 +169,11 @@ impl<'a> Interpreter<'a> {
 		Ok(())
 	}
 
+	/// Get a reference to the program
+	pub fn program(&self) -> &Program {
+		self.program
+	}
+
 	/// Get a reference to the NanoZinc model
 	pub fn nanozinc(&self) -> &NanoZinc {
 		&self.nanozinc
@@ -533,9 +538,13 @@ impl<'a> Interpreter<'a> {
 					.collect::<Vec<_>>();
 				let arguments: Vec<_> =
 					c.arguments.iter().map(|arg| self.eval_value(arg)).collect();
+				let promise_total = self.program.functions[c.function].promise_total;
+				if promise_total {
+					self.nanozinc_mut().push_pending();
+				}
 				self.stack.tail_call(
 					self.program.functions[c.function].slot_count,
-					self.program.functions[c.function].promise_total,
+					promise_total,
 					!c.forward_annotations,
 					annotations,
 				);
@@ -1157,6 +1166,89 @@ mod tests {
     solve satisfy;
 "#]]
 		.assert_eq(&interpreter.nanozinc_mut().print(&program));
+	}
+
+	#[test]
+	fn tail_call_to_total_function() {
+		use std::num::NonZeroU32;
+
+		use shackle_ir::{
+			Call, CallType, Expression, FreshVariable, Function, Identifier, Instruction, Literal,
+			SlotId,
+		};
+		use shackle_utils::arena::Arena;
+
+		for outer_total in [false, true] {
+			let mut program = value_test_program();
+			let slot = SlotId::Relative(NonZeroU32::new(1).unwrap());
+			let value = shackle_ir::Value::Literal(Literal::Identifier(Identifier::Slot(slot)));
+			let name = program.strings.insert("define");
+			let predicate = program.functions.insert(Function {
+				name,
+				slot_count: 1,
+				promise_total: false,
+				body: Arena::default(),
+				origins: Default::default(),
+			});
+			let call = |function, arguments| Call {
+				function,
+				kind: CallType::Function,
+				arguments,
+				annotations: vec![],
+				forward_annotations: false,
+			};
+			let mut body = Arena::default();
+			let _ = body.insert(Instruction::Assign {
+				slot,
+				expression: Expression::FreshVariable(FreshVariable::VarBool { is_defined: true }),
+			});
+			let mut definition = call(predicate, vec![value.clone()]);
+			definition.kind = CallType::Predicate;
+			let _ = body.insert(Instruction::Constraint {
+				expression: Expression::Call(definition),
+			});
+			let _ = body.insert(Instruction::Return {
+				expression: Expression::Value(value),
+			});
+			let name = program.strings.insert("total");
+			let total = program.functions.insert(Function {
+				name,
+				slot_count: 1,
+				promise_total: true,
+				body,
+				origins: Default::default(),
+			});
+			let mut body = Arena::default();
+			let _ = body.insert(Instruction::Return {
+				expression: Expression::Call(call(total, vec![])),
+			});
+			let name = program.strings.insert("wrapper");
+			let wrapper = program.functions.insert(Function {
+				name,
+				slot_count: 0,
+				promise_total: outer_total,
+				body,
+				origins: Default::default(),
+			});
+			let main = &mut program.functions[program.main_entry_point];
+			main.body = Arena::default();
+			let _ = main.body.insert(Instruction::Assign {
+				slot: SlotId::Absolute(NonZeroU32::new(1).unwrap()),
+				expression: Expression::Call(call(wrapper, vec![])),
+			});
+			let _ = main.body.insert(Instruction::ReturnRoot);
+			let mut interpreter = Interpreter::new(&program);
+			interpreter.run().unwrap();
+			expect![[r#"
+    var bool: _X_INTRODUCED_0; % defined by group 1
+
+    % defining group 1
+    constraint define(_X_INTRODUCED_0);
+
+    solve satisfy;
+"#]]
+			.assert_eq(&interpreter.nanozinc_mut().print(&program));
+		}
 	}
 
 	#[test]

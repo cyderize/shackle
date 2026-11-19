@@ -335,12 +335,19 @@ impl<'db, Dst: Marker, Src: Marker> Folder<'_, 'db, Dst, Src> for EnumEraser<'db
 								"Erasing enum_name call at {}",
 								expression.origin().pretty_print(db)
 							);
-							let e = c.arguments[0].ty().enum_ty(db).unwrap();
+							if let Some(e) = c.arguments[0].ty().enum_ty(db) {
+								return Expression::new(
+									db,
+									&self.model,
+									expression.origin(),
+									StringLiteral::from(e.name()),
+								);
+							}
 							return Expression::new(
 								db,
 								&self.model,
 								expression.origin(),
-								StringLiteral::from(e.name()),
+								StringLiteral::new(db, ""),
 							);
 						}
 					}

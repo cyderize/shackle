@@ -14,7 +14,7 @@ use crate::{
 		ArithmeticError, FloatSetCoercionError, InvalidIndexSet, RuntimeErrorKind, ValueError,
 	},
 	nanozinc::Solve,
-	value::{DataView, INT_SET_EMPTY, INT_SET_INF},
+	value::{DataView, FLOAT_SET_INF, INT_SET_EMPTY, INT_SET_INF},
 };
 
 /// Builtin call with evaluated arguments
@@ -75,7 +75,7 @@ pub fn eval_builtin(
 		Builtin::SetDiffInt { left, right } => int_set_difference(left, right),
 		Builtin::SetUnionFloat { left, right } => float_set_union(left, right)?,
 		Builtin::SetIntersectFloat { left, right } => float_set_intersection(left, right)?,
-		Builtin::IndexedArray(_) => todo!("Builtin::IndexedArray"),
+		Builtin::IndexedArray(x) => indexed_array(x)?,
 		Builtin::ArrayAccess { array, indices } => array_access(array, indices)?,
 		Builtin::ArraySlice { array, slices } => array_slice(array, slices),
 		Builtin::ArrayToIntSet(x) => array_to_int_set(x),
@@ -144,13 +144,11 @@ pub fn eval_builtin(
 		Builtin::LowerBoundArray(x) => lower_bound_array(x),
 		Builtin::UpperBoundArray(x) => upper_bound_array(x),
 		Builtin::Domain(x) => domain(x),
-		Builtin::DomainArray(_) => todo!("Builtin::DomainArray"),
-		Builtin::DomainBoundsArray(_) => todo!("Builtin::DomainBoundsArray"),
-		Builtin::HasBounds(_) => todo!("Builtin::HasBounds"),
-		Builtin::HasUpperBoundSet(_) => todo!("Builtin::HasUpperBoundSet"),
+		Builtin::HasBounds(x) => false.into(),
+		Builtin::HasUpperBoundSet(x) => false.into(),
 		Builtin::IsFixed(x) => is_fixed(x).into(),
 		Builtin::Fix(x) => fix(x)?,
-		Builtin::HasAnn { .. } => todo!("Builtin::HasAnn"),
+		Builtin::HasAnn { variable, ann } => false.into(),
 		Builtin::IsSame { variable, other } => (variable == other).into(),
 		Builtin::CompilerVersion => compiler_version(),
 		Builtin::StringPlusPlus { left, right } => string_concat(left, right),
@@ -160,11 +158,17 @@ pub fn eval_builtin(
 		Builtin::Equal { left, right } => (left == right).into(),
 		Builtin::Sort(x) => array_sort(x),
 		Builtin::SortBy { array, sort_by } => array_sort_by(array, sort_by)?,
-		Builtin::Show(_) => todo!("Builtin::Show"),
+		Builtin::Show(x) => show(interpreter.program(), x),
 		Builtin::ShowDzn(_) => todo!("Builtin::ShowDzn"),
 		Builtin::ShowDznId(_) => todo!("Builtin::ShowDznId"),
 		Builtin::ShowCheckerOutput => todo!("Builtin::ShowCheckerOutput"),
 		Builtin::ShowJson(_) => todo!("Builtin::ShowJson"),
+		Builtin::ShowInt { width, value } => show_int(width, value)?,
+		Builtin::ShowFloat {
+			width,
+			precision,
+			value,
+		} => show_float(width, precision, value)?,
 		Builtin::Format { .. } => todo!("Builtin::Format"),
 		Builtin::FormatDefault { .. } => todo!("Builtin::FormatDefault"),
 		Builtin::FormatJustifyString { .. } => todo!("Builtin::FormatJustifyString"),
@@ -506,6 +510,75 @@ fn string_len(x: Value) -> Value {
 	(x.as_str().len() as i64).into()
 }
 
+fn show_value(program: &shackle_ir::Program, x: Value) -> String {
+	match x.deref() {
+		DataView::Int(i) => format!("{}", i),
+		DataView::Float(f) => format!("{}", f),
+		DataView::IntSet(s) => format!("{}", s),
+		DataView::FloatSet(s) => format!("{}", s),
+		DataView::Set(s) => format!(
+			"{{{}}}",
+			s.values()
+				.map(|v| show_value(program, v.clone()))
+				.join(", ")
+		),
+		DataView::Seq(s) => format!(
+			"({})",
+			s.iter().map(|v| show_value(program, v.clone())).join(", ")
+		),
+		DataView::Str(s) => format!("{:?}", s),
+		DataView::Annotation(a) => format!(
+			"{}{}",
+			program.strings[program.annotations[a.annotation].name],
+			if a.arguments.is_empty() {
+				"".to_owned()
+			} else {
+				format!(
+					"({})",
+					a.arguments
+						.iter()
+						.map(|v| show_value(program, v.clone()))
+						.join(", ")
+				)
+			}
+		),
+		DataView::BoolVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::IntVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::FloatVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::IntSetVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+	}
+}
+
+fn show(program: &shackle_ir::Program, x: Value) -> Value {
+	show_value(program, x).as_str().into()
+}
+
+fn justify_number(width: Value, number: String) -> Result<Value, RuntimeErrorKind> {
+	let width: i64 = width.as_int().try_into()?;
+	let padding = usize::try_from(width.unsigned_abs()).map_err(|_| ValueError {
+		reason: "format width is too large",
+	})?;
+	let formatted = if width < 0 {
+		format!("{number:<padding$}")
+	} else {
+		format!("{number:>padding$}")
+	};
+	Ok(formatted.as_str().into())
+}
+
+fn show_int(width: Value, value: Value) -> Result<Value, RuntimeErrorKind> {
+	justify_number(width, value.as_int().to_string())
+}
+
+fn show_float(width: Value, precision: Value, value: Value) -> Result<Value, RuntimeErrorKind> {
+	let precision: i64 = precision.as_int().try_into()?;
+	let precision = usize::try_from(precision).map_err(|_| ValueError {
+		reason: "show_float precision must be non-negative and fit in usize",
+	})?;
+	let value = f64::from(value.as_float());
+	justify_number(width, format!("{value:.precision$}"))
+}
+
 fn string_concat(x: Value, y: Value) -> Value {
 	(&format!("{}{}", x.as_str(), y.as_str())[..]).into()
 }
@@ -591,6 +664,69 @@ fn array_to_discrete_set(x: Value) -> Value {
 
 fn array_xd(source: Value, array: Value) -> Value {
 	array.with_dim(source.as_seq().dims_iter())
+}
+
+/// Infer rectangular index sets and put values in row-major order.
+fn indexed_array(array: Value) -> Result<Value, InvalidIndexSet> {
+	let mut entries = Vec::new();
+	let mut dims: Vec<(i64, i64)> = Vec::new();
+	for entry in array.as_seq().iter() {
+		let pair = entry.as_seq();
+		let mut fields = pair.iter();
+		let index = fields
+			.next()
+			.expect("indexed array entry must have an index");
+		let value = fields
+			.next()
+			.expect("indexed array entry must have a value");
+		let indices: Vec<i64> = match index.deref() {
+			DataView::Seq(indices) => indices
+				.iter()
+				.map(|v| v.as_int().try_into())
+				.collect::<Result<_, _>>(),
+			_ => std::iter::once(index.as_int().try_into()).collect(),
+		}
+		.map_err(|_| InvalidIndexSet {
+			reason: "Infinite index not allowed",
+		})?;
+		if indices.is_empty() || indices.len() > u8::MAX as usize {
+			return Err(InvalidIndexSet {
+				reason: "Invalid number of index dimensions",
+			});
+		}
+		if entries.is_empty() {
+			dims.extend(indices.iter().map(|&i| (i, i)));
+		} else if indices.len() != dims.len() {
+			return Err(InvalidIndexSet {
+				reason: "Indices must have the same number of dimensions",
+			});
+		}
+		for (&index, (min, max)) in indices.iter().zip(&mut dims) {
+			*min = (*min).min(index);
+			*max = (*max).max(index);
+		}
+		entries.push((indices, value.clone()));
+	}
+	if entries.is_empty() {
+		return Ok(Value::from_iter(std::iter::empty::<Value>()));
+	}
+	entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+	if entries.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+		return Err(InvalidIndexSet {
+			reason: "Duplicate index not allowed",
+		});
+	}
+	// Unique points fill the rectangle exactly iff its volume equals their count.
+	// Checked arithmetic also rejects bounds too large for sequence indexing.
+	let count = dims.iter().try_fold(1i64, |count, &(min, max)| {
+		count.checked_mul(max.checked_sub(min)?.checked_add(1)?)
+	});
+	if count.and_then(|n| usize::try_from(n).ok()) != Some(entries.len()) {
+		return Err(InvalidIndexSet {
+			reason: "Indices must form a contiguous rectangular array",
+		});
+	}
+	Ok(Value::from_iter(entries.into_iter().map(|(_, value)| value)).with_dim(dims))
 }
 
 fn array_kd(index_sets: Value, array: Value) -> Result<Value, InvalidIndexSet> {
@@ -742,7 +878,7 @@ fn domain(x: Value) -> Value {
 			return v.domain().unwrap_or_else(|| INT_SET_INF.clone());
 		}
 		DataView::FloatVar(v) => {
-			return v.domain().unwrap_or_else(|| INT_SET_INF.clone());
+			return v.domain().unwrap_or_else(|| FLOAT_SET_INF.clone());
 		}
 		DataView::IntSetVar(v) => {
 			return v.domain().unwrap_or_else(|| INT_SET_INF.clone());
@@ -801,6 +937,144 @@ fn array_slice(array: Value, slices: Value) -> Value {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn indexed_entries(entries: impl IntoIterator<Item = (Value, Value)>) -> Value {
+		Value::from_iter(
+			entries
+				.into_iter()
+				.map(|(index, value)| Value::from_iter([index, value])),
+		)
+	}
+
+	#[test]
+	fn indexed_array_orders_scalar_indices_and_preserves_nested_values() {
+		let nested = Value::from_iter([10, 20].map(Value::from));
+		let entries = indexed_entries([
+			(0.into(), "last".into()),
+			((-2).into(), nested.clone()),
+			((-1).into(), true.into()),
+		]);
+		let result = indexed_array(entries).unwrap();
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(-2, 0)]);
+		assert_eq!(seq[&[-2]], nested);
+		assert_eq!(seq[&[-1]], true.into());
+		assert_eq!(seq[&[0]], "last".into());
+	}
+
+	#[test]
+	fn indexed_array_orders_multidimensional_indices() {
+		for dims in [vec![(-1, 0), (4, 6)], vec![(2, 3), (-2, -1), (7, 8)]] {
+			let expected = Value::from_iter(
+				(1..=dims.iter().map(|(a, b)| b - a + 1).product::<i64>()).map(Value::from),
+			)
+			.with_dim(dims.clone());
+			let seq = expected.as_seq();
+			let mut entries = seq
+				.indices()
+				.map(|index| {
+					let value = seq[&index].clone();
+					(Value::from_iter(index.into_iter().map(Value::from)), value)
+				})
+				.collect::<Vec<_>>();
+			entries.reverse();
+			let result = indexed_array(indexed_entries(entries)).unwrap();
+			assert_eq!(result.as_seq().dims_iter().collect::<Vec<_>>(), dims);
+			assert_eq!(
+				result.as_seq().iter().collect::<Vec<_>>(),
+				seq.iter().collect::<Vec<_>>()
+			);
+		}
+	}
+
+	#[test]
+	fn indexed_array_handles_empty_and_singleton_inputs() {
+		let empty = indexed_array(Value::from_iter(std::iter::empty::<Value>())).unwrap();
+		assert_eq!(empty.as_seq().dim(1), (1, 0));
+		assert_eq!(empty.as_seq().len(), 0);
+		for index in [i64::MIN, i64::MAX] {
+			let result = indexed_array(indexed_entries([(index.into(), 42.into())])).unwrap();
+			assert_eq!(result.as_seq().dim(1), (index, index));
+			assert_eq!(result.as_seq()[&[index]], 42.into());
+		}
+	}
+
+	#[test]
+	fn indexed_array_rejects_gaps_duplicates_and_incomplete_rectangles() {
+		for indices in [
+			vec![1, 3],
+			vec![1, 1],
+			vec![1, 1, 3],
+			vec![i64::MIN, i64::MAX],
+		] {
+			let entries = indexed_entries(indices.into_iter().map(|i| (i.into(), 0.into())));
+			assert!(indexed_array(entries).is_err());
+		}
+		// Each dimension is contiguous, but the Cartesian product is incomplete.
+		let entries = indexed_entries(
+			[(1, 4), (2, 5)].map(|(i, j)| (Value::from_iter([i, j].map(Value::from)), 0.into())),
+		);
+		assert!(indexed_array(entries).is_err());
+	}
+
+	#[test]
+	fn indexed_array_rejects_infinite_and_inconsistent_indices() {
+		let entries = indexed_entries([(IntVal::InfPos.into(), 0.into())]);
+		assert!(indexed_array(entries).is_err());
+		let entries = indexed_entries([
+			(1.into(), 0.into()),
+			(Value::from_iter([1, 2].map(Value::from)), 0.into()),
+		]);
+		assert!(indexed_array(entries).is_err());
+	}
+
+	#[test]
+	fn show_int_justifies_without_truncating() {
+		for (width, value, expected) in [
+			(5, 42, "   42"),
+			(-5, 42, "42   "),
+			(5, -42, "  -42"),
+			(-5, -42, "-42  "),
+			(0, 42, "42"),
+			(1, -42, "-42"),
+			(-1, -42, "-42"),
+			(0, i64::MIN, "-9223372036854775808"),
+		] {
+			assert_eq!(
+				show_int(width.into(), value.into()).unwrap().as_str(),
+				expected,
+			);
+		}
+	}
+
+	#[test]
+	fn show_float_justifies_and_rounds_to_fixed_precision() {
+		for (width, precision, value, expected) in [
+			(8, 2, 1.5, "    1.50"),
+			(-8, 2, -1.5, "-1.50   "),
+			(0, 3, 1.0, "1.000"),
+			(1, 2, 12.375, "12.38"),
+			(-1, 2, 12.375, "12.38"),
+			(0, 0, 1.75, "2"),
+			(0, 2, 9.999, "10.00"),
+			(0, 2, -0.0, "-0.00"),
+		] {
+			assert_eq!(
+				show_float(width.into(), precision.into(), value.into())
+					.unwrap()
+					.as_str(),
+				expected,
+			);
+		}
+	}
+
+	#[test]
+	fn show_float_rejects_negative_precision() {
+		assert!(matches!(
+			show_float(0.into(), (-1).into(), 1.5.into()),
+			Err(RuntimeErrorKind::Value(_)),
+		));
+	}
 
 	#[test]
 	fn array_slices_preserve_selected_values_and_dimensions() {

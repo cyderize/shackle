@@ -300,11 +300,7 @@ impl<'a> Index<&[i64]> for SeqView<'a> {
 					storage,
 				} => {
 					let idx = RESOLVE_DIM(&index, &dims);
-					index = vec![if idx <= repeat + 1 {
-						1
-					} else {
-						idx - repeat + 1
-					}];
+					index = vec![if idx <= repeat + 1 { 1 } else { idx - repeat }];
 					dv = storage.deref();
 				}
 			}
@@ -392,13 +388,13 @@ impl Value {
 			SeqViewInner::Compressed {
 				dims: _,
 				repeat,
-				storage: _,
+				storage,
 			} => Self::new_box(value_storage::Init {
 				ty: ValType::View,
 				ref_count: 1.into(),
 				weak_count: 0.into(),
 				len: ViewType::new(InnerViewType::Compact, (dims.len() / 2) as u8, 0).as_len(),
-				values: MoveFrom([self.clone()]),
+				values: MoveFrom([storage.clone()]),
 				idents: InitEmpty,
 				ints: FromIterPrefix(once(repeat).chain(dims)),
 				floats: InitEmpty,
@@ -778,6 +774,25 @@ mod tests {
 				}
 			}
 		}
+	}
+
+	#[test]
+	fn compressed_sequence_preserves_tail_and_dimensions() {
+		let expected = [1, 1, 1, 1, 2, 3].map(Value::from);
+		let values: Value = expected.iter().cloned().collect();
+		assert_eq!(
+			values.as_seq().iter().cloned().collect::<Vec<_>>(),
+			expected
+		);
+		let reshaped = values.with_dim([(-1, 0), (4, 6)]);
+		let flattened = reshaped.with_dim([(0, 5)]);
+		for array in [&values, &reshaped, &flattened] {
+			let view = array.as_seq();
+			assert_eq!(view.len(), expected.len());
+			assert_eq!(view.iter().cloned().collect::<Vec<_>>(), expected);
+		}
+		assert_eq!(reshaped.as_seq()[&[0, 5]], Value::from(2));
+		assert_eq!(flattened.as_seq()[&[5]], Value::from(3));
 	}
 
 	#[test]

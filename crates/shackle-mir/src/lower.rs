@@ -626,12 +626,12 @@ impl<'a, 'db> Collector<'a, 'db> {
 								generators
 									.generators
 									.push(Generator::Iterator { element: idx });
-								if let Some(w) = &where_clause {
-									let where_value = self
-										.lower_expression(w, &mut generators)
-										.into_value(self, &mut generators);
-									generators.generators.push(Generator::Where(where_value));
-								}
+							}
+							if let Some(w) = &where_clause {
+								let where_value = self
+									.lower_expression(w, &mut generators)
+									.into_value(self, &mut generators);
+								generators.generators.push(Generator::Where(where_value));
 							}
 						}
 					}
@@ -1251,6 +1251,36 @@ mod tests {
 		let actual = format_str(printed, &MiniZincFormatOptions::default()).unwrap();
 		let expected = expect_file!["../tests/lower/fixtures/enum_1.expected.mzn"];
 		expected.assert_eq(&actual);
+	}
+
+	#[test]
+	fn test_mir_where_clause() {
+		let mut db = CompilerDatabase::default();
+		let model_file = InlineModelFile::new(
+			&db,
+			r#"
+			bool: mzn_root = true;
+			test foo(int: x, int: y) = true;
+			any: x = [1 | i, j in {1, 2, 3} where foo(i, j)];
+			"#
+			.to_owned(),
+			InputLang::MiniZinc,
+		)
+		.into();
+		let _ = CompilerSettings::get(&db)
+			.set_ignore_stdlib(&mut db)
+			.to(true);
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let model = final_thir(&db).unwrap();
+		let mir = lower_from_thir(&db, &model);
+		let expected = expect![[r#"
+    function bool: foo(int: x, int: y) :: promise_total = let {
+
+    } in true;
+    bool: mzn_root = true;
+    array [int] of int: x = [1 | _DECL_2 = {1, 2, 3}, i in _DECL_2, j in _DECL_2, _DECL_5 = foo(i, j), _ = 1 where _DECL_5];
+"#]];
+		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}
 
 	#[test]

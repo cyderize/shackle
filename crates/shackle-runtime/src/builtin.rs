@@ -138,7 +138,7 @@ pub fn eval_builtin(
 		Builtin::TraceExp(_) => todo!("Builtin::TraceExp"),
 		Builtin::TraceToSection { .. } => todo!("Builtin::TraceToSection"),
 		Builtin::LogStreamToString => todo!("Builtin::LogStreamToString"),
-		Builtin::CheckDebugMode => todo!("Builtin::CheckDebugMode"),
+		Builtin::CheckDebugMode => false.into(),
 		Builtin::LowerBound(x) => lower_bound(x),
 		Builtin::UpperBound(x) => upper_bound(x),
 		Builtin::LowerBoundArray(x) => lower_bound_array(x),
@@ -604,7 +604,7 @@ fn array_kd(index_sets: Value, array: Value) -> Result<Value, InvalidIndexSet> {
 				reason: "Infinite index set not allowed",
 			});
 		}
-		if !s.is_contiguous() {
+		if !s.is_contiguous() && s.card() != 0.into() {
 			return Err(InvalidIndexSet {
 				reason: "Non-contiguous index set not allowed",
 			});
@@ -784,7 +784,6 @@ fn fix(x: Value) -> Result<Value, ValueError> {
 }
 
 fn array_slice(array: Value, slices: Value) -> Value {
-	let array_seq = array.as_seq();
 	let select_idxs = slices
 		.as_seq()
 		.iter()
@@ -795,12 +794,57 @@ fn array_slice(array: Value, slices: Value) -> Value {
 			(a, b)
 		})
 		.collect::<Vec<_>>();
-	array.slice(select_idxs, [(1, array_seq.len() as i64)])
+	let size = select_idxs.iter().map(|(a, b)| b - a + 1).product::<i64>();
+	array.slice(select_idxs, [(1, size)])
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn array_slices_preserve_selected_values_and_dimensions() {
+		let array: Value = (1..=9).map(Value::from).collect();
+		let array = array.with_dim([(1, 3), (4, 6)]);
+		let set = |lo, hi| Value::from_iter([IntVal::from(lo)..=IntVal::from(hi)]);
+		let slices: Value = [set(2, 3), set(5, 6)].into_iter().collect();
+		let result = array_slice(array.clone(), slices);
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(1, 4)]);
+		assert_eq!(
+			seq.iter().cloned().collect::<Vec<_>>(),
+			[5, 6, 8, 9].map(Value::from)
+		);
+
+		let empty: Value = [set(2, 3), set(1, 0)].into_iter().collect();
+		let result = array_slice(array, empty);
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(1, 0)]);
+		assert_eq!(seq.iter().count(), 0);
+	}
+
+	#[test]
+	fn array_kd_accepts_empty_but_not_discontinuous_index_sets() {
+		let empty: Value = std::iter::empty::<std::ops::RangeInclusive<IntVal>>().collect();
+		let indexes: Value = [empty].into_iter().collect();
+		let values: Value = std::iter::empty::<Value>().collect();
+		let result = array_kd(indexes, values).unwrap();
+		assert_eq!(result.as_seq().dims_iter().collect::<Vec<_>>(), [(1, 0)]);
+		assert_eq!(result.as_seq().len(), 0);
+
+		let non_contiguous: Value = [
+			IntVal::from(1)..=IntVal::from(1),
+			IntVal::from(3)..=IntVal::from(3),
+		]
+		.into_iter()
+		.collect();
+		let indexes: Value = [non_contiguous].into_iter().collect();
+		let values: Value = [Value::from(1), Value::from(2)].into_iter().collect();
+		assert_eq!(
+			array_kd(indexes, values).unwrap_err().reason,
+			"Non-contiguous index set not allowed"
+		);
+	}
 
 	#[test]
 	fn uniform_int_includes_both_bounds() {

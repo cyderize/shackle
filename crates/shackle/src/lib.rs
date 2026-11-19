@@ -6,6 +6,8 @@
 
 mod data;
 mod legacy;
+mod runtime;
+pub use runtime::WriteError;
 mod value;
 
 use std::{
@@ -63,11 +65,14 @@ pub enum CompileTarget {
 	MicroZinc,
 	/// Compile to MiniZinc
 	MiniZinc,
+	/// Compile to NanoZinc.
+	NanoZinc,
 }
 
 /// Structure used to build a shackle model
 pub struct Model {
 	db: CompilerDatabase,
+	target: CompileTarget,
 }
 
 impl Model {
@@ -76,7 +81,10 @@ impl Model {
 		let mut db = CompilerDatabase::default();
 		let model_file = NamedModelFile::new(&db, path).into();
 		InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
-		Model { db }
+		Model {
+			db,
+			target: CompileTarget::MicroZinc,
+		}
 	}
 
 	/// Create a Model from the given string
@@ -84,7 +92,10 @@ impl Model {
 		let mut db = CompilerDatabase::default();
 		let model_file = InlineModelFile::new(&db, m, l).into();
 		InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
-		Model { db }
+		Model {
+			db,
+			target: CompileTarget::MicroZinc,
+		}
 	}
 
 	/// Check whether a model contains any (non-runtime) errors
@@ -105,8 +116,9 @@ impl Model {
 
 	/// Set the compilation target
 	pub fn set_target(&mut self, target: CompileTarget) {
+		self.target = target;
 		match target {
-			CompileTarget::MicroZinc => Transformer::set_transforms(
+			CompileTarget::MicroZinc | CompileTarget::NanoZinc => Transformer::set_transforms(
 				&mut self.db,
 				shackle_thir::transform::DEFAULT_TRANSFORMS.to_vec(),
 			),
@@ -124,6 +136,7 @@ impl Model {
 			input,
 			output,
 			enums,
+			compiler_input,
 		} = ModelIoInterface::new(&self.db);
 		let legacy_enums = enums
 			.values()
@@ -145,16 +158,13 @@ impl Model {
 		}
 		let _ = final_thir(&self.db)?;
 		// The MiniZinc target is the one without transforms (see `set_target`)
-		let target = if Transformer::get_transforms(&self.db).is_empty() {
-			CompileTarget::MiniZinc
-		} else {
-			CompileTarget::MicroZinc
-		};
+		let target = self.target;
 
 		Ok(Program {
 			db: self.db,
 			slv: slv.clone(),
 			input_types: input,
+			compiler_input_types: compiler_input,
 			input_data: FxHashMap::default(),
 			enum_types: enums,
 			legacy_enums,
@@ -192,6 +202,7 @@ pub struct Program {
 
 	// Model instance data
 	input_types: FxHashMap<Arc<str>, Type>,
+	compiler_input_types: FxHashMap<Arc<str>, Type>,
 	input_data: FxHashMap<Arc<str>, Value>,
 	enum_types: FxHashMap<Arc<str>, Arc<Enum>>,
 
@@ -405,8 +416,7 @@ impl Type {
 					opt: OptType::Opt,
 					dim: _,
 					element: _
-				}
-				| Type::Set(OptType::Opt, _)
+				} | Type::Set(OptType::Opt, _)
 				| Type::Tuple(OptType::Opt, _)
 				| Type::Record(OptType::Opt, _)
 		)
@@ -526,7 +536,12 @@ impl Program {
 	}
 
 	/// Output the [`Program`] using the given output interface, using the [`Write`] trait
-	pub fn write<W: Write>(&self, out: &mut W) -> Result<(), std::io::Error> {
+	pub fn write<W: Write>(&self, out: &mut W) -> std::result::Result<(), WriteError> {
+		if self.target == CompileTarget::NanoZinc {
+			let code = self.render_nanozinc()?;
+			out.write_all(code.as_bytes())?;
+			return Ok(());
+		}
 		let code = OldMiniZincPrinter::run(&self.db, self.target == CompileTarget::MiniZinc);
 		let formatted = format_str(
 			&code,
@@ -536,7 +551,8 @@ impl Program {
 			},
 		)
 		.unwrap();
-		out.write_all(formatted.as_bytes())
+		out.write_all(formatted.as_bytes())?;
+		Ok(())
 	}
 
 	/// Add and parse data to be used by the program.
@@ -665,6 +681,7 @@ impl Program {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ModelIoInterface {
 	pub input: FxHashMap<Arc<str>, crate::Type>,
+	pub compiler_input: FxHashMap<Arc<str>, crate::Type>,
 	pub output: FxHashMap<Arc<str>, crate::Type>,
 	pub enums: FxHashMap<Arc<str>, Arc<crate::Enum>>,
 }
@@ -732,15 +749,12 @@ impl ModelIoInterface {
 
 		// Determine input and output from declarations
 		let mut input = FxHashMap::default();
+		let mut compiler_input = FxHashMap::default();
 		let mut output = FxHashMap::default();
 		for (_, decl) in model.all_declarations() {
 			// Determine whether declaration is part of input
 			if decl.top_level() && decl.domain().ty().known_par(db) && decl.definition().is_none() {
 				let name = resolve_name(decl.name().unwrap().0);
-				if name.starts_with("mzn_") {
-					// TODO: Don't add these since compat.mzn maps these to the old compiler parameters
-					continue;
-				}
 				let ty = crate::Type::from_compiler(
 					db,
 					&mut resolve_name,
@@ -748,7 +762,11 @@ impl ModelIoInterface {
 					&enums,
 					decl.domain().ty(),
 				);
-				input.insert(name, ty);
+				if name.starts_with("mzn_") {
+					compiler_input.insert(name, ty);
+				} else {
+					input.insert(name, ty);
+				}
 			}
 
 			// Determine whether declaration is part of output
@@ -783,6 +801,7 @@ impl ModelIoInterface {
 
 		ModelIoInterface {
 			input,
+			compiler_input,
 			output,
 			enums,
 		}

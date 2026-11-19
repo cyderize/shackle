@@ -365,7 +365,7 @@ impl Value {
 			SeqViewInner::Slice {
 				dims: _,
 				slice,
-				storage: _,
+				storage,
 			} => Self::new_box(value_storage::Init {
 				ty: ValType::View,
 				ref_count: 1.into(),
@@ -376,7 +376,7 @@ impl Value {
 					slice.len() as u8,
 				)
 				.as_len(),
-				values: MoveFrom([self.clone()]),
+				values: MoveFrom([storage.clone()]),
 				idents: InitEmpty,
 				ints: FromIterPrefix(
 					dims.into_iter()
@@ -483,7 +483,7 @@ impl Value {
 				.zip(1..=seq.dims())
 				.all(|((start, end), d)| {
 					let (d_start, d_end) = seq.dim(d);
-					d_start <= *start && *end <= d_end
+					start > end || (d_start <= *start && *end <= d_end)
 				}),
 			"slicing index out of bounds"
 		);
@@ -778,5 +778,19 @@ mod tests {
 				}
 			}
 		}
+	}
+
+	#[test]
+	fn slice_can_be_redimensioned_without_losing_its_selection() {
+		let values: Value = (1..=9).map(Value::from).collect();
+		let array = values.with_dim([(1, 3), (1, 3)]);
+		let slice = array.slice([(2, 3), (2, 3)], [(1, 4)]);
+		let reshaped = slice.with_dim([(0, 1), (4, 5)]);
+		let view = reshaped.as_seq();
+		assert_eq!(view.dims_iter().collect::<Vec<_>>(), [(0, 1), (4, 5)]);
+		assert_eq!(
+			view.iter().cloned().collect::<Vec<_>>(),
+			[5, 6, 8, 9].map(Value::from)
+		);
 	}
 }

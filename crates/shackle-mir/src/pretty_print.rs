@@ -348,10 +348,7 @@ impl<'db> PrettyPrinter<'db> {
 							)
 						}
 						Generator::Constraint(c) => {
-							format!(
-								"_ = let {{ constraint {}; }} in 1",
-								self.print_constraint(db, item, c)
-							)
+							format!("_ = let {{ {}; }} in 1", self.print_constraint(db, item, c))
 						}
 						Generator::Where(w) => {
 							format!("_ = 1 where {}", self.print_value(db, item, w))

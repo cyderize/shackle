@@ -426,9 +426,13 @@ impl<'a> Interpreter<'a> {
 				}
 			}
 			Instruction::Constraint {
-				expression: shackle_ir::Expression::Value(_),
+				expression: shackle_ir::Expression::Value(value),
+			} => {
+				if self.eval_value(value) != true.into() {
+					return Err(RuntimeErrorKind::ConstraintFalse);
+				}
 			}
-			| Instruction::Constraint {
+			Instruction::Constraint {
 				expression: shackle_ir::Expression::AnnotationCall(_),
 			}
 			| Instruction::Constraint {
@@ -566,6 +570,10 @@ impl<'a> Interpreter<'a> {
 			Instruction::ReturnRoot => {
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
+				self.stack[frame.return_slot] = true.into();
+				for _ in 0..frame.nanozinc_pending_count {
+					self.nanozinc_mut().pop_pending();
+				}
 				if frame.halt_on_return {
 					self.state = InterpreterState::Paused;
 				}

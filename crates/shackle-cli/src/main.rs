@@ -616,17 +616,26 @@ impl Compile {
 	/// The dispatch method checks the validity of the user input and then call
 	/// the corresponding functions in the modelling libraries.
 	pub fn dispatch(&self) -> Result<()> {
-		let (model, _data) = self.sort_files()?;
-
-		let filename = model.with_extension("shackle.mzn");
+		let (model, data) = self.sort_files()?;
+		if self.target != CompileTargetFlag::NanoZinc && !data.is_empty() {
+			return Err(Report::msg(
+				"data files are only supported for the NanoZinc target",
+			));
+		}
+		let filename = model.with_extension(if self.target == CompileTargetFlag::NanoZinc {
+			"shackle.nzn"
+		} else {
+			"shackle.mzn"
+		});
 
 		let slv = self.solver()?;
 		let mut model = Model::from_file(model);
 		model.set_target(self.target.into());
-		let prg = model.compile(&slv)?;
-
-		let mut file = File::create(filename).into_diagnostic()?;
-		prg.write(&mut file).into_diagnostic()
+		let mut prg = model.compile(&slv)?;
+		prg.add_data_files(data.iter().map(|f| f.deref()))?;
+		let mut output = Vec::new();
+		prg.write(&mut output).into_diagnostic()?;
+		std::fs::write(filename, output).into_diagnostic()
 	}
 }
 
@@ -651,6 +660,9 @@ impl From<BooleanFlag> for bool {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum CompileTargetFlag {
+	/// Compile to NanoZinc
+	#[value(name = "nanozinc", alias("nzn"), alias("nano-zinc"))]
+	NanoZinc,
 	/// Compile to MicroZinc
 	#[value(alias("uzn"), alias("microzinc"))]
 	MicroZinc,
@@ -662,6 +674,7 @@ enum CompileTargetFlag {
 impl From<CompileTargetFlag> for CompileTarget {
 	fn from(value: CompileTargetFlag) -> Self {
 		match value {
+			CompileTargetFlag::NanoZinc => CompileTarget::NanoZinc,
 			CompileTargetFlag::MicroZinc => CompileTarget::MicroZinc,
 			CompileTargetFlag::MiniZinc => CompileTarget::MiniZinc,
 		}

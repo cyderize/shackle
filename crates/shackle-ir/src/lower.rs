@@ -86,12 +86,13 @@ pub fn lower_model(db: &dyn Db, model: &shackle_mir::Model) -> Program {
 				origins: ArenaMap::new(),
 				slots,
 				parameter_slots,
+				temporary_slot_count: slot_count,
 			};
 			collector.lower_let(Destination::Return, body);
 			let f = collector.parent.function_map[idx];
 			collector.parent.functions[f].body = collector.instructions;
 			collector.parent.functions[f].origins = collector.origins;
-			collector.parent.functions[f].slot_count = slot_count as usize;
+			collector.parent.functions[f].slot_count = collector.temporary_slot_count as usize;
 		}
 	}
 
@@ -155,6 +156,7 @@ struct FunctionLowerer<'a, 'db> {
 	function: &'a shackle_mir::Function<'db>,
 	slots: ArenaMap<shackle_mir::Declaration<'db>, SlotId>,
 	parameter_slots: ArenaMap<shackle_mir::Parameter<'db>, SlotId>,
+	temporary_slot_count: u32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -186,9 +188,23 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 			shackle_mir::LetResult::Expression(e) => {
 				self.lower_expression(destination, e);
 			}
-			shackle_mir::LetResult::Root => {
-				let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
-			}
+			shackle_mir::LetResult::Root => match destination {
+				Destination::Return => {
+					let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
+				}
+				Destination::Constraint => {}
+				Destination::Slot(slot) => {
+					let _ = self.add_instruction(
+						Instruction::Assign {
+							slot,
+							expression: Expression::Value(Value::Literal(Literal::Boolean(
+								shackle_hir::BooleanLiteral(true),
+							))),
+						},
+						l.origin,
+					);
+				}
+			},
 		}
 	}
 
@@ -330,6 +346,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 									),
 									self.slots[*element],
 								));
+								last_iteration_idx = first_iteration.unwrap().0;
 							}
 						}
 						shackle_mir::Generator::Assignment { declaration } => {
@@ -356,12 +373,34 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 					comprehension.template.origin,
 				);
 				let (first_idx, first_slot) = first_iteration.unwrap();
-				let _ = self.add_instruction(Instruction::Jump { target: first_idx }, expr.origin);
-				let Destination::Slot(dest) = destination else {
-					unreachable!()
+				let _ = self.add_instruction(
+					Instruction::Jump {
+						target: last_iteration_idx,
+					},
+					expr.origin,
+				);
+				let dest = match destination {
+					Destination::Slot(slot) => slot,
+					Destination::Return => {
+						self.temporary_slot_count += 1;
+						SlotId::Relative(NonZeroU32::new(self.temporary_slot_count).unwrap())
+					}
+					Destination::Constraint => {
+						unreachable!("a comprehension cannot be a constraint")
+					}
 				};
 				let done =
 					self.add_instruction(Instruction::ComprehensionEnd { slot: dest }, expr.origin);
+				if matches!(destination, Destination::Return) {
+					let _ = self.add_instruction(
+						Instruction::Return {
+							expression: Expression::Value(Value::Literal(Literal::Identifier(
+								Identifier::Slot(dest),
+							))),
+						},
+						expr.origin,
+					);
+				}
 				self.instructions[first_idx] = Instruction::IteratorNext {
 					slot: first_slot,
 					done,

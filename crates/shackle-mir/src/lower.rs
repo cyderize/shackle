@@ -1237,6 +1237,23 @@ mod tests {
 	}
 
 	#[test]
+	fn test_mir_enum_1() {
+		let mut db = CompilerDatabase::default();
+		let model_file = NamedModelFile::new(
+			&db,
+			PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/lower/fixtures/enum_1.mzn"),
+		)
+		.into();
+		let _ = InputFiles::get(&db).set_files(&mut db).to(vec![model_file]);
+		let model = final_thir(&db).unwrap();
+		let mir = lower_from_thir(&db, &model);
+		let printed = PrettyPrinter::new(&mir).print_model(&db);
+		let actual = format_str(printed, &MiniZincFormatOptions::default()).unwrap();
+		let expected = expect_file!["../tests/lower/fixtures/enum_1.expected.mzn"];
+		expected.assert_eq(&actual);
+	}
+
+	#[test]
 	fn standard_library_bodyless_functions_are_lowerable() {
 		let mut db = CompilerDatabase::default();
 		let model_file = InlineModelFile::new(&db, String::new(), InputLang::MiniZinc).into();

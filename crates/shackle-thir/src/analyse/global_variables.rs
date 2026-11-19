@@ -7,6 +7,7 @@
 //! - Global variables referred to from output_only expressions
 
 use shackle_hir::{Db, constants::IdentifierRegistry};
+use shackle_utils::hash::Set;
 
 use crate::{DeclarationId, Marker, Model, ResolvedIdentifier, traverse::Visitor};
 
@@ -23,28 +24,29 @@ impl<'db, T: Marker> GlobalVariables<'db, T> {
 	/// Find the global variables
 	pub fn find(db: &'db dyn Db, model: &Model<'db, T>) -> Self {
 		let mut visitor = GlobalVarVisitor {
-			db,
 			referred_variables: Vec::new(),
+			seen: Set::new(),
 		};
+		let mut input_parameters = Vec::new();
+		for (declaration, decl) in model.top_level_declarations() {
+			if decl.definition().is_none() && decl.ty().contains_par(db) {
+				input_parameters.push(declaration);
+				let _ = visitor.seen.insert(declaration);
+			}
+		}
 		for (function, _) in model.all_functions() {
 			visitor.visit_function(model, function);
 		}
 		let ids = IdentifierRegistry::lookup(db);
 		for (idx, declaration) in model.top_level_declarations() {
 			if declaration.annotations().has(model, ids.annotations.output) {
-				visitor.referred_variables.push(idx);
+				visitor.visit_identifier(model, &ResolvedIdentifier::Declaration(idx));
 			}
 			if declaration
 				.annotations()
 				.has(model, ids.annotations.output_only)
 			{
 				visitor.visit_expression(model, declaration.definition().unwrap());
-			}
-		}
-		let mut input_parameters = Vec::new();
-		for (declaration, decl) in model.top_level_declarations() {
-			if decl.definition().is_none() && decl.ty().contains_par(db) {
-				input_parameters.push(declaration);
 			}
 		}
 		Self {
@@ -55,16 +57,18 @@ impl<'db, T: Marker> GlobalVariables<'db, T> {
 }
 
 struct GlobalVarVisitor<'db, T: Marker> {
-	db: &'db dyn Db,
 	referred_variables: Vec<DeclarationId<'db, T>>,
+	seen: Set<DeclarationId<'db, T>>,
 }
 
 impl<'db, T: Marker> Visitor<'_, 'db, T> for GlobalVarVisitor<'db, T> {
 	fn visit_identifier(&mut self, model: &Model<'db, T>, identifier: &ResolvedIdentifier<'db, T>) {
 		if let ResolvedIdentifier::Declaration(d) = identifier {
 			let decl = &model[*d];
-			if decl.top_level() && decl.ty().contains_var(self.db) {
-				self.referred_variables.push(*d);
+			if decl.top_level() {
+				if self.seen.insert(*d) {
+					self.referred_variables.push(*d);
+				}
 			}
 		}
 	}
@@ -126,7 +130,12 @@ mod tests {
 			annotation output_only;
             predicate foo() = let {
                 any: v = x;
+				any: another = x;
+				any: data = y;
             } in true;
+			predicate bar() = let {
+				any: v = w;
+			} in true;
             var int: x;
             var int: z;
             int: y;
@@ -142,6 +151,7 @@ mod tests {
         ],
         referred_variables: [
             "x",
+            "w",
             "p",
             "r",
             "q",

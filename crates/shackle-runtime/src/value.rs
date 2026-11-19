@@ -326,7 +326,7 @@ impl Value {
 							}
 							.into(),
 							InnerViewType::Slice => {
-								let slice_offset = vty.slice() as usize;
+								let slice_offset = 2 * vty.dim() as usize;
 								SeqViewInner::Slice {
 									dims: Pairs::new(&v.refs().ints[..slice_offset]),
 									slice: Pairs::new(&v.refs().ints[slice_offset..]),

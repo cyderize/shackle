@@ -52,7 +52,7 @@ impl IntVar {
 	/// Whether the variable is fixed
 	pub fn is_fixed(&self) -> bool {
 		if let Some(domain) = &self.domain {
-			domain.as_float_set().card() == 1.into()
+			domain.as_int_set().card() == 1.into()
 		} else {
 			false
 		}

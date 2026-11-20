@@ -157,6 +157,18 @@ function var bool: mzn_int_ne_root(var int: x, var int: y) :: promise_total =
 		constraint true;
 		constraint true;
 	} in mzn_root;
+function bool: '<=_root<int, int>'(int: x, int: y) :: promise_total =
+	let {
+		bool: _DECL_2 = '<'(x, y);
+		constraint
+			if _DECL_2 then
+				mzn_root
+			else
+				let {
+					bool: _DECL_1 = '='(x, y);
+				} in if _DECL_1 then mzn_root else let { constraint false } in mzn_root endif
+			endif;
+	} in mzn_root;
 function bool: '<=<int, int>'(int: x, int: y) :: promise_total =
 	let {
 		bool: _DECL_2 = '<'(x, y);
@@ -165,6 +177,43 @@ function bool: '<=<int, int>'(int: x, int: y) :: promise_total =
 	else
 		let { bool: _DECL_1 = '='(x, y) } in if _DECL_1 then true else false endif
 	endif;
+function var bool: '<=_root<int, var int>'(int: x, var int: y) :: promise_total =
+	let {
+		bool: _DECL_1 = is_fixed(y);
+		var bool: _DECL_3 =
+			if _DECL_1 then
+				let {
+					int: _DECL_2 = fix(y);
+					constraint '<=_root<int, int>'(x, _DECL_2) :: mzn_forward_annotations;
+				} in mzn_root
+			else
+				let { constraint mzn_int_le_root(x, y) :: mzn_forward_annotations } in mzn_root
+			endif;
+		constraint mzn_post(_DECL_3);
+	} in mzn_root;
+function var bool: mzn_int_le_root(var int: x, var int: y) :: promise_total =
+	let {
+		constraint int_le(x, y) :: mzn_forward_annotations;
+		constraint true;
+		constraint true;
+	} in mzn_root;
+function var bool: '>=_root<var int, int>'(var int: x, int: y) :: promise_total =
+	let {
+		bool: _DECL_1 = is_fixed(x);
+		var bool: _DECL_3 =
+			if _DECL_1 then
+				let {
+					int: _DECL_2 = fix(x);
+					constraint '<=_root<int, int>'(y, _DECL_2) :: mzn_forward_annotations;
+					constraint true;
+				} in mzn_root
+			else
+				let {
+					constraint '<=_root<int, var int>'(y, x) :: mzn_forward_annotations;
+				} in mzn_root
+			endif;
+		constraint mzn_post(_DECL_3);
+	} in mzn_root;
 function var int: '+<var int, var int>'(var int: x, var int: y) :: promise_total =
 	'sum<array [int] of var int>'([x, y]) :: mzn_forward_annotations;
 function var int: 'sum<array [int] of var int>'(array [int] of var int: x) :: promise_total =
@@ -413,11 +462,13 @@ function var bool: mzn_post_root(var bool: c) :: promise_total =
 function var bool: mzn_post(var bool: c) :: promise_total =
 	let { constraint 'bool_eq<var bool, var bool>'(c, true) :: mzn_forward_annotations } in true;
 function var bool: 'int_eq<var int, var int>'(var int: x, var int: y) :: promise_total;
+function var bool: int_le(var int: x, var int: y) :: promise_total;
 function var bool: int_lin_eq(array [int] of int: as, array [int] of var int: xs, int: y)
 	:: promise_total;
 function var bool: 'int_ne<var int, var int>'(var int: x, var int: y) :: promise_total;
 function var bool: int_div(var int: x, var int: y, var int: z) :: promise_total;
 function var bool: 'bool_eq<var bool, var bool>'(var bool: x, var bool: y) :: promise_total;
+function var bool: set_card(var set of int: s, var int: x) :: promise_total;
 function var int: 'div_root<var int, var int>'(var int: x, var int: y) :: promise_total =
 	let {
 		bool: _DECL_1 = is_fixed(x);
@@ -432,6 +483,22 @@ function var int: 'div_root<var int, var int>'(var int: x, var int: y) :: promis
 	else
 		div_t(x, y) :: mzn_forward_annotations
 	endif;
+function var int: 'card<var set of int>'(var set of int: x) :: promise_total =
+	let {
+		int: _DECL_1 = 0;
+		bool: _DECL_2 = has_ub_set(x);
+		int: _DECL_4 =
+			if _DECL_2 then
+				let { set of int: _DECL_3 = ub(x) } in card(_DECL_3)
+			else
+				infinity
+			endif;
+		set of int: _DECL_5 = range_internal_int(_DECL_1, _DECL_4);
+		var int: c :: promise_total = (
+			let { var _DECL_5: _FRESH_VAR :: is_defined_var } in _FRESH_VAR
+		);
+		constraint set_card(x, c) :: mzn_forward_annotations;
+	} in c;
 function bool: 'occurs<int>'(int: x) :: promise_total = true;
 function bool: 'occurs<opt int>'(tuple(bool, int): x) :: promise_total =
 	if x.1 then 'occurs<int>'(x.2) :: mzn_forward_annotations else x.1 endif;
@@ -508,7 +575,8 @@ tuple(bool, bool): mzn_opt_eager_linear_aggregation;
 tuple(bool, bool): mzn_half_reify_clause;
 bool: mzn_root;
 var int: x :: output;
-var int: _GLOBAL_13;
+var set of int: y :: output;
+var int: _GLOBAL_14;
 ann: domain_propagation = domain;
 mzn_root = true;
 ann: bounds_propagation = bounds;
@@ -579,5 +647,11 @@ set of int: _DECL_37 = range_internal_int(_DECL_35, _DECL_36);
 x = (let { var _DECL_37: _FRESH_VAR } in _FRESH_VAR);
 var int: _DECL_38 = foo_root(x);
 constraint '=_root<var int, var int>'(x, _DECL_38);
-_GLOBAL_13 = '+<var int, var int>'(x, 2);
-constraint mzn_solve_maximize([], _GLOBAL_13);
+int: _DECL_39 = 1;
+int: _DECL_40 = 3;
+set of int: _DECL_41 = range_internal_int(_DECL_39, _DECL_40);
+y = (let { var set of _DECL_41: _FRESH_VAR } in _FRESH_VAR);
+var int: _DECL_42 = 'card<var set of int>'(y);
+constraint '>=_root<var int, int>'(_DECL_42, 1);
+_GLOBAL_14 = '+<var int, var int>'(x, 2);
+constraint mzn_solve_maximize([], _GLOBAL_14);

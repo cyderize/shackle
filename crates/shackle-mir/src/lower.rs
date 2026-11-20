@@ -344,12 +344,17 @@ impl<'a, 'db> Collector<'a, 'db> {
 				Expression::new(
 					FreshVariable::VarSetOfInt {
 						domain: Box::new(match &**self.model[declaration].domain() {
-							shackle_thir::DomainData::Bounded(b) => self
-								.lower_expression(b, destination)
-								.into_value(self, destination),
-							shackle_thir::DomainData::Unbounded => {
-								Value::new(LiteralData::InfiniteIntSet, self.tys.set_of_int, origin)
-							}
+							shackle_thir::DomainData::Set(elem, None) => match &***elem {
+								shackle_thir::DomainData::Bounded(b) => self
+									.lower_expression(b, destination)
+									.into_value(self, destination),
+								shackle_thir::DomainData::Unbounded => Value::new(
+									LiteralData::InfiniteIntSet,
+									self.tys.set_of_int,
+									origin,
+								),
+								_ => unreachable!(),
+							},
 							_ => unreachable!(),
 						}),
 						is_defined: self.is_promise_total,

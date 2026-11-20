@@ -313,11 +313,18 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 	) -> FunctionId<'db, Dst> {
 		let ff = &model[f];
 		let mut function = Function::new(name, Domain::unbounded(db, ff.origin(), return_type));
-		function.annotations_mut().extend(
-			ff.annotations()
-				.iter()
-				.map(|ann| self.fold_expression(db, model, ann)),
-		);
+		let remove_promise_total = name.is_root(db) && self.is_boolean_ty(return_type);
+		function
+			.annotations_mut()
+			.extend(ff.annotations().iter().filter_map(|ann| {
+				if remove_promise_total
+					&& let ExpressionData::Identifier(ResolvedIdentifier::Annotation(ann)) = &**ann
+					&& model[*ann].name.unwrap() == self.ids.annotations.promise_total
+				{
+					return None;
+				}
+				Some(self.fold_expression(db, model, ann))
+			}));
 		function.set_parameters(ff.parameters().iter().map(|p| {
 			self.add_parameter_declaration(db, model, *p);
 			self.fold_declaration_id(db, model, *p)
@@ -2342,7 +2349,7 @@ mod tests {
 			expect!([r#"
     bool: mzn_root = true;
     annotation promise_total;
-    function bool: foo_root(int: x) :: (promise_total) = let {
+    function bool: foo_root(int: x) = let {
       constraint false;
     } in mzn_root;
     function bool: foo(int: x) :: (promise_total) = false;
@@ -2526,7 +2533,7 @@ mod tests {
     function var bool: foo(var int: x) = if false then let {
       var bool: _DECL_12 = bar(x);
     } in _DECL_12 else foo_t(x) endif;
-    function var bool: foo_t_root(var int: x) :: (promise_total) = let {
+    function var bool: foo_t_root(var int: x) = let {
       constraint let {
       var bool: b :: (promise_total);
       constraint bar_reif(x, b);

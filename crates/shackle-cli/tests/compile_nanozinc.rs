@@ -250,3 +250,78 @@ fn compile_promise_total_boolean_preserves_parameter_result() {
 		assert!(output.contains("solve satisfy;"), "{output}");
 	}
 }
+
+#[test]
+fn compile_promise_total_predicate_in_root_context() {
+	let output = compile_nanozinc_source(
+		"predicate foo(var bool: x) :: promise_total =
+			let { var bool: y; constraint y <-> x; } in y;
+		var bool: x; constraint foo(x); solve satisfy;",
+		"{}",
+	);
+	// The root call must retain both the local definition and the assertion of its result.
+	assert!(
+		output.contains("(_X_INTRODUCED_1, _X_INTRODUCED_0);"),
+		"{output}"
+	);
+	assert!(output.contains("(_X_INTRODUCED_1, 1);"), "{output}");
+	assert!(output.contains("solve satisfy;"), "{output}");
+}
+
+#[test]
+fn compile_nested_promise_total_predicates_preserves_value_definitions() {
+	let output = compile_nanozinc_source(
+		"predicate identity(var bool: x) :: promise_total =
+			let { var bool: y; constraint y <-> x; } in y;
+		predicate outer(var bool: x) :: promise_total =
+			let { var bool: z; constraint z <-> identity(x); } in z;
+		var bool: x; var bool: r = identity(x);
+		constraint outer(x); constraint r; solve satisfy;",
+		"{}",
+	);
+	// Root assertions remain posted while nested value calls keep their defining group.
+	assert!(output.contains("% defined by group"), "{output}");
+	assert!(
+		output.contains("(_X_INTRODUCED_3, _X_INTRODUCED_0);"),
+		"{output}"
+	);
+	assert!(
+		output.contains("(_X_INTRODUCED_2, _X_INTRODUCED_3);"),
+		"{output}"
+	);
+	assert!(output.contains("(_X_INTRODUCED_2, 1);"), "{output}");
+	assert!(output.contains("solve satisfy;"), "{output}");
+}
+
+#[test]
+fn compile_variable_boolean_conditional_in_root_context() {
+	let output = compile_nanozinc_source(
+		"var bool: b; var bool: x; var bool: y;
+		constraint if b then x else y endif; solve satisfy;",
+		"{}",
+	);
+	// The helper decomposes into guarded clauses, and its selected result is asserted.
+	assert_eq!(
+		output.matches("constraint bool_clause(").count(),
+		2,
+		"{output}"
+	);
+	assert!(output.contains("(_X_INTRODUCED_3, 1);"), "{output}");
+	assert!(output.contains("solve satisfy;"), "{output}");
+}
+
+#[test]
+fn compile_variable_tuple_conditional_preserves_false_boolean_field() {
+	let output = compile_nanozinc_source(
+		"var bool: b;
+		any: t = if b then (false, 1) else (false, 2) endif;
+		constraint not t.1; solve satisfy;",
+		"{}",
+	);
+	// Both branches return false in the first field, so its negation must be satisfiable.
+	assert!(
+		!output.contains("constraint bool_clause([], [1]);"),
+		"{output}"
+	);
+	assert!(output.contains("solve satisfy;"), "{output}");
+}

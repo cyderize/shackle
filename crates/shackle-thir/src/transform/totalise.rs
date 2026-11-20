@@ -1095,8 +1095,28 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				);
 				items.push(LetItem::Declaration(conditions_idx));
 
-				let in_expression =
-					self.decompose_tuple_ite(db, ty, origin, conditions_e, result_idents);
+				let mut in_expression = self.decompose_tuple_ite(
+					db,
+					model,
+					ty,
+					is_root,
+					origin,
+					conditions_e,
+					result_idents,
+				);
+				if is_root && self.is_boolean_ty(ty) {
+					let constraint = Constraint::new(false, in_expression);
+					let c = self
+						.totalised_model
+						.add_constraint(Item::new(constraint, origin));
+					items.push(LetItem::Constraint(c));
+					in_expression = Expression::new(
+						db,
+						&self.totalised_model,
+						origin,
+						LookupIdentifier(self.ids.names.root),
+					);
+				}
 				result = Expression::new(
 					db,
 					&self.totalised_model,
@@ -1157,7 +1177,9 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 	fn decompose_tuple_ite(
 		&mut self,
 		db: &'db dyn Db,
+		model: &Model<'db>,
 		ty: Ty<'db>,
+		is_root: bool,
 		origin: Origin<'db>,
 		conditions: Expression<'db, Dst>,
 		results: Vec<Expression<'db, Dst>>,
@@ -1176,7 +1198,9 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					maybe_grow_stack(|| {
 						self.decompose_tuple_ite(
 							db,
+							model,
 							inner_ty,
+							is_root && !self.is_boolean_ty(inner_ty),
 							origin,
 							conditions.clone(),
 							inner_results,
@@ -1187,17 +1211,13 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			return Expression::new(db, &self.totalised_model, origin, TupleLiteral(fields));
 		}
 
-		Expression::new(
+		self.ite_call(
 			db,
-			&self.totalised_model,
+			model,
 			origin,
-			LookupCall {
-				function: self.ids.functions.if_then_else.into(),
-				arguments: vec![
-					conditions,
-					Expression::new(db, &self.totalised_model, origin, ArrayLiteral(results)),
-				],
-			},
+			is_root,
+			conditions,
+			Expression::new(db, &self.totalised_model, origin, ArrayLiteral(results)),
 		)
 	}
 
@@ -1516,35 +1536,26 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 					else_result: Box::new(def_ident),
 				},
 			),
-			(true, false) => Expression::new(
+			(true, false) => self.ite_call(
 				db,
-				&self.totalised_model,
+				model,
 				origin,
-				LookupCall {
-					function: self.ids.functions.if_then_else.into(),
-					arguments: vec![
-						Expression::new(
-							db,
-							&self.totalised_model,
-							origin,
-							ArrayLiteral(vec![
-								val_defined,
-								Expression::new(
-									db,
-									&self.totalised_model,
-									origin,
-									BooleanLiteral(true),
-								),
-							]),
-						),
-						Expression::new(
-							db,
-							&self.totalised_model,
-							origin,
-							ArrayLiteral(vec![val_value, def_ident]),
-						),
-					],
-				},
+				self.get_mode(e).is_root(),
+				Expression::new(
+					db,
+					&self.totalised_model,
+					origin,
+					ArrayLiteral(vec![
+						val_defined,
+						Expression::new(db, &self.totalised_model, origin, BooleanLiteral(true)),
+					]),
+				),
+				Expression::new(
+					db,
+					&self.totalised_model,
+					origin,
+					ArrayLiteral(vec![val_value, def_ident]),
+				),
 			),
 			// RHS is partial and condition is par bool
 			(false, true) => {
@@ -1584,35 +1595,31 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 				let def_defined = self.tuple_access(db, val.origin(), def_ident.clone(), 1);
 				let def_value = self.tuple_access(db, val.origin(), def_ident, 2);
 
-				let ite = Expression::new(
+				let ite = self.ite_call(
 					db,
-					&self.totalised_model,
+					model,
 					origin,
-					LookupCall {
-						function: self.ids.functions.if_then_else.into(),
-						arguments: vec![
+					self.get_mode(e).is_root(),
+					Expression::new(
+						db,
+						&self.totalised_model,
+						origin,
+						ArrayLiteral(vec![
+							val_defined.clone(),
 							Expression::new(
 								db,
 								&self.totalised_model,
 								origin,
-								ArrayLiteral(vec![
-									val_defined.clone(),
-									Expression::new(
-										db,
-										&self.totalised_model,
-										origin,
-										BooleanLiteral(true),
-									),
-								]),
+								BooleanLiteral(true),
 							),
-							Expression::new(
-								db,
-								&self.totalised_model,
-								origin,
-								ArrayLiteral(vec![val_value, def_value]),
-							),
-						],
-					},
+						]),
+					),
+					Expression::new(
+						db,
+						&self.totalised_model,
+						origin,
+						ArrayLiteral(vec![val_value, def_value]),
+					),
 				);
 
 				let defined = self.exists_call(
@@ -1965,6 +1972,45 @@ impl<'a, 'db, Dst: Marker> Totaliser<'a, 'db, Dst> {
 			LookupCall {
 				function: self.ids.functions.exists.into(),
 				arguments: vec![arg],
+			},
+		)
+	}
+
+	fn ite_call(
+		&self,
+		db: &'db dyn Db,
+		model: &Model<'db>,
+		origin: Origin<'db>,
+		is_root: bool,
+		conditions: Expression<'db, Dst>,
+		results: Expression<'db, Dst>,
+	) -> Expression<'db, Dst> {
+		let f = model
+			.lookup_function(
+				db,
+				self.ids.functions.if_then_else.into(),
+				&[conditions.ty(), results.ty()],
+			)
+			.unwrap()
+			.function;
+		if is_root && let Some(idx) = self.root_fn_map.get(&f) {
+			return Expression::new(
+				db,
+				&self.totalised_model,
+				origin,
+				Call {
+					function: Callable::Function(*idx),
+					arguments: vec![conditions, results],
+				},
+			);
+		}
+		Expression::new(
+			db,
+			&self.totalised_model,
+			origin,
+			LookupCall {
+				function: self.ids.functions.if_then_else.into(),
+				arguments: vec![conditions, results],
 			},
 		)
 	}
@@ -2623,6 +2669,78 @@ mod tests {
     constraint if b then let {
       constraint foo(x);
     } in mzn_root else mzn_root endif;
+    solve satisfy;
+"#]),
+		)
+	}
+
+	#[test]
+	fn test_if_then_else_root() {
+		check_no_stdlib(
+			Transform::Totalise,
+			r#"
+				annotation promise_total;
+				bool: mzn_root = true;
+				test abort(string: msg);
+				predicate fzn_if_then_else_var_bool(array [int] of var bool: c, array [int] of var bool: x, var bool: y);
+				predicate fzn_if_then_else_var_int(array [int] of var bool: c, array [int] of var int: x, var int: y);
+				function var bool: if_then_else(array [int] of var bool: c, array [int] of var bool: x) :: promise_total =
+					let {
+						var bool: y;
+						constraint fzn_if_then_else_var_bool(c, x, y);
+					} in y;
+				function var int: if_then_else(array [int] of var bool: c, array [int] of var int: x) :: promise_total =
+					let {
+						var int: y;
+						constraint fzn_if_then_else_var_int(c, x, y);
+					} in y;
+				var bool: b;
+				var bool: x;
+				var bool: y;
+				constraint if b then x else y endif;
+				var int: p;
+				var int: q;
+				any: r = if b then p else q endif;
+			"#,
+			expect!([r#"
+    annotation promise_total;
+    bool: mzn_root = true;
+    function bool: abort(string: msg);
+    function var bool: fzn_if_then_else_var_bool_reif(array [int] of var bool: c, array [int] of var bool: x, var bool: y, var bool: _DECL_6) = abort("fzn_if_then_else_var_bool_reif required, but not supported by solver.");
+    predicate fzn_if_then_else_var_bool(array [int] of var bool: c, array [int] of var bool: x, var bool: y);
+    function var bool: fzn_if_then_else_var_int_reif(array [int] of var bool: c, array [int] of var int: x, var int: y, var bool: _DECL_13) = abort("fzn_if_then_else_var_int_reif required, but not supported by solver.");
+    predicate fzn_if_then_else_var_int(array [int] of var bool: c, array [int] of var int: x, var int: y);
+    function var bool: if_then_else_root(array [int] of var bool: c, array [int] of var bool: x) = let {
+      constraint let {
+      var bool: y :: (promise_total);
+      constraint fzn_if_then_else_var_bool(c, x, y);
+      constraint y;
+    } in mzn_root;
+    } in mzn_root;
+    function var bool: if_then_else(array [int] of var bool: c, array [int] of var bool: x) :: (promise_total) = let {
+      var bool: y :: (promise_total);
+      constraint fzn_if_then_else_var_bool(c, x, y);
+    } in y;
+    function var int: if_then_else(array [int] of var bool: c, array [int] of var int: x) :: (promise_total) = let {
+      var int: y :: (promise_total);
+      constraint fzn_if_then_else_var_int(c, x, y);
+    } in y;
+    var bool: b;
+    var bool: x;
+    var bool: y;
+    constraint let {
+      var bool: _DECL_26 = x;
+      var bool: _DECL_27 = y;
+      array [int] of var bool: _DECL_28 = [b, true];
+      constraint if_then_else_root(_DECL_28, [_DECL_26, _DECL_27]);
+    } in mzn_root;
+    var int: p;
+    var int: q;
+    var int: r = let {
+      var int: _DECL_31 = p;
+      var int: _DECL_32 = q;
+      array [int] of var bool: _DECL_33 = [b, true];
+    } in if_then_else(_DECL_33, [_DECL_31, _DECL_32]);
     solve satisfy;
 "#]),
 		)

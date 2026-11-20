@@ -147,3 +147,106 @@ fn compile_model_and_data_defined_enums() {
 		assert!(output.contains("solve satisfy;"), "{output}");
 	}
 }
+
+fn compile_nanozinc_source(source: &str, data: &str) -> String {
+	let dir = tempfile::tempdir().unwrap();
+	let model = dir.path().join("model.mzn");
+	let input = dir.path().join("data.json");
+	fs::write(&model, source).unwrap();
+	fs::write(&input, data).unwrap();
+	let result = Command::new(env!("CARGO_BIN_EXE_shackle"))
+		.args(["compile", "--target", "nzn"])
+		.arg(&model)
+		.arg(&input)
+		.output()
+		.unwrap();
+	assert!(
+		result.status.success(),
+		"{source}\nData: {data}\n{}",
+		String::from_utf8_lossy(&result.stderr)
+	);
+	fs::read_to_string(model.with_extension("shackle.nzn")).unwrap()
+}
+
+#[test]
+fn compile_root_predicates_in_parameter_conditionals() {
+	let source = r#"
+		predicate foo(var int: x);
+		predicate bar(var int: x) = if enabled then foo(x) else true endif;
+		bool: enabled;
+		var int: x;
+		constraint bar(x);
+		constraint if enabled then
+			if enabled then foo(x) else abort("inactive branch") endif
+		else true endif;
+		solve satisfy;
+	"#;
+	for enabled in [false, true] {
+		let output = compile_nanozinc_source(source, &format!(r#"{{"enabled":{enabled}}}"#));
+		assert_eq!(
+			output.matches("constraint foo(").count(),
+			if enabled { 2 } else { 0 },
+			"{output}"
+		);
+		assert!(output.contains("solve satisfy;"), "{output}");
+	}
+}
+
+#[test]
+fn compile_root_predicates_in_forall_collections() {
+	for collection in ["[foo(x[1]), foo(x[2])]", "[foo(x[i]) | i in 1..2]"] {
+		let output = compile_nanozinc_source(
+			&format!(
+				"predicate foo(var int: x); array[1..2] of var int: x;
+				constraint forall({collection}); solve satisfy;"
+			),
+			"{}",
+		);
+		assert!(
+			output.contains("constraint foo(_X_INTRODUCED_0);"),
+			"{output}"
+		);
+		assert!(
+			output.contains("constraint foo(_X_INTRODUCED_1);"),
+			"{output}"
+		);
+		assert_eq!(output.matches("constraint foo(").count(), 2, "{output}");
+	}
+}
+
+#[test]
+fn compile_variable_array_index() {
+	let output = compile_nanozinc_source(
+		"array[1..2] of var 1..3: x; var 1..2: i;
+		var int: y = x[i]; solve minimize y;",
+		"{}",
+	);
+	assert!(
+		output.contains("constraint array_var_int_element"),
+		"{output}"
+	);
+	assert!(output.contains("solve minimize "), "{output}");
+}
+
+#[test]
+fn compile_promise_total_boolean_returning_false() {
+	// A total boolean function may return false without making the model inconsistent.
+	let output = compile_nanozinc_source(
+		"test foo(int: x) :: promise_total = false;
+		constraint not foo(1); solve satisfy;",
+		"{}",
+	);
+	assert!(output.contains("solve satisfy;"), "{output}");
+}
+
+#[test]
+fn compile_promise_total_boolean_preserves_parameter_result() {
+	// Branch results must remain values when the function is used outside root context.
+	let source = "test foo(int: x) :: promise_total = if x > 0 then true else false endif;
+		int: n; bool: expected; constraint foo(n) = expected; solve satisfy;";
+	for (n, expected) in [(-1, false), (1, true)] {
+		let output =
+			compile_nanozinc_source(source, &format!(r#"{{"n":{n},"expected":{expected}}}"#));
+		assert!(output.contains("solve satisfy;"), "{output}");
+	}
+}

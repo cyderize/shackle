@@ -32,6 +32,7 @@ function int: 'div_root<int, int>'(int: x, int: y) :: promise_total =
 				let {
 					constraint mzn_add_warning("division by zero is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in div_internal_int(x, y);
@@ -45,6 +46,7 @@ function int: 'mod_root<int, int>'(int: x, int: y) :: promise_total =
 				let {
 					constraint mzn_add_warning("modulus by zero is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in mod_internal(x, y) :: mzn_forward_annotations;
@@ -63,6 +65,7 @@ function int: 'min_root<set of int>'(
 				let {
 					constraint mzn_add_warning("minimum of an empty set is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in 'min_internal_set<set of int>'(s) :: mzn_forward_annotations;
@@ -81,6 +84,7 @@ function int: 'max_root<set of int>'(
 				let {
 					constraint mzn_add_warning("maximum of an empty set is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in 'max_internal_set<set of int>'(s) :: mzn_forward_annotations;
@@ -102,6 +106,7 @@ function var bool: '=_root<var int, var int>'(var int: x, var int: y) :: promise
 				let {
 					int: _DECL_4 = fix(y);
 					constraint mzn_int_eq_root(x, _DECL_4) :: mzn_forward_annotations;
+					constraint true;
 				} in mzn_root
 			else
 				let {
@@ -111,9 +116,10 @@ function var bool: '=_root<var int, var int>'(var int: x, var int: y) :: promise
 					let {
 						int: _DECL_2 = fix(x);
 						constraint mzn_int_eq_root(_DECL_2, y) :: mzn_forward_annotations;
+						constraint true;
 					} in mzn_root
 				else
-					mzn_int_eq_root(x, y) :: mzn_forward_annotations
+					let { constraint mzn_int_eq_root(x, y) :: mzn_forward_annotations } in mzn_root
 				endif
 			endif;
 		constraint mzn_post(_DECL_5);
@@ -122,14 +128,12 @@ function var bool: mzn_int_eq_root(var int: x, var int: y) :: promise_total =
 	let {
 		constraint 'int_eq<var int, var int>'(x, y) :: mzn_forward_annotations;
 		constraint true;
-		var bool: _DECL_1 = true;
-		constraint mzn_post(_DECL_1);
+		constraint true;
 	} in mzn_root;
 function bool: '!=_root<int, int>'(int: x, int: y) :: promise_total =
 	let {
 		bool: _DECL_1 = '='(x, y);
-		bool: _DECL_2 = if _DECL_1 then false else mzn_root endif;
-		constraint _DECL_2;
+		constraint if _DECL_1 then let { constraint false } in mzn_root else mzn_root endif;
 	} in mzn_root;
 function bool: '!=<int, int>'(int: x, int: y) :: promise_total =
 	let { bool: _DECL_1 = '='(x, y) } in if _DECL_1 then false else true endif;
@@ -140,9 +144,10 @@ function var bool: '!=_root<var int, int>'(var int: x, int: y) :: promise_total 
 			if _DECL_1 then
 				let {
 					int: _DECL_2 = fix(x);
-				} in '!=_root<int, int>'(_DECL_2, y) :: mzn_forward_annotations
+					constraint '!=_root<int, int>'(_DECL_2, y) :: mzn_forward_annotations;
+				} in mzn_root
 			else
-				mzn_int_ne_root(x, y) :: mzn_forward_annotations
+				let { constraint mzn_int_ne_root(x, y) :: mzn_forward_annotations } in mzn_root
 			endif;
 		constraint mzn_post(_DECL_3);
 	} in mzn_root;
@@ -150,8 +155,7 @@ function var bool: mzn_int_ne_root(var int: x, var int: y) :: promise_total =
 	let {
 		constraint 'int_ne<var int, var int>'(x, y) :: mzn_forward_annotations;
 		constraint true;
-		var bool: _DECL_1 = true;
-		constraint mzn_post(_DECL_1);
+		constraint true;
 	} in mzn_root;
 function bool: '<=<int, int>'(int: x, int: y) :: promise_total =
 	let {
@@ -405,8 +409,6 @@ function var bool: mzn_post_root(var bool: c) :: promise_total =
 	let {
 		constraint 'bool_eq<var bool, var bool>'(c, true) :: mzn_forward_annotations;
 		constraint true;
-		var bool: _DECL_1 = true;
-		constraint mzn_post(_DECL_1);
 	} in mzn_root;
 function var bool: mzn_post(var bool: c) :: promise_total =
 	let { constraint 'bool_eq<var bool, var bool>'(c, true) :: mzn_forward_annotations } in true;
@@ -504,75 +506,78 @@ tuple(bool, bool): mzn_ignore_symmetry_breaking_constraints;
 tuple(bool, bool): mzn_ignore_redundant_constraints;
 tuple(bool, bool): mzn_opt_eager_linear_aggregation;
 tuple(bool, bool): mzn_half_reify_clause;
+bool: mzn_root;
 var int: x :: output;
-var int: _GLOBAL_12;
+var int: _GLOBAL_13;
 ann: domain_propagation = domain;
-bool: mzn_root = true;
+mzn_root = true;
 ann: bounds_propagation = bounds;
-bool: _DECL_16 = 'absent<opt int>'(mzn_min_version_required);
-bool: _DECL_17 =
+bool: _DECL_15 = 'absent<opt int>'(mzn_min_version_required);
+bool: _DECL_16 =
+	if _DECL_15 then
+		true
+	else
+		let {
+			tuple(bool, int): _DECL_10 = 'deopt<opt int>'(mzn_min_version_required);
+			bool: _DECL_11 = _DECL_10.1;
+			int: _DECL_12 = mzn_compiler_version();
+			bool: _DECL_13 = '<=<int, int>'(_DECL_10.2, _DECL_12);
+			bool: _DECL_14 = 'forall<array [int] of bool>'([_DECL_11, _DECL_13]);
+		} in if _DECL_14 then true else false endif
+	endif;
+constraint
 	if _DECL_16 then
-		true
-	else
-		let {
-			tuple(bool, int): _DECL_11 = 'deopt<opt int>'(mzn_min_version_required);
-			bool: _DECL_12 = _DECL_11.1;
-			int: _DECL_13 = mzn_compiler_version();
-			bool: _DECL_14 = '<=<int, int>'(_DECL_11.2, _DECL_13);
-			bool: _DECL_15 = 'forall<array [int] of bool>'([_DECL_12, _DECL_14]);
-		} in if _DECL_15 then true else false endif
-	endif;
-constraint
-	if _DECL_17 then
 		mzn_root
 	else
 		let {
-			int: _DECL_4 = 'deopt_root<opt int>'(mzn_min_version_required);
-			string: _DECL_5 = mzn_version_to_string_root(_DECL_4);
-			string: _DECL_6 = '++'("This model requires MiniZinc version ", _DECL_5);
-			string: _DECL_7 = '++'(_DECL_6, " but you are running version ");
-			int: _DECL_8 = mzn_compiler_version();
-			string: _DECL_9 = mzn_version_to_string_root(_DECL_8);
-			string: _DECL_10 = '++'(_DECL_7, _DECL_9);
-		} in abort(_DECL_10)
+			int: _DECL_3 = 'deopt_root<opt int>'(mzn_min_version_required);
+			string: _DECL_4 = mzn_version_to_string_root(_DECL_3);
+			string: _DECL_5 = '++'("This model requires MiniZinc version ", _DECL_4);
+			string: _DECL_6 = '++'(_DECL_5, " but you are running version ");
+			int: _DECL_7 = mzn_compiler_version();
+			string: _DECL_8 = mzn_version_to_string_root(_DECL_7);
+			string: _DECL_9 = '++'(_DECL_6, _DECL_8);
+			constraint abort(_DECL_9);
+		} in mzn_root
 	endif;
-bool: _DECL_31 = 'absent<opt int>'(mzn_max_version_required);
-bool: _DECL_32 =
+bool: _DECL_30 = 'absent<opt int>'(mzn_max_version_required);
+bool: _DECL_31 =
+	if _DECL_30 then
+		true
+	else
+		let {
+			tuple(bool, int): _DECL_24 = 'deopt<opt int>'(mzn_max_version_required);
+			int: _DECL_25 = _DECL_24.2;
+			int: _DECL_26 = mzn_compiler_version();
+			bool: _DECL_27 = _DECL_24.1;
+			bool: _DECL_28 = '<=<int, int>'(_DECL_26, _DECL_25);
+			bool: _DECL_29 = 'forall<array [int] of bool>'([_DECL_27, _DECL_28]);
+		} in if _DECL_29 then true else false endif
+	endif;
+constraint
 	if _DECL_31 then
-		true
-	else
-		let {
-			tuple(bool, int): _DECL_25 = 'deopt<opt int>'(mzn_max_version_required);
-			int: _DECL_26 = _DECL_25.2;
-			int: _DECL_27 = mzn_compiler_version();
-			bool: _DECL_28 = _DECL_25.1;
-			bool: _DECL_29 = '<=<int, int>'(_DECL_27, _DECL_26);
-			bool: _DECL_30 = 'forall<array [int] of bool>'([_DECL_28, _DECL_29]);
-		} in if _DECL_30 then true else false endif
-	endif;
-constraint
-	if _DECL_32 then
 		mzn_root
 	else
 		let {
-			int: _DECL_18 = 'deopt_root<opt int>'(mzn_max_version_required);
-			string: _DECL_19 = mzn_version_to_string_root(_DECL_18);
-			string: _DECL_20 = '++'("This model only works with MiniZinc up to version ", _DECL_19);
-			string: _DECL_21 = '++'(_DECL_20, " but you are running version ");
-			int: _DECL_22 = mzn_compiler_version();
-			string: _DECL_23 = mzn_version_to_string_root(_DECL_22);
-			string: _DECL_24 = '++'(_DECL_21, _DECL_23);
-		} in abort(_DECL_24)
+			int: _DECL_17 = 'deopt_root<opt int>'(mzn_max_version_required);
+			string: _DECL_18 = mzn_version_to_string_root(_DECL_17);
+			string: _DECL_19 = '++'("This model only works with MiniZinc up to version ", _DECL_18);
+			string: _DECL_20 = '++'(_DECL_19, " but you are running version ");
+			int: _DECL_21 = mzn_compiler_version();
+			string: _DECL_22 = mzn_version_to_string_root(_DECL_21);
+			string: _DECL_23 = '++'(_DECL_20, _DECL_22);
+			constraint abort(_DECL_23);
+		} in mzn_root
 	endif;
 bool: debug_mode = mzn_internal_check_debug_mode();
 var bool: p = true;
 constraint mzn_post(p);
 var bool: q = true;
-int: _DECL_36 = 1;
-int: _DECL_37 = 3;
-set of int: _DECL_38 = range_internal_int(_DECL_36, _DECL_37);
-x = (let { var _DECL_38: _FRESH_VAR } in _FRESH_VAR);
-var int: _DECL_39 = foo_root(x);
-constraint '=_root<var int, var int>'(x, _DECL_39);
-_GLOBAL_12 = '+<var int, var int>'(x, 2);
-constraint mzn_solve_maximize([], _GLOBAL_12);
+int: _DECL_35 = 1;
+int: _DECL_36 = 3;
+set of int: _DECL_37 = range_internal_int(_DECL_35, _DECL_36);
+x = (let { var _DECL_37: _FRESH_VAR } in _FRESH_VAR);
+var int: _DECL_38 = foo_root(x);
+constraint '=_root<var int, var int>'(x, _DECL_38);
+_GLOBAL_13 = '+<var int, var int>'(x, 2);
+constraint mzn_solve_maximize([], _GLOBAL_13);

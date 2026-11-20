@@ -1208,11 +1208,11 @@ mod tests {
     } in abort("mzn_post_reif required, but not supported by solver.");
     function var bool: mzn_post(var bool: c) :: promise_total;
     function var bool: foo_root(var bool: b) :: promise_total = let {
-    var bool: _DECL_1 = b;
-    constraint mzn_post(_DECL_1);
+    constraint mzn_post(b);
     } in mzn_root;
+    bool: mzn_root;
     var bool: x :: 'output';
-    bool: mzn_root = true;
+    mzn_root = true;
     x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
     constraint foo_root(x);
 "#]];

@@ -73,7 +73,8 @@ function array [int] of tuple(
 							_DECL_4,
 							" elements were expected according to the given index set.",
 						]);
-				} in abort(_DECL_5)
+					constraint abort(_DECL_5);
+				} in mzn_root
 			endif;
 	} in mzn_array_kd((S,), x);
 function bool: 'mzn_array_access_valid_root<int, set of int, int>'(
@@ -83,7 +84,7 @@ function bool: 'mzn_array_access_valid_root<int, set of int, int>'(
 ) :: promise_total =
 	let {
 		bool: _DECL_9 = 'in<int, set of int>'(idx, idx_set) :: mzn_forward_annotations;
-		bool: _DECL_10 =
+		constraint
 			if _DECL_9 then
 				mzn_root
 			else
@@ -117,9 +118,9 @@ function bool: 'mzn_array_access_valid_root<int, set of int, int>'(
 						endif;
 					constraint mzn_add_warning(_DECL_8);
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
-		constraint _DECL_10;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid<int, set of int, int>'(int: idx, set of int: idx_set, int: n)
 	:: promise_total =
@@ -184,10 +185,9 @@ function bool: 'mzn_array_access_valid_root<array [int] of tuple(string, array [
 	let {
 		set of int: _DECL_1 =
 			'index_set<array [int] of tuple(string, array [int] of tuple(int, set of int))>'(x);
-		bool: _DECL_2 =
+		constraint
 			'mzn_array_access_valid_root<int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid_root<array [int] of tuple(string, array [int] of tuple(int, set of int), int), int>'(
 	array [int] of tuple(string, array [int] of tuple(int, set of int), int): x,
@@ -198,10 +198,9 @@ function bool: 'mzn_array_access_valid_root<array [int] of tuple(string, array [
 			'index_set<array [int] of tuple(string, array [int] of tuple(int, set of int), int)>'(
 				x,
 			);
-		bool: _DECL_2 =
+		constraint
 			'mzn_array_access_valid_root<int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid_root<array [int] of tuple(int, set of int), int>'(
 	array [int] of tuple(int, set of int): x,
@@ -209,10 +208,9 @@ function bool: 'mzn_array_access_valid_root<array [int] of tuple(int, set of int
 ) :: promise_total =
 	let {
 		set of int: _DECL_1 = 'index_set<array [int] of tuple(int, set of int)>'(x);
-		bool: _DECL_2 =
+		constraint
 			'mzn_array_access_valid_root<int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid<array [int] of tuple(int, set of int), int>'(
 	array [int] of tuple(int, set of int): x,
@@ -228,10 +226,9 @@ function bool: 'mzn_array_access_valid_root<array [int] of int, int>'(
 	:: promise_total =
 	let {
 		set of int: _DECL_1 = 'index_set<array [int] of int>'(x);
-		bool: _DECL_2 =
+		constraint
 			'mzn_array_access_valid_root<int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid<array [int] of int, int>'(array [int] of int: x, int: idx)
 	:: promise_total =
@@ -250,10 +247,9 @@ function bool: 'mzn_array_access_valid_root<array [int] of tuple(int, array [int
 			'index_set<array [int] of tuple(int, array [int] of tuple(string, array [int] of tuple(int, set of int), int))>'(
 				x,
 			);
-		bool: _DECL_2 =
+		constraint
 			'mzn_array_access_valid_root<int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_array_access_valid<array [int] of bool, int>'(array [int] of bool: x, int: idx)
 	:: promise_total =
@@ -408,6 +404,7 @@ function array [
 					string: _DECL_14 = '++'(_DECL_13, "(...).");
 					constraint mzn_add_warning(_DECL_14);
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in [
@@ -608,6 +605,7 @@ function int: 'div_root<int, int>'(int: x, int: y) :: promise_total =
 				let {
 					constraint mzn_add_warning("division by zero is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in div_internal_int(x, y);
@@ -621,6 +619,7 @@ function int: 'mod_root<int, int>'(int: x, int: y) :: promise_total =
 				let {
 					constraint mzn_add_warning("modulus by zero is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in mod_internal(x, y) :: mzn_forward_annotations;
@@ -639,6 +638,7 @@ function int: 'min_root<set of int>'(
 				let {
 					constraint mzn_add_warning("minimum of an empty set is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in 'min_internal_set<set of int>'(s) :: mzn_forward_annotations;
@@ -673,6 +673,7 @@ function int: 'max_root<set of int>'(
 				let {
 					constraint mzn_add_warning("maximum of an empty set is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in 'max_internal_set<set of int>'(s) :: mzn_forward_annotations;
@@ -721,6 +722,7 @@ function int: arg_max_root(array [int] of bool: xs) :: promise_total =
 				let {
 					constraint mzn_add_warning("arg_max of an empty array is undefined");
 					constraint false;
+					constraint true;
 				} in mzn_root
 			endif;
 	} in arg_max_internal_root(xs) :: mzn_forward_annotations;
@@ -1076,8 +1078,6 @@ function var bool: mzn_post_root(var bool: c) :: promise_total =
 	let {
 		constraint 'bool_eq<var bool, var bool>'(c, true) :: mzn_forward_annotations;
 		constraint true;
-		var bool: _DECL_1 = true;
-		constraint mzn_post(_DECL_1);
 	} in mzn_root;
 function var bool: mzn_post(var bool: c) :: promise_total =
 	let { constraint 'bool_eq<var bool, var bool>'(c, true) :: mzn_forward_annotations } in true;
@@ -1090,53 +1090,57 @@ function bool: 'mzn_slice_valid_root<set of int, set of int, int>'(
 	let {
 		int: _DECL_10 = card(idx);
 		bool: _DECL_11 = '='(_DECL_10, 1);
-		bool: _DECL_13 =
+		constraint
 			if _DECL_11 then
 				let {
 					int: _DECL_12 = 'min_root<set of int>'(idx);
-				} in 'mzn_array_access_valid_root<int, set of int, int>'(_DECL_12, idx_set, n)
-					:: mzn_forward_annotations
+					constraint
+						'mzn_array_access_valid_root<int, set of int, int>'(_DECL_12, idx_set, n)
+							:: mzn_forward_annotations;
+				} in mzn_root
 			else
 				let {
 					bool: _DECL_9 =
 						'subset<set of int, set of int>'(idx, idx_set) :: mzn_forward_annotations;
-				} in if _DECL_9 then
-					mzn_root
-				else
-					let {
-						int: _DECL_3 = 0;
-						bool: _DECL_4 = '<'(_DECL_3, n);
-						string: _DECL_8 =
-							if _DECL_4 then
-								let {
-									string: _DECL_5 = show_internal(n);
-									string: _DECL_6 = 'show_root<set of int>'(idx_set);
-									string: _DECL_7 = 'show_root<set of int>'(idx);
-								} in concat([
-									"array slice out of bounds, index set ",
-									_DECL_5,
-									" is ",
-									_DECL_6,
-									", but given range is ",
-									_DECL_7,
-								])
-							else
-								let {
-									string: _DECL_1 = 'show_root<set of int>'(idx_set);
-									string: _DECL_2 = 'show_root<set of int>'(idx);
-								} in concat([
-									"array slice out of bounds, index set is ",
-									_DECL_1,
-									", but given range is ",
-									_DECL_2,
-								])
-							endif;
-						constraint mzn_add_warning(_DECL_8);
-						constraint false;
-					} in mzn_root
-				endif
+					constraint
+						if _DECL_9 then
+							mzn_root
+						else
+							let {
+								int: _DECL_3 = 0;
+								bool: _DECL_4 = '<'(_DECL_3, n);
+								string: _DECL_8 =
+									if _DECL_4 then
+										let {
+											string: _DECL_5 = show_internal(n);
+											string: _DECL_6 = 'show_root<set of int>'(idx_set);
+											string: _DECL_7 = 'show_root<set of int>'(idx);
+										} in concat([
+											"array slice out of bounds, index set ",
+											_DECL_5,
+											" is ",
+											_DECL_6,
+											", but given range is ",
+											_DECL_7,
+										])
+									else
+										let {
+											string: _DECL_1 = 'show_root<set of int>'(idx_set);
+											string: _DECL_2 = 'show_root<set of int>'(idx);
+										} in concat([
+											"array slice out of bounds, index set is ",
+											_DECL_1,
+											", but given range is ",
+											_DECL_2,
+										])
+									endif;
+								constraint mzn_add_warning(_DECL_8);
+								constraint false;
+								constraint true;
+							} in mzn_root
+						endif;
+				} in mzn_root
 			endif;
-		constraint _DECL_13;
 	} in mzn_root;
 function bool: 'mzn_slice_valid_root<array [int] of tuple(string, array [int] of tuple(int, set of int)), set of int>'(
 	array [int] of tuple(string, array [int] of tuple(int, set of int)): x,
@@ -1145,22 +1149,20 @@ function bool: 'mzn_slice_valid_root<array [int] of tuple(string, array [int] of
 	let {
 		set of int: _DECL_1 =
 			'index_set<array [int] of tuple(string, array [int] of tuple(int, set of int))>'(x);
-		bool: _DECL_2 =
+		constraint
 			'mzn_slice_valid_root<set of int, set of int, int>'(idx, _DECL_1, 0)
 				:: mzn_forward_annotations;
-		constraint _DECL_2;
 	} in mzn_root;
 function bool: 'mzn_slice_valid_root<array [int] of tuple(string, array [int] of tuple(int, set of int)), tuple(set of int)>'(
 	array [int] of tuple(string, array [int] of tuple(int, set of int)): x,
 	tuple(set of int): idx,
 ) :: promise_total =
 	let {
-		bool: _DECL_1 =
+		constraint
 			'mzn_slice_valid_root<array [int] of tuple(string, array [int] of tuple(int, set of int)), set of int>'(
 				x,
 				idx.1,
 			) :: mzn_forward_annotations;
-		constraint _DECL_1;
 	} in mzn_root;
 function string: 'show_root<set of int>'(set of int: x) :: promise_total =
 	let {
@@ -1442,7 +1444,8 @@ constraint
 			int: _DECL_7 = mzn_compiler_version();
 			string: _DECL_8 = mzn_version_to_string_root(_DECL_7);
 			string: _DECL_9 = '++'(_DECL_6, _DECL_8);
-		} in abort(_DECL_9)
+			constraint abort(_DECL_9);
+		} in mzn_root
 	endif;
 bool: _DECL_30 = 'absent<opt int>'(mzn_max_version_required);
 bool: _DECL_31 =
@@ -1470,7 +1473,8 @@ constraint
 			int: _DECL_21 = mzn_compiler_version();
 			string: _DECL_22 = mzn_version_to_string_root(_DECL_21);
 			string: _DECL_23 = '++'(_DECL_20, _DECL_22);
-		} in abort(_DECL_23)
+			constraint abort(_DECL_23);
+		} in mzn_root
 	endif;
 bool: debug_mode = mzn_internal_check_debug_mode();
 array [int] of tuple(int, set of int): _DECL_33 = [];

@@ -161,7 +161,7 @@ struct FunctionLowerer<'a, 'db> {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Destination {
-	Slot(SlotId),
+	Slot { slot: SlotId, output: bool },
 	Constraint,
 	Return,
 }
@@ -178,7 +178,10 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 				}
 				shackle_mir::LetItem::GlobalAssignment(global_assignment) => {
 					self.lower_expression(
-						Destination::Slot(self.parent.global_slots[global_assignment.global]),
+						Destination::Slot {
+							slot: self.parent.global_slots[global_assignment.global],
+							output: self.parent.mir.global_vars[global_assignment.global].output,
+						},
 						&global_assignment.definition,
 					);
 				}
@@ -193,13 +196,14 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 					let _ = self.add_instruction(Instruction::ReturnRoot, l.origin);
 				}
 				Destination::Constraint => {}
-				Destination::Slot(slot) => {
+				Destination::Slot { slot, output } => {
 					let _ = self.add_instruction(
 						Instruction::Assign {
 							slot,
 							expression: Expression::Value(Value::Literal(Literal::Boolean(
 								shackle_hir::BooleanLiteral(true),
 							))),
+							output,
 						},
 						l.origin,
 					);
@@ -210,7 +214,10 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 
 	fn lower_declaration(&mut self, d: shackle_mir::DeclarationId<'db>) {
 		self.lower_expression(
-			Destination::Slot(self.slots[d]),
+			Destination::Slot {
+				slot: self.slots[d],
+				output: false,
+			},
 			&self.function.data[d].definition,
 		);
 	}
@@ -385,7 +392,7 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 					expr.origin,
 				);
 				let dest = match destination {
-					Destination::Slot(slot) => slot,
+					Destination::Slot { slot, .. } => slot,
 					Destination::Return => {
 						self.temporary_slot_count += 1;
 						SlotId::Relative(NonZeroU32::new(self.temporary_slot_count).unwrap())
@@ -420,7 +427,11 @@ impl<'a, 'db> FunctionLowerer<'a, 'db> {
 
 		let _ = self.add_instruction(
 			match destination {
-				Destination::Slot(slot) => Instruction::Assign { slot, expression },
+				Destination::Slot { slot, output } => Instruction::Assign {
+					slot,
+					expression,
+					output,
+				},
 				Destination::Constraint => Instruction::Constraint { expression },
 				Destination::Return => Instruction::Return { expression },
 			},

@@ -208,6 +208,7 @@ impl<'a> Interpreter<'a> {
 				CallFrame {
 					return_address: self.pc,
 					return_slot: SlotIndex::first(),
+					output_slot: false,
 					halt_on_return: true,
 					annotations: Vec::new(),
 					nanozinc_pending_count: 0,
@@ -244,6 +245,7 @@ impl<'a> Interpreter<'a> {
 			CallFrame {
 				return_address: old_pc,
 				return_slot,
+				output_slot: false,
 				halt_on_return: true,
 				annotations: Vec::new(),
 				nanozinc_pending_count: 0,
@@ -293,25 +295,44 @@ impl<'a> Interpreter<'a> {
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::AnnotationCall(c),
+				output,
 			} => {
 				let ident = c.annotation;
 				let value = Value::new_annotation(
 					ident,
 					c.arguments.iter().map(|arg| self.eval_value(arg)),
 				);
+				if *output {
+					self.add_output(&value);
+				}
 				self.stack[*slot] = value;
 			}
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::Builtin(b),
-			} => self.stack[*slot] = self.eval_builtin(b)?,
+				output,
+			} => {
+				let value = self.eval_builtin(b)?;
+				if *output {
+					self.add_output(&value);
+				}
+				self.stack[*slot] = value;
+			}
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::FreshVariable(fv),
-			} => self.stack[*slot] = self.eval_fresh_variable(fv),
+				output,
+			} => {
+				let value = self.eval_fresh_variable(fv);
+				if *output {
+					self.add_output(&value);
+				}
+				self.stack[*slot] = value;
+			}
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::Call(c),
+				output,
 			} => {
 				assert!(
 					!self.program.functions[c.function].body.is_empty(),
@@ -340,6 +361,7 @@ impl<'a> Interpreter<'a> {
 					CallFrame {
 						return_address: self.pc,
 						return_slot: *slot,
+						output_slot: *output,
 						halt_on_return: false,
 						annotations,
 						nanozinc_pending_count: promise_total.into(),
@@ -363,8 +385,13 @@ impl<'a> Interpreter<'a> {
 			Instruction::Assign {
 				slot,
 				expression: shackle_ir::Expression::Value(value),
+				output,
 			} => {
-				self.stack[*slot] = self.eval_value(value);
+				let value = self.eval_value(value);
+				if *output {
+					self.add_output(&value);
+				}
+				self.stack[*slot] = value;
 			}
 			Instruction::Constraint {
 				expression: shackle_ir::Expression::Call(c),
@@ -399,6 +426,7 @@ impl<'a> Interpreter<'a> {
 							CallFrame {
 								return_address: self.pc,
 								return_slot: SlotIndex::first(),
+								output_slot: false,
 								halt_on_return: false,
 								annotations,
 								nanozinc_pending_count: 0,
@@ -487,6 +515,9 @@ impl<'a> Interpreter<'a> {
 				);
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
+				if frame.output_slot {
+					self.add_output(&value);
+				}
 				self.stack[frame.return_slot] = value;
 				for _ in 0..frame.nanozinc_pending_count {
 					self.nanozinc_mut().pop_pending();
@@ -501,6 +532,9 @@ impl<'a> Interpreter<'a> {
 				let value = self.eval_builtin(b)?;
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
+				if frame.output_slot {
+					self.add_output(&value);
+				}
 				self.stack[frame.return_slot] = value;
 				for _ in 0..frame.nanozinc_pending_count {
 					self.nanozinc_mut().pop_pending();
@@ -515,6 +549,9 @@ impl<'a> Interpreter<'a> {
 				let value = self.eval_fresh_variable(fv);
 				let frame = self.stack.pop_call_frame();
 				self.pc = frame.return_address;
+				if frame.output_slot {
+					self.add_output(&value);
+				}
 				self.stack[frame.return_slot] = value;
 				for _ in 0..frame.nanozinc_pending_count {
 					self.nanozinc_mut().pop_pending();
@@ -661,6 +698,23 @@ impl<'a> Interpreter<'a> {
 			FreshVariable::VarSetOfInt { domain, is_defined } => {
 				let domain = self.eval_value(domain);
 				self.nanozinc_mut().add_var_set_of_int(domain, *is_defined)
+			}
+		}
+	}
+
+	fn add_output(&mut self, value: &Value) {
+		let mut todo = vec![value.clone()];
+		while let Some(value) = todo.pop() {
+			match value.deref() {
+				DataView::BoolVar(mut v) => v.set_output(true),
+				DataView::IntVar(mut v) => v.set_output(true),
+				DataView::FloatVar(mut v) => v.set_output(true),
+				DataView::IntSetVar(mut v) => v.set_output(true),
+				DataView::Seq(seq) => todo.extend(seq.iter().cloned()),
+				DataView::Set(set) => {
+					todo.extend(set.values().cloned());
+				}
+				_ => {}
 			}
 		}
 	}
@@ -910,6 +964,7 @@ mod tests {
 				let _ = body.insert(Instruction::Assign {
 					slot: relative(3),
 					expression: Expression::Call(call.clone()),
+					output: false,
 				});
 				let _ = body.insert(Instruction::Return {
 					expression: Expression::Value(slot(3)),
@@ -935,6 +990,7 @@ mod tests {
 		let _ = body.insert(Instruction::Assign {
 			slot: result_slot,
 			expression: Expression::Value(slot(1)),
+			output: false,
 		});
 		let _ = body.insert(Instruction::ReturnRoot);
 		let predicate = program.functions.insert(Function {
@@ -1121,7 +1177,7 @@ mod tests {
 		let mut interpreter = Interpreter::new(&program);
 		interpreter.run().unwrap();
 		expect![[r#"
-    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
+    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0 :: output_var;
 
     constraint foo(_X_INTRODUCED_0);
 
@@ -1156,7 +1212,7 @@ mod tests {
 		let mut interpreter = Interpreter::new(&program);
 		interpreter.run().unwrap();
 		expect![[r#"
-    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
+    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0 :: output_var;
     var int: _X_INTRODUCED_1; % defined by group 1
 
     % defining group 1
@@ -1200,6 +1256,7 @@ mod tests {
 			let _ = body.insert(Instruction::Assign {
 				slot,
 				expression: Expression::FreshVariable(FreshVariable::VarBool { is_defined: true }),
+				output: false,
 			});
 			let mut definition = call(predicate, vec![value.clone()]);
 			definition.kind = CallType::Predicate;
@@ -1234,6 +1291,7 @@ mod tests {
 			let _ = main.body.insert(Instruction::Assign {
 				slot: SlotId::Absolute(NonZeroU32::new(1).unwrap()),
 				expression: Expression::Call(call(wrapper, vec![])),
+				output: false,
 			});
 			let _ = main.body.insert(Instruction::ReturnRoot);
 			let mut interpreter = Interpreter::new(&program);
@@ -1276,7 +1334,7 @@ mod tests {
 		let mut interpreter = Interpreter::new(&program);
 		interpreter.run().unwrap();
 		expect![[r#"
-    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0;
+    var 1..1 ∪ 3..3 ∪ 5..5: _X_INTRODUCED_0 :: output_var;
     var int: _X_INTRODUCED_1; % defined by group 1
     var int: _X_INTRODUCED_2; % defined by group 1
     var int: _X_INTRODUCED_3; % defined by group 1
@@ -1437,7 +1495,7 @@ any: x = foo();
 		let mut interpreter = Interpreter::new(&program);
 		interpreter.run().unwrap();
 		expect![[r#"
-    var int: _X_INTRODUCED_0;
+    var int: _X_INTRODUCED_0 :: output_var;
 
     solve :: foo(_X_INTRODUCED_0) minimize _X_INTRODUCED_0;
 "#]]

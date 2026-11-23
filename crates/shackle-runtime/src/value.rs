@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn, reason = "occurs due to varlen derive macro")]
+#![allow(dropping_copy_types, reason = "occurs due to varlen derive macro")]
 
 //! Value representation for the Shackle runtime.
 mod bool_var;
@@ -28,7 +29,7 @@ use std::{
 };
 
 use bilge::{
-	Bitsized, TryFromBits, bitsize,
+	TryFromBits, bitsize,
 	prelude::{Integer, u2, u61},
 };
 use once_cell::sync::Lazy;
@@ -744,7 +745,7 @@ impl ValueStorage {
 			.as_mut()
 			.muts()
 			.weak_count
-			.fetch_update(Release, Relaxed, |count| {
+			.try_update(Release, Relaxed, |count| {
 				(count != u8::MAX).then(|| count - 1)
 			})
 			== Ok(1)
@@ -761,7 +762,7 @@ impl ValueStorage {
 		if slf
 			.refs()
 			.ref_count
-			.fetch_update(Release, Relaxed, |count| match count {
+			.try_update(Release, Relaxed, |count| match count {
 				u16::MAX => Some(count),
 				2.. => Some(count - 1),
 				_ => None,
@@ -815,19 +816,19 @@ unsafe impl<T> ArrayInitializer<T> for InitEmpty {
 
 fn increment_strong_count(counter: &AtomicU16) -> u16 {
 	counter
-		.fetch_update(Relaxed, Relaxed, |count| Some(count.saturating_add(1)))
+		.try_update(Relaxed, Relaxed, |count| Some(count.saturating_add(1)))
 		.unwrap()
 }
 
 fn increment_weak_count(counter: &AtomicU8) {
 	let _ = counter
-		.fetch_update(Relaxed, Relaxed, |count| Some(count.saturating_add(1)))
+		.try_update(Relaxed, Relaxed, |count| Some(count.saturating_add(1)))
 		.unwrap();
 }
 
 /// Decrement an unsaturated count and report whether the last strong reference was released.
 fn decrement_strong_count(counter: &AtomicU16) -> bool {
-	counter.fetch_update(Release, Relaxed, |count| {
+	counter.try_update(Release, Relaxed, |count| {
 		(count != u16::MAX).then(|| count - 1)
 	}) == Ok(1)
 }

@@ -9,7 +9,9 @@
 use shackle_hir::{Db, constants::IdentifierRegistry};
 use shackle_utils::hash::Set;
 
-use crate::{DeclarationId, Marker, Model, ResolvedIdentifier, traverse::Visitor};
+use crate::{
+	Callable, DeclarationId, FunctionId, Marker, Model, ResolvedIdentifier, traverse::Visitor,
+};
 
 /// Global variables in a THIR model.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +20,8 @@ pub struct GlobalVariables<'db, T: Marker> {
 	pub input_parameters: Vec<DeclarationId<'db, T>>,
 	/// Global variables referred to from within function bodies (or that need to be output)
 	pub referred_variables: Vec<DeclarationId<'db, T>>,
+	/// Global variables referred to from output_only expressions
+	pub output_only_variables: Vec<DeclarationId<'db, T>>,
 }
 
 impl<'db, T: Marker> GlobalVariables<'db, T> {
@@ -49,9 +53,26 @@ impl<'db, T: Marker> GlobalVariables<'db, T> {
 				visitor.visit_expression(model, declaration.definition().unwrap());
 			}
 		}
+
+		let mut output_only_visitor = OutputOnlyVisitor {
+			db,
+			output_variables: Vec::new(),
+			seen: Set::new(),
+			visited_fns: Set::new(),
+		};
+		for (idx, declaration) in model.top_level_declarations() {
+			if declaration
+				.annotations()
+				.has(model, ids.annotations.output_only)
+			{
+				output_only_visitor.visit_declaration(model, idx);
+			}
+		}
+
 		Self {
 			input_parameters,
 			referred_variables: visitor.referred_variables,
+			output_only_variables: output_only_visitor.output_variables,
 		}
 	}
 }
@@ -68,6 +89,32 @@ impl<'db, T: Marker> Visitor<'_, 'db, T> for GlobalVarVisitor<'db, T> {
 			if decl.top_level() && self.seen.insert(*d) {
 				self.referred_variables.push(*d);
 			}
+		}
+	}
+}
+
+struct OutputOnlyVisitor<'db, T: Marker> {
+	db: &'db dyn Db,
+	output_variables: Vec<DeclarationId<'db, T>>,
+	seen: Set<DeclarationId<'db, T>>,
+	visited_fns: Set<FunctionId<'db, T>>,
+}
+
+impl<'db, T: Marker> Visitor<'_, 'db, T> for OutputOnlyVisitor<'db, T> {
+	fn visit_identifier(&mut self, model: &Model<'db, T>, identifier: &ResolvedIdentifier<'db, T>) {
+		if let ResolvedIdentifier::Declaration(d) = identifier
+			&& self.seen.insert(*d)
+			&& model[*d].ty().contains_var(self.db)
+		{
+			self.output_variables.push(*d);
+		}
+	}
+
+	fn visit_callable(&mut self, model: &Model<'db, T>, callable: &Callable<'db, T>) {
+		if let Callable::Function(f) = callable
+			&& self.visited_fns.insert(*f)
+		{
+			self.visit_function(model, *f);
 		}
 	}
 }
@@ -91,6 +138,8 @@ mod tests {
 		input_parameters: Vec<String>,
 		#[allow(dead_code, reason = "Used by debug impl")]
 		referred_variables: Vec<String>,
+		#[allow(dead_code, reason = "Used by debug impl")]
+		output_only_variables: Vec<String>,
 	}
 
 	fn check(program: &str, expected: Expect) {
@@ -112,9 +161,15 @@ mod tests {
 			.iter()
 			.map(|d| model[*d].name().unwrap().pretty_print(&db))
 			.collect();
+		let output_only_variables = global_vars
+			.output_only_variables
+			.iter()
+			.map(|d| model[*d].name().unwrap().pretty_print(&db))
+			.collect();
 		let actual = GlobalVariablesDebug {
 			input_parameters,
 			referred_variables,
+			output_only_variables,
 		};
 		expected.assert_debug_eq(&actual);
 	}
@@ -153,6 +208,44 @@ mod tests {
             "p",
             "r",
             "q",
+        ],
+        output_only_variables: [
+            "q",
+        ],
+    }
+"#]],
+		)
+	}
+
+	#[test]
+	fn test_find_output_only_variables() {
+		check(
+			r#"
+			function int: fix(var int: x);
+			annotation 'output';
+			annotation output_only;
+			test foo() = let {
+				any: v = fix(x);
+			} in true;
+            var int: x;
+            var int: y;
+            var int: z :: output;
+			int: p :: output :: output_only = foo();
+			int: q :: output :: output_only = y;
+        "#,
+			expect![[r#"
+    GlobalVariablesDebug {
+        input_parameters: [],
+        referred_variables: [
+            "x",
+            "z",
+            "p",
+            "q",
+            "y",
+        ],
+        output_only_variables: [
+            "x",
+            "y",
         ],
     }
 "#]],

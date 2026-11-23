@@ -847,6 +847,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 					_ => None,
 				})
 				.collect(),
+			output: m[*param].annotations().has(m, ids.annotations.output),
 			origin: m[*param].origin(),
 		});
 		let _ = ctx.global_resolutions.insert((*param).into(), idx.into());
@@ -866,6 +867,8 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 					_ => None,
 				})
 				.collect(),
+			output: m[*var].annotations().has(m, ids.annotations.output)
+				|| global_vars.output_only_variables.contains(var),
 			origin: m[*var].origin(),
 		});
 		let _ = ctx.global_resolutions.insert((*var).into(), idx.into());
@@ -880,6 +883,7 @@ pub fn lower_from_thir<'db>(db: &'db dyn Db, m: &'db shackle_thir::Model<'db>) -
 			ty: m[obj].ty(),
 			annotations: Vec::new(),
 			origin: m[obj].origin(),
+			output: false,
 		});
 		let _ = ctx.global_resolutions.insert(obj.into(), idx.into());
 	}
@@ -1180,6 +1184,8 @@ mod tests {
     var bool: p = false;
     var bool: _DECL_2 = p;
     var bool: q = _DECL_2;
+    test output_entry_point() = let {
+    } in true;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}
@@ -1224,6 +1230,8 @@ mod tests {
     mzn_root = true;
     x = (let { var bool: _FRESH_VAR :: promise_total; } in _FRESH_VAR);
     constraint foo_root(x);
+    test output_entry_point() = let {
+    } in true;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}
@@ -1288,6 +1296,8 @@ mod tests {
     } in true;
     bool: mzn_root = true;
     array [int] of int: x = [1 | _DECL_2 = {1, 2, 3}, i in _DECL_2, j in _DECL_2, _DECL_5 = foo(i, j), _ = 1 where _DECL_5];
+    test output_entry_point() = let {
+    } in true;
 "#]];
 		expected.assert_eq(&PrettyPrinter::new(&mir).print_model(&db));
 	}

@@ -101,6 +101,8 @@ pub enum Instruction {
 		slot: SlotId,
 		/// Expression to assign
 		expression: Expression,
+		/// Mark the slot as an output variable
+		output: bool,
 	},
 	/// Post a constraint
 	Constraint {

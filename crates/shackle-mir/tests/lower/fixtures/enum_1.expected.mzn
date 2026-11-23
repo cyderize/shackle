@@ -1555,3 +1555,4 @@ _GLOBAL_14 = 'mzn_get_enum_root<array [int] of string>'(Bar);
 set of int: _DECL_42 = mzn_defining_set(_GLOBAL_14);
 y = (let { var _DECL_42: _FRESH_VAR } in _FRESH_VAR);
 z = 'show_root<set of Bar>'(_DECL_42);
+test output_entry_point() = true;

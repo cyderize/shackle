@@ -65,6 +65,7 @@ impl Stack {
 		let inner = CallFrame {
 			return_address: frame.return_address,
 			return_slot: frame.return_slot.as_slot_index(self),
+			output_slot: frame.output_slot,
 			halt_on_return: frame.halt_on_return,
 			annotations: frame.annotations,
 			nanozinc_pending_count: frame.nanozinc_pending_count,
@@ -173,6 +174,8 @@ pub struct CallFrame<T = SlotIndex> {
 	pub return_address: Address,
 	/// The slot to write the return value to after the call
 	pub return_slot: T,
+	/// Whether to mark the return as output
+	pub output_slot: bool,
 	/// Whether to halt the interpreter when returning from this call
 	pub halt_on_return: bool,
 	/// Annotations on the call

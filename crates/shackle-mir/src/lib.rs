@@ -75,6 +75,8 @@ pub struct GlobalVar<'db> {
 	pub name: Option<Name<'db>>,
 	/// The annotations on the global
 	pub annotations: Vec<AnnotationId<'db>>,
+	/// Whether this global needs to be output
+	pub output: bool,
 	/// The origin of the global var
 	pub origin: Origin<'db>,
 }

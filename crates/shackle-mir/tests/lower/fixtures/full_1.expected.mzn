@@ -659,3 +659,4 @@ var int: _DECL_44 = 'card<var set of int>'(y);
 constraint '>=_root<var int, int>'(_DECL_44, 1);
 _GLOBAL_14 = '+<var int, var int>'(x, 2);
 constraint mzn_solve_maximize([], _GLOBAL_14);
+test output_entry_point() = true;

@@ -233,11 +233,12 @@ impl NanoZinc {
 						DataView::BoolVar(v) => {
 							write!(
 								&mut s,
-								"var {}: _X_INTRODUCED_{};",
+								"var {}: _X_INTRODUCED_{}{};",
 								v.domain()
 									.map(|b| format!("{:?}", b))
 									.unwrap_or_else(|| "bool".to_owned()),
-								v.ident()
+								v.ident(),
+								if v.output() { " :: output_var" } else { "" }
 							)
 							.unwrap();
 							v.defining_constraints().clone()
@@ -245,11 +246,12 @@ impl NanoZinc {
 						DataView::IntVar(v) => {
 							write!(
 								&mut s,
-								"var {}: _X_INTRODUCED_{};",
+								"var {}: _X_INTRODUCED_{}{};",
 								v.domain()
 									.map(|d| format!("{}", d.as_int_set()))
 									.unwrap_or_else(|| "int".to_owned()),
 								v.ident(),
+								if v.output() { " :: output_var" } else { "" }
 							)
 							.unwrap();
 							v.defining_constraints().clone()
@@ -257,11 +259,12 @@ impl NanoZinc {
 						DataView::FloatVar(v) => {
 							write!(
 								&mut s,
-								"var {}: _X_INTRODUCED_{};",
+								"var {}: _X_INTRODUCED_{}{};",
 								v.domain()
 									.map(|d| format!("{}", d.as_float_set()))
 									.unwrap_or_else(|| "float".to_owned()),
 								v.ident(),
+								if v.output() { " :: output_var" } else { "" }
 							)
 							.unwrap();
 							v.defining_constraints().clone()
@@ -269,11 +272,12 @@ impl NanoZinc {
 						DataView::IntSetVar(v) => {
 							write!(
 								&mut s,
-								"var set of {}: _X_INTRODUCED_{};",
+								"var set of {}: _X_INTRODUCED_{}{};",
 								v.domain()
 									.map(|d| format!("{}", d.as_int_set()))
 									.unwrap_or_else(|| "int".to_owned()),
 								v.ident(),
+								if v.output() { " :: output_var" } else { "" }
 							)
 							.unwrap();
 							v.defining_constraints().clone()

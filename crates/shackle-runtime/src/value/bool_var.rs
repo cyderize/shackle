@@ -14,6 +14,7 @@ pub struct BoolVar {
 	domain: Option<bool>,
 	alias: Option<Value>,
 	defining_constraints: DefiningConstraints,
+	output: bool,
 }
 
 impl PartialEq for BoolVar {
@@ -82,6 +83,16 @@ impl BoolVar {
 	pub fn set_defining_constraints(&mut self, defining_constraints: DefiningConstraints) {
 		self.defining_constraints = defining_constraints;
 	}
+
+	/// Get the output flag of the variable.
+	pub fn output(&self) -> bool {
+		self.output
+	}
+
+	/// Set the output flag of the variable.
+	pub fn set_output(&mut self, output: bool) {
+		self.output = output;
+	}
 }
 
 define_var_ref!(BoolVar, BoolVarRef);
@@ -103,6 +114,7 @@ impl Value {
 					domain: None,
 					alias: None,
 					defining_constraints: DefiningConstraints::default(),
+					output: false,
 				})]
 				.into_iter(),
 			),

@@ -77,6 +77,7 @@ impl<'db> PrettyPrinter<'db> {
 				.unwrap(),
 			}
 		}
+		writeln!(&mut w, "test output_entry_point() = let {{").unwrap();
 		let output_entrypoint = &self.model.functions[self.model.output_entrypoint];
 		for item in output_entrypoint.body.as_ref().unwrap().items.iter() {
 			writeln!(
@@ -86,6 +87,7 @@ impl<'db> PrettyPrinter<'db> {
 			)
 			.unwrap();
 		}
+		writeln!(&mut w, "}} in true;").unwrap();
 		w
 	}
 

@@ -1,0 +1,1065 @@
+use std::{
+	cmp::{Eq, Ordering},
+	collections::HashMap,
+	fmt::Display,
+	hash::Hash,
+	num::NonZeroU64,
+	ops::{Add, Div, Mul, Neg, Rem, Sub},
+	sync::Mutex,
+};
+
+use bilge::arbitrary_int::{prelude::Integer, u10, u52};
+use once_cell::sync::Lazy;
+use rangelist::Adjacent;
+use varlen::array_init::FromIterPrefix;
+
+use crate::{
+	Value,
+	error::ArithmeticError,
+	value::{DataView, InitEmpty, ValType, value_storage},
+};
+
+/// An integer numeric value (possibly infinite)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IntVal {
+	/// Positive infinity
+	InfPos,
+	/// Negative infinity
+	InfNeg,
+	/// Finite integer
+	Int(i64),
+}
+impl IntVal {
+	/// Whether the integer is finite
+	pub fn is_finite(&self) -> bool {
+		matches!(self, IntVal::Int(_))
+	}
+}
+impl From<i64> for IntVal {
+	fn from(value: i64) -> Self {
+		IntVal::Int(value)
+	}
+}
+impl From<IntVal> for FloatVal {
+	fn from(value: IntVal) -> Self {
+		match value {
+			IntVal::InfPos => FloatVal::INFINITY,
+			IntVal::InfNeg => FloatVal::NEG_INFINITY,
+			IntVal::Int(i) => FloatVal::from(i as f64),
+		}
+	}
+}
+impl Display for IntVal {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			IntVal::InfPos => write!(f, "+∞"),
+			IntVal::InfNeg => write!(f, "-∞"),
+			IntVal::Int(i) => write!(f, "{i}"),
+		}
+	}
+}
+impl PartialOrd for IntVal {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+impl Ord for IntVal {
+	fn cmp(&self, other: &Self) -> Ordering {
+		match (self, other) {
+			(IntVal::InfPos, IntVal::InfPos) => Ordering::Equal,
+			(IntVal::InfNeg, IntVal::InfNeg) => Ordering::Equal,
+			(IntVal::InfPos, _) => Ordering::Greater,
+			(IntVal::InfNeg, _) => Ordering::Less,
+			(_, IntVal::InfPos) => Ordering::Less,
+			(_, IntVal::InfNeg) => Ordering::Greater,
+			(IntVal::Int(l), IntVal::Int(r)) => l.cmp(r),
+		}
+	}
+}
+
+const ERROR_FLT_OF: &str = "overflow in floating point operation";
+const ERROR_FLT_INVALID: &str = "invalid floating point operation";
+const ERROR_INF: &str = "arithmetic operation on infinite value";
+const ERROR_INT_OF: &str = "integer overflow";
+impl Add for IntVal {
+	type Output = Result<IntVal, ArithmeticError>;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		let Some(z) = x.checked_add(y) else {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		};
+		Ok(z.into())
+	}
+}
+impl Sub for IntVal {
+	type Output = Result<IntVal, ArithmeticError>;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		let Some(z) = x.checked_sub(y) else {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		};
+		Ok(z.into())
+	}
+}
+impl Mul for IntVal {
+	type Output = Result<IntVal, ArithmeticError>;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		let Some(z) = x.checked_mul(y) else {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		};
+		Ok(z.into())
+	}
+}
+impl Div for IntVal {
+	type Output = Result<IntVal, ArithmeticError>;
+
+	fn div(self, rhs: Self) -> Self::Output {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		let Some(z) = x.checked_div(y) else {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		};
+		Ok(z.into())
+	}
+}
+impl Rem for IntVal {
+	type Output = Result<IntVal, ArithmeticError>;
+
+	fn rem(self, rhs: Self) -> Self::Output {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		if let Some(z) = x.checked_rem(y) {
+			Ok(z.into())
+		} else {
+			Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			})
+		}
+	}
+}
+impl Neg for IntVal {
+	type Output = IntVal;
+
+	fn neg(self) -> Self::Output {
+		match self {
+			IntVal::InfPos => IntVal::InfNeg,
+			IntVal::InfNeg => IntVal::InfPos,
+			IntVal::Int(i) => IntVal::Int(-i),
+		}
+	}
+}
+
+impl Adjacent for IntVal {
+	fn predecessor(&self) -> Option<Self> {
+		match self {
+			IntVal::Int(i) => i.predecessor().map(IntVal::Int),
+			_ => None,
+		}
+	}
+
+	fn successor(&self) -> Option<Self> {
+		match self {
+			IntVal::Int(i) => i.successor().map(IntVal::Int),
+			_ => None,
+		}
+	}
+}
+
+impl TryFrom<IntVal> for i64 {
+	type Error = ArithmeticError;
+
+	fn try_from(value: IntVal) -> Result<Self, Self::Error> {
+		match value {
+			IntVal::InfPos | IntVal::InfNeg => Err(ArithmeticError { reason: ERROR_INF }),
+			IntVal::Int(i) => Ok(i),
+		}
+	}
+}
+
+impl IntVal {
+	/// Raise to a power
+	pub fn pow(self, rhs: Self) -> Result<IntVal, ArithmeticError> {
+		let (IntVal::Int(x), IntVal::Int(y)) = (self, rhs) else {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		};
+		match y {
+			0 => Ok(1.into()),
+			1 => Ok(self),
+			_ if y.is_negative() => match x {
+				0 => Err(ArithmeticError {
+					reason: "negative power of zero",
+				}),
+				1 => Ok(1.into()),
+				-1 => Ok(if y % 2 == 0 { 1 } else { -1 }.into()),
+				_ => Ok(0.into()),
+			},
+			_ => {
+				if y > u32::MAX.into() {
+					return Err(ArithmeticError {
+						reason: ERROR_INT_OF,
+					});
+				}
+				let Some(z) = x.checked_pow(y as u32) else {
+					return Err(ArithmeticError {
+						reason: ERROR_INT_OF,
+					});
+				};
+				Ok(z.into())
+			}
+		}
+	}
+}
+
+/// A float numeric value
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatVal(f64);
+
+impl FloatVal {
+	/// Positive infinity
+	pub const INFINITY: FloatVal = FloatVal(f64::INFINITY);
+	/// Negative infinity
+	pub const NEG_INFINITY: FloatVal = FloatVal(f64::NEG_INFINITY);
+
+	/// Whether the float is finite
+	pub fn is_finite(&self) -> bool {
+		self.0.is_finite()
+	}
+
+	/// Raise to a power
+	pub fn pow(self, other: FloatVal) -> Result<FloatVal, ArithmeticError> {
+		if !(self.0.is_finite() && other.0.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0.powf(other.0);
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+
+	/// Floor to an int
+	pub fn floor(&self) -> Result<IntVal, ArithmeticError> {
+		if !self.is_finite() {
+			if self.0 < 0.0 {
+				return Ok(IntVal::InfNeg);
+			}
+			return Ok(IntVal::InfPos);
+		}
+		let f = self.0.floor();
+		if f < (i64::MIN as f64) || f > (i64::MAX as f64) {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		}
+		Ok(IntVal::Int(f as i64))
+	}
+
+	/// Ceil to an int
+	pub fn ceil(&self) -> Result<IntVal, ArithmeticError> {
+		if !self.is_finite() {
+			if self.0 < 0.0 {
+				return Ok(IntVal::InfNeg);
+			}
+			return Ok(IntVal::InfPos);
+		}
+		let f = self.0.ceil();
+		if f < (i64::MIN as f64) || f > (i64::MAX as f64) {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		}
+		Ok(IntVal::Int(f as i64))
+	}
+
+	/// Round to nearest int
+	pub fn round(&self) -> Result<IntVal, ArithmeticError> {
+		if !self.is_finite() {
+			if self.0 < 0.0 {
+				return Ok(IntVal::InfNeg);
+			}
+			return Ok(IntVal::InfPos);
+		}
+		let f = self.0.round();
+		if f < (i64::MIN as f64) || f > (i64::MAX as f64) {
+			return Err(ArithmeticError {
+				reason: ERROR_INT_OF,
+			});
+		}
+		Ok(IntVal::Int(f as i64))
+	}
+
+	/// Square root
+	pub fn sqrt(&self) -> Result<FloatVal, ArithmeticError> {
+		if !self.is_finite() {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		if self.0 < 0.0 {
+			return Err(ArithmeticError {
+				reason: "square root of negative number",
+			});
+		}
+		let z = self.0.sqrt();
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+
+	fn unary_operation(&self, operation: fn(f64) -> f64) -> Result<FloatVal, ArithmeticError> {
+		if !self.is_finite() {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = operation(self.0);
+		if z.is_nan() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_INVALID,
+			});
+		}
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+
+	/// Natural exponentiation
+	pub fn exp(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::exp)
+	}
+
+	/// Natural logarithm
+	pub fn ln(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::ln)
+	}
+
+	/// Logarithm with this value as the base
+	pub fn log(&self, argument: FloatVal) -> Result<FloatVal, ArithmeticError> {
+		if !(self.is_finite() && argument.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = argument.0.log(self.0);
+		if z.is_nan() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_INVALID,
+			});
+		}
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+
+	/// Base 2 logarithm
+	pub fn log2(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::log2)
+	}
+
+	/// Base 10 logarithm
+	pub fn log10(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::log10)
+	}
+
+	/// Sine
+	pub fn sin(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::sin)
+	}
+
+	/// Cosine
+	pub fn cos(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::cos)
+	}
+
+	/// Tangent
+	pub fn tan(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::tan)
+	}
+
+	/// Arcsine
+	pub fn asin(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::asin)
+	}
+
+	/// Arccosine
+	pub fn acos(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::acos)
+	}
+
+	/// Arctan
+	pub fn atan(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::atan)
+	}
+
+	/// Hyperbolic sine
+	pub fn sinh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::sinh)
+	}
+
+	/// Hyperbolic cosine
+	pub fn cosh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::cosh)
+	}
+
+	/// Hyperbolic tangent
+	pub fn tanh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::tanh)
+	}
+
+	/// Inverse hyperbolic sine
+	pub fn asinh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::asinh)
+	}
+
+	/// Inverse hyperbolic cosine
+	pub fn acosh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::acosh)
+	}
+
+	/// Inverse hyperbolic tangent
+	pub fn atanh(&self) -> Result<FloatVal, ArithmeticError> {
+		self.unary_operation(f64::atanh)
+	}
+}
+impl From<f64> for FloatVal {
+	fn from(value: f64) -> Self {
+		assert!(!value.is_nan(), "NaN is not a valid FloatVal");
+		FloatVal(value)
+	}
+}
+impl From<FloatVal> for f64 {
+	fn from(val: FloatVal) -> Self {
+		val.0
+	}
+}
+impl Display for FloatVal {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if self.0.is_infinite() {
+			if self.0.is_sign_negative() {
+				write!(f, "-∞")
+			} else {
+				write!(f, "+∞")
+			}
+		} else {
+			write!(f, "{:?}", self.0)
+		}
+	}
+}
+
+impl Add for FloatVal {
+	type Output = Result<FloatVal, ArithmeticError>;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		if !(self.0.is_finite() && rhs.0.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0 + rhs.0;
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+}
+impl Sub for FloatVal {
+	type Output = Result<FloatVal, ArithmeticError>;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		if !(self.0.is_finite() && rhs.0.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0 - rhs.0;
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+}
+impl Mul for FloatVal {
+	type Output = Result<FloatVal, ArithmeticError>;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		if !(self.0.is_finite() && rhs.0.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0 * rhs.0;
+		if z.is_infinite() {
+			return Err(ArithmeticError {
+				reason: ERROR_FLT_OF,
+			});
+		}
+		Ok(z.into())
+	}
+}
+impl Div for FloatVal {
+	type Output = Result<FloatVal, ArithmeticError>;
+
+	fn div(self, rhs: Self) -> Self::Output {
+		if !(self.0.is_finite() && rhs.0.is_finite()) {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0 / rhs.0;
+		Ok(z.into())
+	}
+}
+impl Rem for FloatVal {
+	type Output = Result<FloatVal, ArithmeticError>;
+
+	fn rem(self, rhs: Self) -> Self::Output {
+		if !(self.0.is_finite() && rhs.0.is_finite()) || rhs.0 == 0.0 {
+			return Err(ArithmeticError { reason: ERROR_INF });
+		}
+		let z = self.0 % rhs.0;
+		Ok(z.into())
+	}
+}
+impl Neg for FloatVal {
+	type Output = FloatVal;
+
+	fn neg(self) -> Self::Output {
+		Self(-self.0)
+	}
+}
+
+impl Hash for FloatVal {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		state.write_u64(self.0.to_bits());
+	}
+}
+impl Eq for FloatVal {}
+
+impl Ord for FloatVal {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.0.partial_cmp(&other.0).unwrap()
+	}
+}
+impl PartialOrd for FloatVal {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Adjacent for FloatVal {
+	fn predecessor(&self) -> Option<Self> {
+		self.0.predecessor().map(FloatVal)
+	}
+
+	fn successor(&self) -> Option<Self> {
+		self.0.successor().map(FloatVal)
+	}
+}
+
+impl Value {
+	fn new_boxed_int(i: IntVal) -> Value {
+		let (b, i) = match i {
+			IntVal::InfPos => (true, 1),
+			IntVal::InfNeg => (true, -1),
+			IntVal::Int(i) => (false, i),
+		};
+		let init = value_storage::Init {
+			ty: ValType::Int,
+			len: 0,
+			ref_count: 1.into(),
+			weak_count: 0.into(),
+			values: InitEmpty,
+			idents: InitEmpty,
+			ints: FromIterPrefix([i].into_iter()),
+			floats: InitEmpty,
+			bool_var: InitEmpty,
+			int_var: InitEmpty,
+			float_var: InitEmpty,
+			int_set_var: InitEmpty,
+			bytes: FromIterPrefix([b as u8].into_iter()),
+		};
+		Self::new_box(init)
+	}
+
+	fn new_boxed_float(i: FloatVal) -> Value {
+		Self::new_box(value_storage::Init {
+			ty: ValType::Float,
+			len: 0,
+			ref_count: 1.into(),
+			weak_count: 0.into(),
+			values: InitEmpty,
+			idents: InitEmpty,
+			ints: InitEmpty,
+			floats: FromIterPrefix([i].into_iter()),
+			bool_var: InitEmpty,
+			int_var: InitEmpty,
+			float_var: InitEmpty,
+			int_set_var: InitEmpty,
+			bytes: InitEmpty,
+		})
+	}
+
+	/// Get the integer value of this Value, if it is an integer. Panics otherwise.
+	pub fn as_int(&self) -> IntVal {
+		let DataView::Int(i) = self.deref() else {
+			panic!("expected int, found {self:?}");
+		};
+		i
+	}
+
+	/// Get the float value of this Value, if it is a float. Panics otherwise.
+	pub fn as_float(&self) -> FloatVal {
+		let DataView::Float(f) = self.deref() else {
+			panic!("expected float, found {self:?}");
+		};
+		f
+	}
+}
+
+static INT_MAP: Lazy<Mutex<HashMap<IntVal, Value>>> = Lazy::new(|| HashMap::new().into());
+/// Positive infinity
+pub static INT_INF_POS: Lazy<Value> = Lazy::new(|| {
+	let mut map = INT_MAP.lock().unwrap();
+	let inf = map
+		.entry(IntVal::InfPos)
+		.or_insert_with(|| Value::new_boxed_int(IntVal::InfPos));
+	inf.clone()
+});
+/// Negative infinity
+pub static INT_INF_NEG: Lazy<Value> = Lazy::new(|| {
+	let mut map = INT_MAP.lock().unwrap();
+	let inf = map
+		.entry(IntVal::InfNeg)
+		.or_insert_with(|| Value::new_boxed_int(IntVal::InfNeg));
+	inf.clone()
+});
+
+static FLOAT_MAP: Lazy<Mutex<HashMap<FloatVal, Value>>> = Lazy::new(|| HashMap::new().into());
+/// Positive infinity
+pub static FLOAT_INF_POS: Lazy<Value> = Lazy::new(|| FloatVal::INFINITY.into());
+/// Negative infinity
+pub static FLOAT_INF_NEG: Lazy<Value> = Lazy::new(|| FloatVal::NEG_INFINITY.into());
+
+impl From<bool> for Value {
+	fn from(value: bool) -> Self {
+		Value::from(if value { 1 } else { 0 })
+	}
+}
+impl TryInto<bool> for &Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<bool, Self::Error> {
+		let val: i64 = self.try_into()?;
+		if val != 0 && val != 1 {
+			todo!()
+		}
+		Ok(val == 1)
+	}
+}
+impl TryInto<bool> for Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<bool, Self::Error> {
+		(&self).try_into()
+	}
+}
+
+impl From<IntVal> for Value {
+	fn from(value: IntVal) -> Self {
+		match value {
+			IntVal::InfPos => INT_INF_POS.clone(),
+			IntVal::InfNeg => INT_INF_NEG.clone(),
+			IntVal::Int(i) if (Self::MIN_INT..=Self::MAX_INT).contains(&i) => {
+				// Can box integer (fits in 62 bits)
+				let mut x = i.unsigned_abs() << 3;
+				if i.is_negative() {
+					x |= Self::INT_SIGN_BIT;
+				}
+				x |= Self::INT_TAG;
+				Self {
+					raw: NonZeroU64::new(x).unwrap(),
+				}
+			}
+			iv => {
+				// Try and find integer in map or allocate new integer
+				let mut map = INT_MAP.lock().unwrap();
+				let v = map.entry(iv).or_insert_with(|| Value::new_boxed_int(iv));
+				v.clone()
+			}
+		}
+	}
+}
+impl TryInto<IntVal> for &Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<IntVal, Self::Error> {
+		if let DataView::Int(i) = self.deref() {
+			Ok(i)
+		} else {
+			todo!()
+		}
+	}
+}
+impl TryInto<IntVal> for Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<IntVal, Self::Error> {
+		(&self).try_into()
+	}
+}
+impl TryInto<i64> for &Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<i64, Self::Error> {
+		if let IntVal::Int(i) = self.try_into()? {
+			Ok(i)
+		} else {
+			Err(())
+		}
+	}
+}
+impl TryInto<i64> for Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<i64, Self::Error> {
+		(&self).try_into()
+	}
+}
+impl From<i64> for Value {
+	fn from(value: i64) -> Self {
+		IntVal::Int(value).into()
+	}
+}
+
+impl From<FloatVal> for Value {
+	fn from(value: FloatVal) -> Self {
+		let f: f64 = value.into();
+		const EXPONENT_MASK: u64 = 0x7FF << 52;
+		let bits = f.to_bits();
+		let mut exponent = (bits & EXPONENT_MASK) >> 52;
+		if exponent != 0 {
+			if !(513..=1534).contains(&exponent) {
+				// Exponent doesn't fit in 10 bits
+				let mut map = FLOAT_MAP.lock().unwrap();
+				let v = map
+					.entry(value)
+					.or_insert_with(|| Value::new_boxed_float(value));
+				return v.clone();
+			}
+			exponent -= 512; // Make exponent fit in 10 bits, with bias 511
+		}
+		debug_assert!(exponent <= <u10 as Integer>::MAX.value().into());
+		let sign = (bits & (1 << 63)) != 0;
+
+		const FRACTION_MASK: u64 = 0xFFFFFFFFFFFFF;
+		let fraction = bits & FRACTION_MASK; // Remove one bit of precision
+		debug_assert!(fraction <= <u52 as Integer>::MAX.value());
+		let mut raw = (fraction << 1) | (exponent << 53) | Self::FLOAT_TAG;
+		if sign {
+			raw |= Self::FLOAT_SIGN_BIT;
+		}
+		Value {
+			raw: NonZeroU64::new(raw).unwrap(),
+		}
+	}
+}
+impl From<f64> for Value {
+	fn from(value: f64) -> Self {
+		Value::from(FloatVal::from(value))
+	}
+}
+impl TryInto<FloatVal> for &Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<FloatVal, Self::Error> {
+		if let DataView::Float(f) = self.deref() {
+			Ok(f)
+		} else {
+			todo!()
+		}
+	}
+}
+impl TryInto<FloatVal> for Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<FloatVal, Self::Error> {
+		(&self).try_into()
+	}
+}
+impl TryInto<f64> for &Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<f64, Self::Error> {
+		let fv: FloatVal = self.try_into()?;
+		Ok(fv.into())
+	}
+}
+impl TryInto<f64> for Value {
+	type Error = ();
+
+	fn try_into(self) -> Result<f64, Self::Error> {
+		(&self).try_into()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::{
+		Value,
+		value::{
+			RefType,
+			num::{FLOAT_INF_NEG, FLOAT_INF_POS, FloatVal, IntVal},
+		},
+	};
+
+	#[test]
+	fn test_bool_value() {
+		let f: bool = Value::from(false).try_into().unwrap();
+		assert!(!f);
+		let t: bool = Value::from(true).try_into().unwrap();
+		assert!(t);
+	}
+
+	#[test]
+	fn test_integer_value() {
+		let zero: i64 = Value::from(0i64).try_into().unwrap();
+		assert_eq!(zero, 0i64);
+
+		let one: i64 = Value::from(1i64).try_into().unwrap();
+		assert_eq!(one, 1i64);
+		let minus_one: i64 = Value::from(-1i64).try_into().unwrap();
+		assert_eq!(minus_one, -1i64);
+
+		// Unboxed min and max
+		let minimum: i64 = Value::from(Value::MIN_INT).try_into().unwrap();
+		assert_eq!(minimum, Value::MIN_INT);
+		let maximum: i64 = Value::from(Value::MAX_INT).try_into().unwrap();
+		assert_eq!(maximum, Value::MAX_INT);
+
+		// Positive and Negative Infinity
+		let pos_inf: IntVal = Value::from(IntVal::InfPos).try_into().unwrap();
+		assert_eq!(pos_inf, IntVal::InfPos);
+		let neg_inf: IntVal = Value::from(IntVal::InfNeg).try_into().unwrap();
+		assert_eq!(neg_inf, IntVal::InfNeg);
+
+		// i64 min and max
+		let minimum: i64 = Value::from(i64::MAX).try_into().unwrap();
+		assert_eq!(minimum, i64::MAX);
+		let maximum: i64 = Value::from(i64::MIN).try_into().unwrap();
+		assert_eq!(maximum, i64::MIN);
+	}
+
+	#[test]
+	fn test_float_value() {
+		assert_eq!(Value::from(1.0).as_float(), FloatVal::from(1.0));
+
+		let zero: f64 = Value::from(0.0f64).try_into().unwrap();
+		assert_eq!(zero, 0.0);
+		let one: f64 = Value::from(1.0f64).try_into().unwrap();
+		assert_eq!(one, 1.0);
+		let minus_one: f64 = Value::from(-1.0f64).try_into().unwrap();
+		assert_eq!(minus_one, -1.0);
+
+		let twodottwo: f64 = Value::from(2.2f64).try_into().unwrap();
+		assert_eq!(twodottwo, 2.2);
+
+		// Positive and Negative Infinity
+		let pos_inf: f64 = Value::from(f64::INFINITY).try_into().unwrap();
+		assert_eq!(pos_inf, f64::INFINITY);
+		let neg_inf: f64 = Value::from(f64::NEG_INFINITY).try_into().unwrap();
+		assert_eq!(neg_inf, f64::NEG_INFINITY);
+		// f64 min and max
+		let minimum: f64 = Value::from(f64::MAX).try_into().unwrap();
+		assert_eq!(minimum, f64::MAX);
+		let maximum: f64 = Value::from(f64::MIN).try_into().unwrap();
+		assert_eq!(maximum, f64::MIN);
+
+		assert_eq!(FLOAT_INF_NEG.ref_ty(), RefType::Boxed);
+		assert_eq!(FLOAT_INF_POS.ref_ty(), RefType::Boxed);
+	}
+
+	#[test]
+	fn test_int_operations() {
+		assert!(!IntVal::InfNeg.is_finite());
+		assert!(!IntVal::InfPos.is_finite());
+		assert!(IntVal::Int(0).is_finite());
+
+		assert_eq!(IntVal::InfNeg.to_string(), "-∞");
+		assert_eq!(IntVal::InfPos.to_string(), "+∞");
+		assert_eq!(IntVal::Int(-5).to_string(), "-5");
+
+		assert!(IntVal::InfPos > IntVal::InfNeg);
+		assert!(IntVal::InfNeg <= IntVal::InfPos);
+		assert!(IntVal::InfNeg <= IntVal::InfNeg);
+		assert!(IntVal::InfPos == IntVal::InfPos);
+		assert!(IntVal::InfNeg < IntVal::Int(i64::MIN));
+		assert!(IntVal::InfPos > IntVal::Int(i64::MIN));
+		assert!(IntVal::Int(-1) < IntVal::Int(0));
+		assert!(IntVal::Int(1) >= IntVal::Int(1));
+
+		assert_eq!(IntVal::Int(1) + IntVal::Int(5), Ok(IntVal::Int(6)));
+		assert!((IntVal::InfNeg + IntVal::Int(1)).is_err());
+		assert!((IntVal::Int(0) + IntVal::InfPos).is_err());
+		assert!((IntVal::Int(i64::MAX) + IntVal::Int(1)).is_err());
+
+		assert_eq!(IntVal::Int(1) - IntVal::Int(5), Ok(IntVal::Int(-4)));
+		assert!((IntVal::InfNeg - IntVal::Int(1)).is_err());
+		assert!((IntVal::Int(0) - IntVal::InfPos).is_err());
+		assert!((IntVal::Int(i64::MIN) - IntVal::Int(1)).is_err());
+
+		assert_eq!(IntVal::Int(1) * IntVal::Int(5), Ok(IntVal::Int(5)));
+		assert!((IntVal::InfNeg * IntVal::Int(1)).is_err());
+		assert!((IntVal::Int(0) * IntVal::InfPos).is_err());
+		assert!((IntVal::Int(i64::MAX) * IntVal::Int(2)).is_err());
+
+		assert_eq!(IntVal::Int(10) / IntVal::Int(5), Ok(IntVal::Int(2)));
+		assert_eq!(IntVal::Int(0) / IntVal::Int(5), Ok(IntVal::Int(0)));
+		assert!((IntVal::InfNeg / IntVal::Int(1)).is_err());
+		assert!((IntVal::Int(100) / IntVal::InfPos).is_err());
+		assert!((IntVal::Int(10) / IntVal::Int(0)).is_err());
+
+		assert_eq!(IntVal::Int(10) % IntVal::Int(4), Ok(IntVal::Int(2)));
+		assert_eq!(IntVal::Int(10) % IntVal::Int(-1), Ok(IntVal::Int(0)));
+		assert!((IntVal::InfNeg % IntVal::Int(2)).is_err());
+		assert!((IntVal::Int(100) % IntVal::InfPos).is_err());
+		assert!((IntVal::Int(10) % IntVal::Int(0)).is_err());
+
+		assert_eq!(IntVal::Int(10).pow(IntVal::Int(4)), Ok(IntVal::Int(10_000)));
+		assert_eq!(IntVal::Int(10).pow(IntVal::Int(0)), Ok(IntVal::Int(1)));
+		assert_eq!(IntVal::Int(10).pow(IntVal::Int(1)), Ok(IntVal::Int(10)));
+		assert!(IntVal::Int(0).pow(IntVal::Int(-1)).is_err());
+		assert_eq!(IntVal::Int(1).pow(IntVal::Int(-2)), Ok(IntVal::Int(1)));
+		assert_eq!(IntVal::Int(-1).pow(IntVal::Int(-2)), Ok(IntVal::Int(1)));
+		assert_eq!(IntVal::Int(-1).pow(IntVal::Int(-3)), Ok(IntVal::Int(-1)));
+		assert_eq!(IntVal::Int(10).pow(IntVal::Int(-1)), Ok(IntVal::Int(0)));
+		assert!(IntVal::InfNeg.pow(IntVal::Int(2)).is_err());
+		assert!(IntVal::Int(100).pow(IntVal::InfPos).is_err());
+		assert!(
+			IntVal::Int(100)
+				.pow(IntVal::Int(u32::MAX as i64 + 1))
+				.is_err()
+		);
+		assert!(IntVal::Int(i64::MAX).pow(IntVal::Int(2)).is_err());
+	}
+
+	#[test]
+	#[should_panic(expected = "NaN is not a valid FloatVal")]
+	fn test_floatval_nan() {
+		let _: FloatVal = f64::NAN.into();
+	}
+
+	#[test]
+	fn test_float_operations() {
+		assert!(!FloatVal(f64::NEG_INFINITY).is_finite());
+		assert!(!FloatVal(f64::INFINITY).is_finite());
+		assert!(FloatVal(0.0).is_finite());
+
+		assert_eq!(FloatVal(f64::NEG_INFINITY).to_string(), "-∞");
+		assert_eq!(FloatVal(f64::INFINITY).to_string(), "+∞");
+		assert_eq!(FloatVal(-5.0).to_string(), "-5.0");
+
+		assert!(FloatVal(f64::INFINITY) > FloatVal(f64::NEG_INFINITY));
+		assert!(FloatVal(f64::NEG_INFINITY) <= FloatVal(f64::INFINITY));
+		assert!(FloatVal(f64::NEG_INFINITY) <= FloatVal(f64::NEG_INFINITY));
+		assert!(FloatVal(f64::INFINITY) == FloatVal(f64::INFINITY));
+		assert!(FloatVal(f64::NEG_INFINITY) < FloatVal(f64::MIN));
+		assert!(FloatVal(f64::INFINITY) > FloatVal(f64::MIN));
+		assert!(FloatVal(-1.0) < FloatVal(0.0));
+		assert!(FloatVal(1.0) >= FloatVal(1.0));
+
+		assert_eq!(FloatVal(1.0) + FloatVal(5.0), Ok(FloatVal(6.0)));
+		assert!((FloatVal(f64::NEG_INFINITY) + FloatVal(1.0)).is_err());
+		assert!((FloatVal(0.0) + FloatVal(f64::INFINITY)).is_err());
+		assert!((FloatVal(f64::MAX) + FloatVal(f64::MAX)).is_err());
+
+		assert_eq!(FloatVal(1.0) - FloatVal(5.0), Ok(FloatVal(-4.0)));
+		assert!((FloatVal(f64::NEG_INFINITY) - FloatVal(1.0)).is_err());
+		assert!((FloatVal(0.0) - FloatVal(f64::INFINITY)).is_err());
+		assert!((FloatVal(f64::MIN) - FloatVal(f64::MAX)).is_err());
+
+		assert_eq!(FloatVal(1.0) * FloatVal(5.0), Ok(FloatVal(5.0)));
+		assert!((FloatVal(f64::NEG_INFINITY) * FloatVal(1.0)).is_err());
+		assert!((FloatVal(0.0) * FloatVal(f64::INFINITY)).is_err());
+		assert!((FloatVal(f64::MAX) * FloatVal(2.0)).is_err());
+
+		assert_eq!(FloatVal(10.0) / FloatVal(5.0), Ok(FloatVal(2.0)));
+		assert_eq!(FloatVal(0.0) / FloatVal(5.0), Ok(FloatVal(0.0)));
+		assert!((FloatVal(f64::NEG_INFINITY) / FloatVal(1.0)).is_err());
+		assert!((FloatVal(100.0) / FloatVal(f64::INFINITY)).is_err());
+		assert_eq!(
+			(FloatVal(10.0) / FloatVal(0.0)),
+			Ok(FloatVal(f64::INFINITY))
+		);
+
+		assert_eq!(FloatVal(10.0) % FloatVal(4.0), Ok(FloatVal(2.0)));
+		assert_eq!(FloatVal(10.0) % FloatVal(-1.0), Ok(FloatVal(0.0)));
+		assert!((FloatVal(f64::NEG_INFINITY) % FloatVal(2.0)).is_err());
+		assert!((FloatVal(100.0) % FloatVal(f64::INFINITY)).is_err());
+		assert!((FloatVal(10.0) % FloatVal(0.0)).is_err());
+
+		assert_eq!(FloatVal(10.0).pow(FloatVal(4.0)), Ok(FloatVal(10_000.0)));
+		assert_eq!(FloatVal(10.0).pow(FloatVal(0.0)), Ok(FloatVal(1.0)));
+		assert_eq!(FloatVal(10.0).pow(FloatVal(1.0)), Ok(FloatVal(10.0)));
+		assert!(FloatVal(0.0).pow(FloatVal(-1.0)).is_err());
+		assert_eq!(FloatVal(1.0).pow(FloatVal(-2.0)), Ok(FloatVal(1.0)));
+		assert_eq!(FloatVal(-1.0).pow(FloatVal(-2.0)), Ok(FloatVal(1.0)));
+		assert_eq!(FloatVal(-1.0).pow(FloatVal(-3.0)), Ok(FloatVal(-1.0)));
+		assert_eq!(FloatVal(10.0).pow(FloatVal(-1.0)), Ok(FloatVal(0.1)));
+		assert!(FloatVal(f64::NEG_INFINITY).pow(FloatVal(2.0)).is_err());
+		assert!(FloatVal(100.0).pow(FloatVal(f64::INFINITY)).is_err());
+		assert!(FloatVal(f64::MAX).pow(FloatVal(2.0)).is_err());
+	}
+
+	#[test]
+	fn test_float_math_functions() {
+		let zero = FloatVal(0.0);
+		let one = FloatVal(1.0);
+
+		assert_eq!(zero.exp(), Ok(one));
+		assert_eq!(one.ln(), Ok(zero));
+		assert_eq!(FloatVal(2.0).log(FloatVal(8.0)), Ok(FloatVal(3.0)));
+		assert_eq!(FloatVal(2.0).log2(), Ok(one));
+		assert_eq!(one.log10(), Ok(zero));
+		assert_eq!(zero.sin(), Ok(zero));
+		assert_eq!(zero.cos(), Ok(one));
+		assert_eq!(zero.tan(), Ok(zero));
+		assert_eq!(zero.asin(), Ok(zero));
+		assert_eq!(one.acos(), Ok(zero));
+		assert_eq!(zero.atan(), Ok(zero));
+		assert_eq!(zero.sinh(), Ok(zero));
+		assert_eq!(zero.cosh(), Ok(one));
+		assert_eq!(zero.tanh(), Ok(zero));
+		assert_eq!(zero.asinh(), Ok(zero));
+		assert_eq!(one.acosh(), Ok(zero));
+		assert_eq!(zero.atanh(), Ok(zero));
+
+		assert!(FloatVal(-1.0).ln().is_err());
+		assert!(FloatVal(1.0).log(FloatVal(2.0)).is_err());
+		assert!(FloatVal(2.0).asin().is_err());
+		assert!(FloatVal(0.5).acosh().is_err());
+		assert!(FloatVal(1.0).atanh().is_err());
+		assert!(FloatVal(f64::INFINITY).sin().is_err());
+		assert!(FloatVal(1_000.0).exp().is_err());
+	}
+}

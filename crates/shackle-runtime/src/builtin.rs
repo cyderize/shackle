@@ -1,0 +1,1171 @@
+//! Interpreter builtins
+
+use itertools::Itertools;
+use rand::rng;
+use rand_distr::{
+	Bernoulli, Binomial, Cauchy, ChiSquared, Distribution, Exp, FisherF, Gamma, LogNormal, Normal,
+	Poisson, StudentT, Uniform, Weibull, weighted::WeightedIndex,
+};
+use rangelist::IntervalIterator;
+
+use crate::{
+	FloatVal, IntVal, Interpreter, Value,
+	error::{
+		ArithmeticError, FloatSetCoercionError, InvalidIndexSet, RuntimeErrorKind, ValueError,
+	},
+	nanozinc::Solve,
+	value::{DataView, FLOAT_SET_INF, INT_SET_EMPTY, INT_SET_INF},
+};
+
+/// Builtin call with evaluated arguments
+pub type Builtin = shackle_ir::Builtin<Value>;
+
+/// Evaluate a builtin call. The caller is responsible for interpreter state transitions.
+pub fn eval_builtin(
+	interpreter: &mut Interpreter<'_>,
+	builtin: Builtin,
+) -> Result<Value, RuntimeErrorKind> {
+	Ok(match builtin {
+		Builtin::SolveMinimize {
+			annotations,
+			objective,
+		} => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter.nanozinc_mut().set_solve(Solve::Minimize {
+				annotations: anns,
+				objective,
+			});
+			true.into()
+		}
+		Builtin::SolveMaximize {
+			annotations,
+			objective,
+		} => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter.nanozinc_mut().set_solve(Solve::Maximize {
+				annotations: anns,
+				objective,
+			});
+			true.into()
+		}
+		Builtin::SolveSatisfy { annotations } => {
+			let seq = annotations.as_seq();
+			let anns = seq.iter().cloned().collect::<Vec<_>>();
+			interpreter
+				.nanozinc_mut()
+				.set_solve(Solve::Satisfy { annotations: anns });
+			true.into()
+		}
+		Builtin::Abort(message) => {
+			return Err(RuntimeErrorKind::Abort(message.as_str().to_owned()));
+		}
+		Builtin::BoolToInt(v) => v, // Same representation, so no-op
+		Builtin::IntToFloat(v) => int_to_float(v)?,
+		Builtin::Annotate { .. } => true.into(),
+		Builtin::Add { left, right } => plus(left, right)?,
+		Builtin::Sub { left, right } => minus(left, right)?,
+		Builtin::Neg(value) => negate(value),
+		Builtin::Times { left, right } => times(left, right)?,
+		Builtin::DivInt { dividend, divisor } => int_div(dividend, divisor)?,
+		Builtin::DivFloat { dividend, divisor } => float_div(dividend, divisor)?,
+		Builtin::SetUnionInt { left, right } => int_set_union(left, right),
+		Builtin::SetIntersectInt { left, right } => int_set_intersection(left, right),
+		Builtin::SetDiffInt { left, right } => int_set_difference(left, right),
+		Builtin::SetUnionFloat { left, right } => float_set_union(left, right)?,
+		Builtin::SetIntersectFloat { left, right } => float_set_intersection(left, right)?,
+		Builtin::IndexedArray(x) => indexed_array(x)?,
+		Builtin::ArrayAccess { array, indices } => array_access(array, indices)?,
+		Builtin::ArraySlice { array, slices } => array_slice(array, slices),
+		Builtin::ArrayToIntSet(x) => array_to_int_set(x),
+		Builtin::ArrayToFloatSet(x) => array_to_float_set(x),
+		Builtin::ArrayToDiscreteSet(x) => array_to_discrete_set(x),
+		Builtin::ArrayLength(x) => array_len(x),
+		Builtin::IndexSets(x) => index_sets(x),
+		Builtin::ArrayXd { source, array } => array_xd(source, array),
+		Builtin::ArrayKd { index_sets, array } => array_kd(index_sets, array)?,
+		Builtin::Normal { mean, std } => sample_float(Normal::new(float_arg(mean), float_arg(std)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::UniformFloat { lower, upper } => {
+			sample_float(Uniform::new(float_arg(lower), float_arg(upper)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::UniformInt { lower, upper } => {
+			uniform_int(lower, upper).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Poisson { mean } => sample_float(Poisson::new(float_arg(mean)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::Gamma { alpha, beta } => {
+			sample_float(Gamma::new(float_arg(alpha), float_arg(beta)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Weibull { shape, scale } => {
+			sample_float(Weibull::new(float_arg(scale), float_arg(shape)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Exponential { lambda } => sample_float(Exp::new(float_arg(lambda)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::LogNormal { mean, std } => {
+			sample_float(LogNormal::new(float_arg(mean), float_arg(std)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::ChiSquared { dof } => sample_float(ChiSquared::new(float_arg(dof)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::Cauchy { mean, scale } => {
+			sample_float(Cauchy::new(float_arg(mean), float_arg(scale)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::FDistribution { dof1, dof2 } => {
+			sample_float(FisherF::new(float_arg(dof1), float_arg(dof2)))
+				.map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::TDistribution { size } => sample_float(StudentT::new(float_arg(size)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::DiscreteDistribution { weights } => {
+			discrete_distribution(weights).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Bernoulli { prob } => sample_bool(Bernoulli::new(float_arg(prob)))
+			.map_err(RuntimeErrorKind::InvalidDistribution)?,
+		Builtin::Binomial { n, p } => {
+			binomial(n, p).map_err(RuntimeErrorKind::InvalidDistribution)?
+		}
+		Builtin::Warn(message) => {
+			writeln!(interpreter.output.stderr(), "Warning: {}", message.as_str())
+				.expect("failed to write interpreter diagnostic");
+			true.into()
+		}
+		Builtin::TraceExp(_) => todo!("Builtin::TraceExp"),
+		Builtin::TraceToSection { .. } => todo!("Builtin::TraceToSection"),
+		Builtin::LogStreamToString => todo!("Builtin::LogStreamToString"),
+		Builtin::CheckDebugMode => false.into(),
+		Builtin::LowerBound(x) => lower_bound(x),
+		Builtin::UpperBound(x) => upper_bound(x),
+		Builtin::LowerBoundArray(x) => lower_bound_array(x),
+		Builtin::UpperBoundArray(x) => upper_bound_array(x),
+		Builtin::Domain(x) => domain(x),
+		Builtin::HasBounds(x) => false.into(),
+		Builtin::HasUpperBoundSet(_x) => false.into(),
+		Builtin::IsFixed(x) => is_fixed(x).into(),
+		Builtin::Fix(x) => fix(x)?,
+		Builtin::HasAnn { variable, ann } => false.into(),
+		Builtin::IsSame { variable, other } => (variable == other).into(),
+		Builtin::CompilerVersion => compiler_version(),
+		Builtin::StringPlusPlus { left, right } => string_concat(left, right),
+		Builtin::StringLength(x) => string_len(x),
+		Builtin::StringSplit { string, separator } => string_split(string, separator),
+		Builtin::LessThan { left, right } => (left < right).into(),
+		Builtin::Equal { left, right } => (left == right).into(),
+		Builtin::Sort(x) => array_sort(x),
+		Builtin::SortBy { array, sort_by } => array_sort_by(array, sort_by)?,
+		Builtin::Show(x) => show(interpreter.program(), x),
+		Builtin::ShowDzn(_) => todo!("Builtin::ShowDzn"),
+		Builtin::ShowDznId(_) => todo!("Builtin::ShowDznId"),
+		Builtin::ShowCheckerOutput => todo!("Builtin::ShowCheckerOutput"),
+		Builtin::ShowJson(_) => todo!("Builtin::ShowJson"),
+		Builtin::ShowInt { width, value } => show_int(width, value)?,
+		Builtin::ShowFloat {
+			width,
+			precision,
+			value,
+		} => show_float(width, precision, value)?,
+		Builtin::Format { .. } => todo!("Builtin::Format"),
+		Builtin::FormatDefault { .. } => todo!("Builtin::FormatDefault"),
+		Builtin::FormatJustifyString { .. } => todo!("Builtin::FormatJustifyString"),
+		Builtin::FormatJustifyStringWithPrecision { .. } => {
+			todo!("Builtin::FormatJustifyStringWithPrecision")
+		}
+		Builtin::OutputToSection { .. } => todo!("Builtin::OutputToSection"),
+		Builtin::OutputToJsonSection { .. } => todo!("Builtin::OutputToJsonSection"),
+		Builtin::SetRangeInt { min, max } => range_int(min, max),
+		Builtin::SetRangeFloat { min, max } => range_float(min, max),
+		Builtin::SetToRangesInt(x) => set_to_ranges_int(x),
+		Builtin::SetToRangesFloat(x) => set_to_ranges_float(x)?,
+		Builtin::SetCard(x) => card(x),
+		Builtin::SetDiffFloat { left, right } => float_set_difference(left, right)?,
+		Builtin::Ceil(x) => ceil(x)?,
+		Builtin::Floor(x) => floor(x)?,
+		Builtin::Round(x) => round(x)?,
+		Builtin::SetToArray(x) => set_to_array(x)?,
+		Builtin::PowInt { base, exponent } => int_pow(base, exponent)?,
+		Builtin::PowFloat { base, exponent } => float_pow(base, exponent)?,
+		Builtin::MinArray(x) => min(x),
+		Builtin::MinSet(x) => min(x),
+		Builtin::MaxArray(x) => max(x),
+		Builtin::MaxSet(x) => max(x),
+		Builtin::Sqrt(x) => sqrt(x)?,
+		Builtin::Exp(x) => float_math(x, FloatVal::exp)?,
+		Builtin::Ln(x) => float_math(x, FloatVal::ln)?,
+		Builtin::Log { base, argument } => float_log(base, argument)?,
+		Builtin::Log2(x) => float_math(x, FloatVal::log2)?,
+		Builtin::Log10(x) => float_math(x, FloatVal::log10)?,
+		Builtin::Sin(x) => float_math(x, FloatVal::sin)?,
+		Builtin::Cos(x) => float_math(x, FloatVal::cos)?,
+		Builtin::Tan(x) => float_math(x, FloatVal::tan)?,
+		Builtin::ASin(x) => float_math(x, FloatVal::asin)?,
+		Builtin::ACos(x) => float_math(x, FloatVal::acos)?,
+		Builtin::ATan(x) => float_math(x, FloatVal::atan)?,
+		Builtin::SinH(x) => float_math(x, FloatVal::sinh)?,
+		Builtin::CosH(x) => float_math(x, FloatVal::cosh)?,
+		Builtin::TanH(x) => float_math(x, FloatVal::tanh)?,
+		Builtin::ASinH(x) => float_math(x, FloatVal::asinh)?,
+		Builtin::ACosH(x) => float_math(x, FloatVal::acosh)?,
+		Builtin::ATanH(x) => float_math(x, FloatVal::atanh)?,
+	})
+}
+
+const INVALID_DISTRIBUTION: &str = "invalid distribution parameters";
+
+fn float_arg(value: Value) -> f64 {
+	value.as_float().into()
+}
+
+fn int_arg(value: Value) -> Result<i64, ValueError> {
+	match value.as_int() {
+		IntVal::Int(value) => Ok(value),
+		IntVal::InfPos | IntVal::InfNeg => Err(ValueError {
+			reason: INVALID_DISTRIBUTION,
+		}),
+	}
+}
+
+fn sample_float<D, E>(distribution: Result<D, E>) -> Result<Value, ValueError>
+where
+	D: Distribution<f64>,
+{
+	distribution
+		.map(|distribution| distribution.sample(&mut rng()).into())
+		.map_err(|_| ValueError {
+			reason: INVALID_DISTRIBUTION,
+		})
+}
+
+fn sample_bool<E>(distribution: Result<Bernoulli, E>) -> Result<Value, ValueError> {
+	distribution
+		.map(|distribution| distribution.sample(&mut rng()).into())
+		.map_err(|_| ValueError {
+			reason: INVALID_DISTRIBUTION,
+		})
+}
+
+fn uniform_int(lower: Value, upper: Value) -> Result<Value, ValueError> {
+	let distribution =
+		Uniform::new_inclusive(int_arg(lower)?, int_arg(upper)?).map_err(|_| ValueError {
+			reason: INVALID_DISTRIBUTION,
+		})?;
+	Ok(distribution.sample(&mut rng()).into())
+}
+
+fn binomial(n: Value, p: Value) -> Result<Value, ValueError> {
+	let n = int_arg(n)?.try_into().map_err(|_| ValueError {
+		reason: INVALID_DISTRIBUTION,
+	})?;
+	let distribution = Binomial::new(n, float_arg(p)).map_err(|_| ValueError {
+		reason: INVALID_DISTRIBUTION,
+	})?;
+	let sample: u64 = distribution.sample(&mut rng());
+	let sample: i64 = sample.try_into().map_err(|_| ValueError {
+		reason: INVALID_DISTRIBUTION,
+	})?;
+	Ok(sample.into())
+}
+
+fn discrete_distribution(weights: Value) -> Result<Value, ValueError> {
+	let weights = weights.as_seq();
+	if weights.dims() != 1 {
+		return Err(ValueError {
+			reason: INVALID_DISTRIBUTION,
+		});
+	}
+	let (lower, _) = weights.dim(1);
+	let weights: Vec<f64> = weights
+		.iter()
+		.map(|weight| float_arg(weight.clone()))
+		.collect();
+	let distribution = WeightedIndex::new(weights).map_err(|_| ValueError {
+		reason: INVALID_DISTRIBUTION,
+	})?;
+	let index: i64 = distribution
+		.sample(&mut rng())
+		.try_into()
+		.map_err(|_| ValueError {
+			reason: INVALID_DISTRIBUTION,
+		})?;
+	lower.checked_add(index).map(Value::from).ok_or(ValueError {
+		reason: INVALID_DISTRIBUTION,
+	})
+}
+
+fn int_to_float(x: Value) -> Result<Value, FloatSetCoercionError> {
+	match x.deref() {
+		DataView::Int(v) => Ok(FloatVal::from(v).into()),
+		DataView::IntSet(s) if s.is_finite() => Ok(Value::from_iter(s.values().map(|v| {
+			let f = FloatVal::from(v);
+			f..=f
+		}))),
+		DataView::IntSet(_) => Err(FloatSetCoercionError {
+			reason: INFINITE_INT_SET_COERCION,
+		}),
+		_ => panic!("Expected int or int set, found {:?}", x),
+	}
+}
+
+fn plus(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	if matches!((a.deref(), b.deref()), (DataView::Int(_), DataView::Int(_))) {
+		(a.as_int() + b.as_int()).map(Value::from)
+	} else {
+		(a.as_float() + b.as_float()).map(Value::from)
+	}
+}
+
+fn minus(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	if matches!((a.deref(), b.deref()), (DataView::Int(_), DataView::Int(_))) {
+		(a.as_int() - b.as_int()).map(Value::from)
+	} else {
+		(a.as_float() - b.as_float()).map(Value::from)
+	}
+}
+
+fn negate(a: Value) -> Value {
+	match a.deref() {
+		DataView::Int(x) => (-x).into(),
+		DataView::Float(x) => (-x).into(),
+		_ => unreachable!(),
+	}
+}
+
+fn times(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	if matches!((a.deref(), b.deref()), (DataView::Int(_), DataView::Int(_))) {
+		(a.as_int() * b.as_int()).map(Value::from)
+	} else {
+		(a.as_float() * b.as_float()).map(Value::from)
+	}
+}
+
+fn int_div(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	(a.as_int() / b.as_int()).map(Value::from)
+}
+
+fn float_div(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	(a.as_float() / b.as_float()).map(Value::from)
+}
+
+fn int_set_union(a: Value, b: Value) -> Value {
+	a.as_int_set().union(&b.as_int_set())
+}
+
+fn int_set_intersection(a: Value, b: Value) -> Value {
+	a.as_int_set().intersect(&b.as_int_set())
+}
+
+fn int_set_difference(a: Value, b: Value) -> Value {
+	a.as_int_set().diff(&b.as_int_set())
+}
+
+const INFINITE_INT_SET_COERCION: &str = "cannot coerce an infinite integer set to a float set";
+
+fn float_set_union(a: Value, b: Value) -> Result<Value, FloatSetCoercionError> {
+	if let (DataView::IntSet(x), DataView::IntSet(y)) = (a.deref(), b.deref()) {
+		return Ok(x.union(&y));
+	}
+	ensure_finite_int_set_coercions(&a, &b)?;
+	let x = a.as_float_set();
+	let y = b.as_float_set();
+	Ok(x.union(&y))
+}
+
+fn float_set_intersection(a: Value, b: Value) -> Result<Value, FloatSetCoercionError> {
+	if let (DataView::IntSet(x), DataView::IntSet(y)) = (a.deref(), b.deref()) {
+		return Ok(x.intersect(&y));
+	}
+	ensure_finite_int_set_coercions(&a, &b)?;
+	let x = a.as_float_set();
+	let y = b.as_float_set();
+	Ok(x.intersect(&y))
+}
+
+fn float_set_difference(a: Value, b: Value) -> Result<Value, FloatSetCoercionError> {
+	if let (DataView::IntSet(x), DataView::IntSet(y)) = (a.deref(), b.deref()) {
+		return Ok(x.diff(&y));
+	}
+	ensure_finite_int_set_coercions(&a, &b)?;
+	let x = a.as_float_set();
+	let y = b.as_float_set();
+	Ok(x.diff(&y))
+}
+
+fn ensure_finite_int_set_coercions(a: &Value, b: &Value) -> Result<(), FloatSetCoercionError> {
+	for value in [a, b] {
+		if let DataView::IntSet(set) = value.deref()
+			&& !set.is_finite()
+		{
+			return Err(FloatSetCoercionError {
+				reason: INFINITE_INT_SET_COERCION,
+			});
+		}
+	}
+	Ok(())
+}
+
+fn floor(a: Value) -> Result<Value, ArithmeticError> {
+	if let DataView::Int(_) = a.deref() {
+		return Ok(a.clone());
+	}
+	a.as_float().floor().map(Value::from)
+}
+
+fn ceil(a: Value) -> Result<Value, ArithmeticError> {
+	if let DataView::Int(_) = a.deref() {
+		return Ok(a.clone());
+	}
+	a.as_float().ceil().map(Value::from)
+}
+
+fn round(a: Value) -> Result<Value, ArithmeticError> {
+	if let DataView::Int(_) = a.deref() {
+		return Ok(a.clone());
+	}
+	a.as_float().round().map(Value::from)
+}
+
+fn sqrt(x: Value) -> Result<Value, ArithmeticError> {
+	x.as_float().sqrt().map(Value::from)
+}
+
+fn float_math(
+	x: Value,
+	operation: fn(&FloatVal) -> Result<FloatVal, ArithmeticError>,
+) -> Result<Value, ArithmeticError> {
+	let x = x.as_float();
+	operation(&x).map(Value::from)
+}
+
+fn float_log(base: Value, argument: Value) -> Result<Value, ArithmeticError> {
+	base.as_float().log(argument.as_float()).map(Value::from)
+}
+
+fn int_pow(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	a.as_int().pow(b.as_int()).map(Value::from)
+}
+
+fn float_pow(a: Value, b: Value) -> Result<Value, ArithmeticError> {
+	a.as_float().pow(b.as_float()).map(Value::from)
+}
+
+fn array_access(array: Value, index: Value) -> Result<Value, ArithmeticError> {
+	let indices: Vec<i64> = match index.deref() {
+		DataView::Int(_) => vec![index.as_int().try_into()?],
+		DataView::Seq(indices) => indices
+			.iter()
+			.map(|v| v.as_int().try_into())
+			.collect::<Result<Vec<_>, _>>()?,
+		_ => panic!("expected value to be an integer literal or array of integer literals"),
+	};
+	Ok(array.as_seq()[&indices].clone())
+}
+
+fn min(x: Value) -> Value {
+	match x.deref() {
+		DataView::Seq(seq) => seq.iter().min().unwrap().clone(),
+		DataView::IntSet(set) => set.lower_bound().into(),
+		DataView::FloatSet(set) => set.lower_bound().into(),
+		DataView::Set(set) => set.min_value().unwrap(),
+		_ => panic!("invalid value"),
+	}
+}
+
+fn max(x: Value) -> Value {
+	match x.deref() {
+		DataView::Seq(seq) => seq.iter().max().unwrap().clone(),
+		DataView::IntSet(set) => set.upper_bound().into(),
+		DataView::FloatSet(set) => set.upper_bound().into(),
+		DataView::Set(set) => set.max_value().unwrap(),
+		_ => panic!("invalid value"),
+	}
+}
+
+fn range_int(a: Value, b: Value) -> Value {
+	Value::from_iter([a.as_int()..=b.as_int()])
+}
+
+fn range_float(a: Value, b: Value) -> Value {
+	Value::from_iter([a.as_float()..=b.as_float()])
+}
+
+fn card(x: Value) -> Value {
+	match x.deref() {
+		DataView::IntSet(set) => set.card().into(),
+		DataView::FloatSet(set) => set.card().into(),
+		DataView::Set(set) => set.card(),
+		_ => panic!("invalid value"),
+	}
+}
+
+fn compiler_version() -> Value {
+	let version = env!("CARGO_PKG_VERSION");
+	version.into()
+}
+
+fn string_len(x: Value) -> Value {
+	(x.as_str().len() as i64).into()
+}
+
+fn show_value(program: &shackle_ir::Program, x: Value) -> String {
+	match x.deref() {
+		DataView::Int(i) => format!("{}", i),
+		DataView::Float(f) => format!("{}", f),
+		DataView::IntSet(s) => format!("{}", s),
+		DataView::FloatSet(s) => format!("{}", s),
+		DataView::Set(s) => format!(
+			"{{{}}}",
+			s.values()
+				.map(|v| show_value(program, v.clone()))
+				.join(", ")
+		),
+		DataView::Seq(s) => format!(
+			"({})",
+			s.iter().map(|v| show_value(program, v.clone())).join(", ")
+		),
+		DataView::Str(s) => format!("{:?}", s),
+		DataView::Annotation(a) => format!(
+			"{}{}",
+			program.strings[program.annotations[a.annotation].name],
+			if a.arguments.is_empty() {
+				"".to_owned()
+			} else {
+				format!(
+					"({})",
+					a.arguments
+						.iter()
+						.map(|v| show_value(program, v.clone()))
+						.join(", ")
+				)
+			}
+		),
+		DataView::BoolVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::IntVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::FloatVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+		DataView::IntSetVar(v) => format!("_X_INTRODUCED_{}", v.ident()),
+	}
+}
+
+fn show(program: &shackle_ir::Program, x: Value) -> Value {
+	show_value(program, x).as_str().into()
+}
+
+fn justify_number(width: Value, number: String) -> Result<Value, RuntimeErrorKind> {
+	let width: i64 = width.as_int().try_into()?;
+	let padding = usize::try_from(width.unsigned_abs()).map_err(|_| ValueError {
+		reason: "format width is too large",
+	})?;
+	let formatted = if width < 0 {
+		format!("{number:<padding$}")
+	} else {
+		format!("{number:>padding$}")
+	};
+	Ok(formatted.as_str().into())
+}
+
+fn show_int(width: Value, value: Value) -> Result<Value, RuntimeErrorKind> {
+	justify_number(width, value.as_int().to_string())
+}
+
+fn show_float(width: Value, precision: Value, value: Value) -> Result<Value, RuntimeErrorKind> {
+	let precision: i64 = precision.as_int().try_into()?;
+	let precision = usize::try_from(precision).map_err(|_| ValueError {
+		reason: "show_float precision must be non-negative and fit in usize",
+	})?;
+	let value = f64::from(value.as_float());
+	justify_number(width, format!("{value:.precision$}"))
+}
+
+fn string_concat(x: Value, y: Value) -> Value {
+	(&format!("{}{}", x.as_str(), y.as_str())[..]).into()
+}
+
+fn string_split(string: Value, separator: Value) -> Value {
+	let separator = separator.as_str();
+	if separator.is_empty() {
+		return Value::from_iter(
+			string
+				.as_str()
+				.chars()
+				.map(|character| Value::from(character.to_string().as_str())),
+		);
+	}
+	Value::from_iter(string.as_str().split(separator).map(Value::from))
+}
+
+fn array_len(x: Value) -> Value {
+	(x.as_seq().len() as i64).into()
+}
+
+fn index_sets(x: Value) -> Value {
+	let seq = x.as_seq();
+	Value::from_iter((1..=seq.dims()).map(|i| {
+		let (a, b) = seq.dim(i);
+		Value::from_iter([IntVal::from(a)..=IntVal::from(b)])
+	}))
+}
+
+fn array_sort(x: Value) -> Value {
+	let seq = x.as_seq();
+	Value::from_iter(seq.iter().cloned().sorted()).with_dim(seq.dims_iter())
+}
+
+fn array_sort_by(array: Value, sort_by: Value) -> Result<Value, ValueError> {
+	let array_seq = array.as_seq();
+	let sort_by_seq = sort_by.as_seq();
+	if array_seq.dims() != sort_by_seq.dims() {
+		return Err(ValueError {
+			reason: "array and sort_by must have the same dimensions",
+		});
+	}
+	if array_seq.len() != sort_by_seq.len() {
+		return Err(ValueError {
+			reason: "array and sort_by must have the same length",
+		});
+	}
+	if array_seq
+		.dims_iter()
+		.zip(sort_by_seq.dims_iter())
+		.any(|(a, b)| a != b)
+	{
+		return Err(ValueError {
+			reason: "array and sort_by must have the same index sets",
+		});
+	}
+	let mut pairs = array_seq
+		.indices()
+		.map(|i| (array_seq[&i].clone(), sort_by_seq[&i].clone()))
+		.collect::<Vec<_>>();
+	pairs.sort_by(|a, b| a.1.cmp(&b.1));
+	let sorted_array = pairs.into_iter().map(|(a, _)| a).collect::<Vec<_>>();
+	Ok(Value::from_iter(sorted_array).with_dim(array_seq.dims_iter()))
+}
+
+fn array_to_int_set(x: Value) -> Value {
+	Value::from_iter(x.as_seq().iter().cloned().map(|v| {
+		let i = v.as_int();
+		i..=i
+	}))
+}
+
+fn array_to_float_set(x: Value) -> Value {
+	Value::from_iter(x.as_seq().iter().cloned().map(|v| {
+		let f = v.as_float();
+		f..=f
+	}))
+}
+
+fn array_to_discrete_set(x: Value) -> Value {
+	Value::new_discrete_set(x.as_seq().iter().cloned())
+}
+
+fn array_xd(source: Value, array: Value) -> Value {
+	array.with_dim(source.as_seq().dims_iter())
+}
+
+/// Infer rectangular index sets and put values in row-major order.
+fn indexed_array(array: Value) -> Result<Value, InvalidIndexSet> {
+	let mut entries = Vec::new();
+	let mut dims: Vec<(i64, i64)> = Vec::new();
+	for entry in array.as_seq().iter() {
+		let pair = entry.as_seq();
+		let mut fields = pair.iter();
+		let index = fields
+			.next()
+			.expect("indexed array entry must have an index");
+		let value = fields
+			.next()
+			.expect("indexed array entry must have a value");
+		let indices: Vec<i64> = match index.deref() {
+			DataView::Seq(indices) => indices
+				.iter()
+				.map(|v| v.as_int().try_into())
+				.collect::<Result<_, _>>(),
+			_ => std::iter::once(index.as_int().try_into()).collect(),
+		}
+		.map_err(|_| InvalidIndexSet {
+			reason: "Infinite index not allowed",
+		})?;
+		if indices.is_empty() || indices.len() > u8::MAX as usize {
+			return Err(InvalidIndexSet {
+				reason: "Invalid number of index dimensions",
+			});
+		}
+		if entries.is_empty() {
+			dims.extend(indices.iter().map(|&i| (i, i)));
+		} else if indices.len() != dims.len() {
+			return Err(InvalidIndexSet {
+				reason: "Indices must have the same number of dimensions",
+			});
+		}
+		for (&index, (min, max)) in indices.iter().zip(&mut dims) {
+			*min = (*min).min(index);
+			*max = (*max).max(index);
+		}
+		entries.push((indices, value.clone()));
+	}
+	if entries.is_empty() {
+		return Ok(Value::from_iter(std::iter::empty::<Value>()));
+	}
+	entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+	if entries.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+		return Err(InvalidIndexSet {
+			reason: "Duplicate index not allowed",
+		});
+	}
+	// Unique points fill the rectangle exactly iff its volume equals their count.
+	// Checked arithmetic also rejects bounds too large for sequence indexing.
+	let count = dims.iter().try_fold(1_i64, |count, &(min, max)| {
+		count.checked_mul(max.checked_sub(min)?.checked_add(1)?)
+	});
+	if count.and_then(|n| usize::try_from(n).ok()) != Some(entries.len()) {
+		return Err(InvalidIndexSet {
+			reason: "Indices must form a contiguous rectangular array",
+		});
+	}
+	Ok(Value::from_iter(entries.into_iter().map(|(_, value)| value)).with_dim(dims))
+}
+
+fn array_kd(index_sets: Value, array: Value) -> Result<Value, InvalidIndexSet> {
+	let index_sets_seq = index_sets.as_seq();
+	let mut count = 1_usize;
+	let mut dims = Vec::with_capacity(index_sets_seq.len());
+	for v in index_sets_seq.iter() {
+		let s = v.as_int_set();
+		if !s.is_finite() {
+			return Err(InvalidIndexSet {
+				reason: "Infinite index set not allowed",
+			});
+		}
+		if !s.is_contiguous() && s.card() != 0.into() {
+			return Err(InvalidIndexSet {
+				reason: "Non-contiguous index set not allowed",
+			});
+		}
+		let min: i64 = s.lower_bound().try_into().unwrap();
+		let max: i64 = s.upper_bound().try_into().unwrap();
+		dims.push((min, max));
+		count *= (max - min + 1) as usize;
+	}
+
+	if count != array.as_seq().len() {
+		return Err(InvalidIndexSet {
+			reason: "Array length does not match index set size",
+		});
+	}
+
+	Ok(array.with_dim(dims))
+}
+
+fn set_to_array(x: Value) -> Result<Value, ValueError> {
+	match x.deref() {
+		DataView::IntSet(set) if set.is_finite() => {
+			Ok(Value::from_iter(set.values().map(Value::from)))
+		}
+		DataView::FloatSet(set) if set.is_finite() => {
+			Ok(Value::from_iter(set.values().map(Value::from)))
+		}
+		DataView::IntSet(_) | DataView::FloatSet(_) => Err(ValueError {
+			reason: "cannot convert infinite set to array",
+		}),
+		DataView::Set(set) => Ok(Value::from_iter(set.values().cloned())),
+		_ => panic!("invalid value"),
+	}
+}
+
+fn set_to_ranges_int(x: Value) -> Value {
+	let set = x.as_int_set();
+	Value::from_iter(
+		set.intervals()
+			.flat_map(|r| [Value::from(*r.start()), Value::from(*r.end())]),
+	)
+}
+
+fn set_to_ranges_float(x: Value) -> Result<Value, FloatSetCoercionError> {
+	if let DataView::IntSet(set) = x.deref()
+		&& !set.is_finite()
+	{
+		return Err(FloatSetCoercionError {
+			reason: INFINITE_INT_SET_COERCION,
+		});
+	}
+	let set = x.as_float_set();
+	Ok(Value::from_iter(set.intervals().flat_map(|r| {
+		[Value::from(*r.start()), Value::from(*r.end())]
+	})))
+}
+
+fn lower_bound(x: Value) -> Value {
+	match x.deref() {
+		DataView::BoolVar(v) => match v.domain() {
+			Some(true) => return true.into(),
+			_ => return false.into(),
+		},
+		DataView::IntVar(v) => {
+			return v
+				.domain()
+				.map(|d| d.as_int_set().lower_bound())
+				.unwrap_or_else(|| IntVal::InfNeg)
+				.into();
+		}
+		DataView::FloatVar(v) => {
+			return v
+				.domain()
+				.map(|d| d.as_float_set().lower_bound())
+				.unwrap_or_else(|| FloatVal::NEG_INFINITY)
+				.into();
+		}
+		DataView::IntSetVar(_) => return INT_SET_EMPTY.clone(),
+		_ => (),
+	}
+	x
+}
+
+fn lower_bound_array(x: Value) -> Value {
+	let seq = x.as_seq();
+	seq.iter().cloned().map(lower_bound).min().unwrap()
+}
+
+fn upper_bound(x: Value) -> Value {
+	match x.deref() {
+		DataView::BoolVar(v) => match v.domain() {
+			Some(true) => return true.into(),
+			_ => return false.into(),
+		},
+		DataView::IntVar(v) => {
+			return v
+				.domain()
+				.map(|d| d.as_int_set().upper_bound())
+				.unwrap_or_else(|| IntVal::InfPos)
+				.into();
+		}
+		DataView::FloatVar(v) => {
+			return v
+				.domain()
+				.map(|d| d.as_float_set().upper_bound())
+				.unwrap_or_else(|| FloatVal::INFINITY)
+				.into();
+		}
+		DataView::IntSetVar(v) => {
+			return v
+				.domain()
+				.map(|d| Value::from_iter(d.as_int_set().intervals()))
+				.unwrap_or_else(|| INT_SET_INF.clone());
+		}
+		_ => (),
+	}
+	x
+}
+
+fn upper_bound_array(x: Value) -> Value {
+	let seq = x.as_seq();
+	seq.iter().cloned().map(upper_bound).max().unwrap()
+}
+
+fn domain(x: Value) -> Value {
+	match x.deref() {
+		// Fixed variables are represented by scalar values, but their domains
+		// must still be sets, just like the domains of unfixed variables.
+		DataView::Int(value) => return Value::from_iter([value..=value]),
+		DataView::Float(value) => return Value::from_iter([value..=value]),
+		DataView::BoolVar(v) => match v.domain() {
+			Some(b) => {
+				let value = IntVal::from(b as i64);
+				return Value::from_iter([value..=value]);
+			}
+			_ => return Value::from_iter([IntVal::from(0)..=IntVal::from(1)]),
+		},
+		DataView::IntVar(v) => {
+			return v.domain().unwrap_or_else(|| INT_SET_INF.clone());
+		}
+		DataView::FloatVar(v) => {
+			return v.domain().unwrap_or_else(|| FLOAT_SET_INF.clone());
+		}
+		DataView::IntSetVar(v) => {
+			return v.domain().unwrap_or_else(|| INT_SET_INF.clone());
+		}
+		_ => (),
+	}
+	x
+}
+
+fn is_fixed(x: Value) -> bool {
+	match x.deref() {
+		DataView::BoolVar(v) => v.is_fixed(),
+		DataView::IntVar(v) => v.is_fixed(),
+		DataView::FloatVar(v) => v.is_fixed(),
+		DataView::IntSetVar(v) => v.is_fixed(),
+		DataView::Seq(s) => s.iter().all(|v| is_fixed(v.clone())),
+		_ => true,
+	}
+}
+
+fn fix(x: Value) -> Result<Value, ValueError> {
+	match x.deref() {
+		DataView::BoolVar(v) => return v.fix(),
+		DataView::IntVar(v) => return v.fix(),
+		DataView::FloatVar(v) => return v.fix(),
+		DataView::IntSetVar(v) => return v.fix(),
+		DataView::Seq(s) => {
+			return Ok(Value::from_iter(
+				s.iter().cloned().map(fix).collect::<Result<Vec<_>, _>>()?,
+			));
+		}
+		_ => (),
+	}
+	Ok(x)
+}
+
+fn array_slice(array: Value, slices: Value) -> Value {
+	let select_idxs = slices
+		.as_seq()
+		.iter()
+		.map(|s| {
+			let r = s.as_int_set();
+			let a: i64 = r.lower_bound().try_into().unwrap();
+			let b: i64 = r.upper_bound().try_into().unwrap();
+			(a, b)
+		})
+		.collect::<Vec<_>>();
+	let size = select_idxs.iter().map(|(a, b)| b - a + 1).product::<i64>();
+	array.slice(select_idxs, [(1, size)])
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn fixed_scalar_domains_are_singleton_sets() {
+		for value in [-7, 0, 1, 42] {
+			let result = domain(Value::from(value));
+			assert_eq!(
+				result.as_int_set().intervals().collect::<Vec<_>>(),
+				vec![IntVal::from(value)..=IntVal::from(value)]
+			);
+		}
+		for value in [-1.25, 0.0, 2.5] {
+			let result = domain(Value::from(value));
+			assert_eq!(
+				result.as_float_set().intervals().collect::<Vec<_>>(),
+				vec![FloatVal::from(value)..=FloatVal::from(value)]
+			);
+		}
+	}
+
+	fn indexed_entries(entries: impl IntoIterator<Item = (Value, Value)>) -> Value {
+		Value::from_iter(
+			entries
+				.into_iter()
+				.map(|(index, value)| Value::from_iter([index, value])),
+		)
+	}
+
+	#[test]
+	fn indexed_array_orders_scalar_indices_and_preserves_nested_values() {
+		let nested = Value::from_iter([10, 20].map(Value::from));
+		let entries = indexed_entries([
+			(0.into(), "last".into()),
+			((-2).into(), nested.clone()),
+			((-1).into(), true.into()),
+		]);
+		let result = indexed_array(entries).unwrap();
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(-2, 0)]);
+		assert_eq!(seq[&[-2]], nested);
+		assert_eq!(seq[&[-1]], true.into());
+		assert_eq!(seq[&[0]], "last".into());
+	}
+
+	#[test]
+	fn indexed_array_orders_multidimensional_indices() {
+		for dims in [vec![(-1, 0), (4, 6)], vec![(2, 3), (-2, -1), (7, 8)]] {
+			let expected = Value::from_iter(
+				(1..=dims.iter().map(|(a, b)| b - a + 1).product::<i64>()).map(Value::from),
+			)
+			.with_dim(dims.clone());
+			let seq = expected.as_seq();
+			let mut entries = seq
+				.indices()
+				.map(|index| {
+					let value = seq[&index].clone();
+					(Value::from_iter(index.into_iter().map(Value::from)), value)
+				})
+				.collect::<Vec<_>>();
+			entries.reverse();
+			let result = indexed_array(indexed_entries(entries)).unwrap();
+			assert_eq!(result.as_seq().dims_iter().collect::<Vec<_>>(), dims);
+			assert_eq!(
+				result.as_seq().iter().collect::<Vec<_>>(),
+				seq.iter().collect::<Vec<_>>()
+			);
+		}
+	}
+
+	#[test]
+	fn indexed_array_handles_empty_and_singleton_inputs() {
+		let empty = indexed_array(Value::from_iter(std::iter::empty::<Value>())).unwrap();
+		assert_eq!(empty.as_seq().dim(1), (1, 0));
+		assert_eq!(empty.as_seq().len(), 0);
+		for index in [i64::MIN, i64::MAX] {
+			let result = indexed_array(indexed_entries([(index.into(), 42.into())])).unwrap();
+			assert_eq!(result.as_seq().dim(1), (index, index));
+			assert_eq!(result.as_seq()[&[index]], 42.into());
+		}
+	}
+
+	#[test]
+	fn indexed_array_rejects_gaps_duplicates_and_incomplete_rectangles() {
+		for indices in [
+			vec![1, 3],
+			vec![1, 1],
+			vec![1, 1, 3],
+			vec![i64::MIN, i64::MAX],
+		] {
+			let entries = indexed_entries(indices.into_iter().map(|i| (i.into(), 0.into())));
+			assert!(indexed_array(entries).is_err());
+		}
+		// Each dimension is contiguous, but the Cartesian product is incomplete.
+		let entries = indexed_entries(
+			[(1, 4), (2, 5)].map(|(i, j)| (Value::from_iter([i, j].map(Value::from)), 0.into())),
+		);
+		assert!(indexed_array(entries).is_err());
+	}
+
+	#[test]
+	fn indexed_array_rejects_infinite_and_inconsistent_indices() {
+		let entries = indexed_entries([(IntVal::InfPos.into(), 0.into())]);
+		assert!(indexed_array(entries).is_err());
+		let entries = indexed_entries([
+			(1.into(), 0.into()),
+			(Value::from_iter([1, 2].map(Value::from)), 0.into()),
+		]);
+		assert!(indexed_array(entries).is_err());
+	}
+
+	#[test]
+	fn show_int_justifies_without_truncating() {
+		for (width, value, expected) in [
+			(5, 42, "   42"),
+			(-5, 42, "42   "),
+			(5, -42, "  -42"),
+			(-5, -42, "-42  "),
+			(0, 42, "42"),
+			(1, -42, "-42"),
+			(-1, -42, "-42"),
+			(0, i64::MIN, "-9223372036854775808"),
+		] {
+			assert_eq!(
+				show_int(width.into(), value.into()).unwrap().as_str(),
+				expected,
+			);
+		}
+	}
+
+	#[test]
+	fn show_float_justifies_and_rounds_to_fixed_precision() {
+		for (width, precision, value, expected) in [
+			(8, 2, 1.5, "    1.50"),
+			(-8, 2, -1.5, "-1.50   "),
+			(0, 3, 1.0, "1.000"),
+			(1, 2, 12.375, "12.38"),
+			(-1, 2, 12.375, "12.38"),
+			(0, 0, 1.75, "2"),
+			(0, 2, 9.999, "10.00"),
+			(0, 2, -0.0, "-0.00"),
+		] {
+			assert_eq!(
+				show_float(width.into(), precision.into(), value.into())
+					.unwrap()
+					.as_str(),
+				expected,
+			);
+		}
+	}
+
+	#[test]
+	fn show_float_rejects_negative_precision() {
+		assert!(matches!(
+			show_float(0.into(), (-1).into(), 1.5.into()),
+			Err(RuntimeErrorKind::Value(_)),
+		));
+	}
+
+	#[test]
+	fn array_slices_preserve_selected_values_and_dimensions() {
+		let array: Value = (1..=9).map(Value::from).collect();
+		let array = array.with_dim([(1, 3), (4, 6)]);
+		let set = |lo, hi| Value::from_iter([IntVal::from(lo)..=IntVal::from(hi)]);
+		let slices: Value = [set(2, 3), set(5, 6)].into_iter().collect();
+		let result = array_slice(array.clone(), slices);
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(1, 4)]);
+		assert_eq!(
+			seq.iter().cloned().collect::<Vec<_>>(),
+			[5, 6, 8, 9].map(Value::from)
+		);
+
+		let empty: Value = [set(2, 3), set(1, 0)].into_iter().collect();
+		let result = array_slice(array, empty);
+		let seq = result.as_seq();
+		assert_eq!(seq.dims_iter().collect::<Vec<_>>(), [(1, 0)]);
+		assert_eq!(seq.iter().count(), 0);
+	}
+
+	#[test]
+	fn array_kd_accepts_empty_but_not_discontinuous_index_sets() {
+		let empty: Value = std::iter::empty::<std::ops::RangeInclusive<IntVal>>().collect();
+		let indexes: Value = [empty].into_iter().collect();
+		let values: Value = std::iter::empty::<Value>().collect();
+		let result = array_kd(indexes, values).unwrap();
+		assert_eq!(result.as_seq().dims_iter().collect::<Vec<_>>(), [(1, 0)]);
+		assert_eq!(result.as_seq().len(), 0);
+
+		let non_contiguous: Value = [
+			IntVal::from(1)..=IntVal::from(1),
+			IntVal::from(3)..=IntVal::from(3),
+		]
+		.into_iter()
+		.collect();
+		let indexes: Value = [non_contiguous].into_iter().collect();
+		let values: Value = [Value::from(1), Value::from(2)].into_iter().collect();
+		assert_eq!(
+			array_kd(indexes, values).unwrap_err().reason,
+			"Non-contiguous index set not allowed"
+		);
+	}
+
+	#[test]
+	fn uniform_int_includes_both_bounds() {
+		let sample: i64 = uniform_int(3.into(), 3.into()).unwrap().try_into().unwrap();
+		assert_eq!(sample, 3);
+	}
+
+	#[test]
+	fn binomial_handles_degenerate_probability() {
+		let sample: i64 = binomial(10.into(), 0.0.into()).unwrap().try_into().unwrap();
+		assert_eq!(sample, 0);
+	}
+
+	#[test]
+	fn discrete_distribution_returns_the_array_index() {
+		let weights = Value::from_iter([Value::from(0.0), Value::from(1.0)]).with_dim([(4, 5)]);
+		let sample: i64 = discrete_distribution(weights).unwrap().try_into().unwrap();
+		assert_eq!(sample, 5);
+	}
+
+	#[test]
+	fn string_split_preserves_empty_substrings_and_handles_unicode() {
+		assert_eq!(
+			string_split("a,,b,".into(), ",".into()),
+			Value::from_iter(["a", "", "b", ""].into_iter().map(Value::from)),
+		);
+		assert_eq!(
+			string_split("aé".into(), "".into()),
+			Value::from_iter(["a", "é"].into_iter().map(Value::from)),
+		);
+	}
+}

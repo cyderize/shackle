@@ -16,11 +16,14 @@ serde_json = {workspace = true}
 shackle-diagnostics = {workspace = true}
 shackle-fmt = {workspace = true}
 shackle-hir = {workspace = true}
+shackle-ir = {workspace = true}
+shackle-runtime = {path = "../shackle-runtime"}
 shackle-syntax = {workspace = true}
 shackle-thir = {workspace = true}
 shackle-ty = {workspace = true}
 shackle-utils = {workspace = true}
 tempfile = "3.27.0"
+thiserror = {workspace = true}
 
 [dev-dependencies]
 expect-test = {workspace = true}

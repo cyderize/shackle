@@ -29,6 +29,9 @@ impl Program {
 	/// Run the program in the current state
 	/// Solutions are emitted to the callback, and the resulting status is returned.
 	pub fn run<F: Fn(&Message) -> Result<()>>(&mut self, msg_callback: F) -> Result<Status> {
+		if self.target == CompileTarget::NanoZinc {
+			todo!("NanoZinc solver support");
+		}
 		// Every input needs a value, from the data or (when optional) absent
 		let mut missing = self
 			.input_types
@@ -78,7 +81,8 @@ impl Program {
 		// Write content to file
 		let file_mut = tmpfile.as_file_mut();
 		// Write model to file
-		self.write(file_mut).map_err(write_err)?;
+		self.write(file_mut)
+			.map_err(|err| write_err(std::io::Error::other(err)))?;
 		// Write data to file
 		for (name, ty) in &self.input_types {
 			let val = if let Some(val) = self.input_data.get(name) {

@@ -6,6 +6,7 @@ members = [
   "crates/shackle-fmt",
   "crates/shackle-globalizer",
   "crates/shackle-hir",
+  "crates/shackle-ir",
   "crates/shackle-ls",
   "crates/shackle-mir",
   "crates/shackle-mir-derive",
@@ -28,6 +29,7 @@ default-members = [
   "crates/shackle-fmt",
   "crates/shackle-globalizer",
   "crates/shackle-hir",
+  "crates/shackle-ir",
   "crates/shackle-ls",
   "crates/shackle-mir",
   "crates/shackle-mir-derive",
@@ -67,6 +69,7 @@ shackle-diagnostics = {path = "crates/shackle-diagnostics", version = "0.1.0"}
 shackle-fmt = {path = "crates/shackle-fmt", version = "0.1.0"}
 shackle-globalizer = {path = "crates/shackle-globalizer", version = "0.1.0"}
 shackle-hir = {path = "crates/shackle-hir", version = "0.1.0"}
+shackle-ir = {path = "crates/shackle-ir", version = "0.1.0"}
 shackle-mir = {path = "crates/shackle-mir", version = "0.1.0"}
 shackle-syntax = {path = "crates/shackle-syntax", version = "0.1.0"}
 shackle-thir = {path = "crates/shackle-thir", version = "0.1.0"}

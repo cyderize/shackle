@@ -22,6 +22,7 @@ serde_json = {workspace = true}
 shackle-diagnostics = {workspace = true}
 shackle-fmt = {workspace = true}
 shackle-hir = {workspace = true}
+shackle-mir = {workspace = true}
 shackle-syntax = {workspace = true}
 shackle-thir = {workspace = true}
 shackle-ty = {workspace = true}

@@ -34,6 +34,10 @@ name = "shackle-ls"
 publish = false
 
 [[package]]
+name = "shackle-mir"
+release = false
+
+[[package]]
 name = "shackle-syntax"
 release = false
 
